@@ -1,0 +1,53 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ph_expenses}
+      POSTGRES_USER: ${POSTGRES_USER:-ph_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ph_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ph_user} -d ${POSTGRES_DB:-ph_expenses}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ph_user}:${POSTGRES_PASSWORD:-ph_password}@db:5432/${POSTGRES_DB:-ph_expenses}
+      TREASURER_EMAIL: ${TREASURER_EMAIL:-tesorero@example.com}
+      PRESIDENT_EMAIL: ${PRESIDENT_EMAIL:-presidente@example.com}
+      EMAIL_MODE: ${EMAIL_MODE:-console}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURITY: ${SMTP_SECURITY:-ssl}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+      SECRET_KEY: ${SECRET_KEY:-development-only-change-me}
+      TOKEN_EXPIRE_MINUTES: ${TOKEN_EXPIRE_MINUTES:-480}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrador}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123!}
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - expense_uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  expense_uploads:
