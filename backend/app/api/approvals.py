@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.database import get_db
-from app.core.security import current_user, require_roles
+from app.core.security import current_user, require_permission
 from app.models.entities import Approval, ApprovalStatus, Expense, ExpenseStatus, User, UserRole
 from app.schemas.approval import ApprovalDecision
 from app.schemas.expense import ExpenseOut
@@ -30,7 +30,7 @@ def _ensure_link_is_current(approval: Approval) -> None:
 def get_approval(token: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
     approval = _approval_by_token(db, token)
     _ensure_link_is_current(approval)
-    if user.role != UserRole.ADMIN and (user.role != UserRole.APPROVER or user.email != approval.approver_email.lower()):
+    if user.role != UserRole.ADMIN and (not user.can_approve or user.email != approval.approver_email.lower()):
         raise HTTPException(status_code=403, detail='Esta aprobación no está asignada a tu usuario')
     expense = approval.expense
     return {
@@ -70,7 +70,7 @@ def decide_approval(
     token: str,
     payload: ApprovalDecision,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.APPROVER, UserRole.ADMIN)),
+    user: User = Depends(require_permission('can_approve')),
 ):
     stmt = select(Approval).where(Approval.token == token).options(selectinload(Approval.expense))
     approval = db.scalars(stmt).first()

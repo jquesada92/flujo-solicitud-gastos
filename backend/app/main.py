@@ -8,12 +8,33 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, inspect, select, text, update
 
-from app.api import approvals, auth, expenses, rules, users
+from app.api import approvals, auth, categories, expenses, rules, users
 from app.core.security import hash_password, normalize_email
 from app.core.database import Base, SessionLocal, engine
-from app.models.entities import ApprovalRule, User, UserRole
+from app.models.entities import ApprovalRule, ExpenseCategory, ExpenseSubcategory, User, UserRole
 
 logging.basicConfig(level=logging.INFO)
+
+DEFAULT_CATEGORIES = {
+    'ADMINISTRATION': ('Administración', [('EQUIPMENT','Equipo'),('SUPPLIES','Insumos'),('SERVICES_PROVIDER','Servicios / Proveedor')]),
+    'MAINTENANCE': ('Mantenimiento', [('EQUIPMENT','Equipo'),('SUPPLIES','Insumos'),('SERVICES_PROVIDER','Servicios / Proveedor')]),
+    'EXTRAORDINARY': ('Extraordinario', [('EQUIPMENT','Equipo')]),
+    'LEGAL': ('Legal', [('CONSULTING','Consultorías'),('PROCEDURES','Trámites'),('LITIGATION','Demandas')]),
+    'POOL': ('Piscina', [('EQUIPMENT','Equipo'),('SUPPLIES','Insumos'),('SERVICES_PROVIDER','Servicios / Proveedor')]),
+    'GYM': ('Gimnasio', [('EQUIPMENT','Equipo'),('SUPPLIES','Insumos'),('SERVICES_PROVIDER','Servicios / Proveedor')]),
+    'SQUASH_COURT': ('Cancha de squash', [('EQUIPMENT','Equipo'),('SUPPLIES','Insumos'),('SERVICES_PROVIDER','Servicios / Proveedor')]),
+}
+
+
+def seed_categories() -> None:
+    with SessionLocal() as db:
+        for code, (name, subs) in DEFAULT_CATEGORIES.items():
+            category = db.scalar(select(ExpenseCategory).where(ExpenseCategory.code == code))
+            if not category:
+                category = ExpenseCategory(code=code, name=name); db.add(category); db.flush()
+            existing = set(db.scalars(select(ExpenseSubcategory.code).where(ExpenseSubcategory.category_id == category.id)).all())
+            db.add_all(ExpenseSubcategory(category_id=category.id, code=subcode, name=subname) for subcode, subname in subs if subcode not in existing)
+        db.commit()
 
 
 def seed_rules() -> None:
@@ -117,7 +138,14 @@ def migrate_schema() -> None:
     """Small idempotent migration for existing MVP databases."""
     columns = {column['name'] for column in inspect(engine).get_columns('expenses')}
     approval_columns = {column['name'] for column in inspect(engine).get_columns('approvals')}
+    user_columns = {column['name'] for column in inspect(engine).get_columns('users')}
     with engine.begin() as connection:
+        for name, default in (('can_request','FALSE'),('can_approve','FALSE'),('can_view','TRUE'),('can_configure','FALSE')):
+            if name not in user_columns:
+                connection.execute(text(f'ALTER TABLE users ADD COLUMN {name} BOOLEAN NOT NULL DEFAULT {default}'))
+        connection.execute(text("UPDATE users SET can_request=TRUE, can_approve=TRUE, can_view=TRUE, can_configure=TRUE WHERE role='ADMIN'"))
+        connection.execute(text("UPDATE users SET can_request=TRUE WHERE role='REQUESTER'"))
+        connection.execute(text("UPDATE users SET can_approve=TRUE WHERE role='APPROVER'"))
         connection.execute(text("ALTER TYPE expensestatus ADD VALUE IF NOT EXISTS 'CANCELLED'"))
         connection.execute(text("ALTER TYPE expensestatus ADD VALUE IF NOT EXISTS 'CLOSED'"))
         connection.execute(text("ALTER TYPE expensestatus ADD VALUE IF NOT EXISTS 'NEEDS_REVISION'"))
@@ -192,7 +220,7 @@ def seed_admin() -> None:
         # users already exist. Existing credentials are never overwritten.
         if db.scalar(select(User.id).where(func.lower(User.email) == email)):
             return
-        db.add(User(name=name, email=email, password_hash=hash_password(password), role=UserRole.ADMIN))
+        db.add(User(name=name, email=email, password_hash=hash_password(password), role=UserRole.ADMIN, can_request=True, can_approve=True, can_view=True, can_configure=True))
         db.commit()
 
 
@@ -201,6 +229,7 @@ async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     migrate_schema()
     seed_admin()
+    seed_categories()
     seed_rules()
     yield
 
@@ -226,6 +255,7 @@ app.include_router(approvals.router, prefix='/api/approvals', tags=['Approvals']
 app.include_router(rules.router, prefix='/api/rules', tags=['Approval Rules'])
 app.include_router(auth.router, prefix='/api/auth', tags=['Authentication'])
 app.include_router(users.router, prefix='/api/users', tags=['Users'])
+app.include_router(categories.router, prefix='/api/categories', tags=['Categories'])
 
 
 @app.get('/api/health')

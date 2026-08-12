@@ -76,6 +76,15 @@ td { padding: 15px 12px; border-bottom: 1px solid #eef0f4; vertical-align: top; 
 .table-filters input, .table-filters select { padding: 9px 10px; }
 .table-filters button { height: 38px; }
 .filter-count { margin-left: auto; padding-bottom: 10px; color: #717b8d; font-size: 11px; white-space: nowrap; }
+.permission-check { width: 18px; height: 18px; accent-color: #172033; }
+.catalog-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(300px,1fr)); gap: 14px; margin-top: 18px; }
+.catalog-card { padding: 16px; border: 1px solid #dfe5ee; border-radius: 12px; }
+.catalog-heading,.catalog-subs>div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.catalog-heading span,.catalog-subs small { display: block; color: #7a8494; font-size: 10px; }
+.catalog-subs { display: grid; gap: 8px; margin: 16px 0; padding: 12px 0; border-top: 1px solid #edf0f4; border-bottom: 1px solid #edf0f4; }
+.sub-create { display: grid; grid-template-columns: 1fr 1fr auto; gap: 7px; }
+.sub-create input { min-width: 0; padding: 8px; }
+.sub-create.single-field { grid-template-columns: 1fr auto; }
 .row-actions { display: grid; gap: 6px; min-width: 145px; }
 .row-actions button { padding: 7px 9px; font-size: 11px; }
 .closure-panel { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 14px; align-items: end; margin: 0 0 20px; padding: 18px; border: 1px solid #bce3c8; border-radius: 12px; background: #f2faf4; }

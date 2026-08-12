@@ -61,5 +61,13 @@ def require_roles(*roles: UserRole):
     return dependency
 
 
+def require_permission(permission: str):
+    def dependency(user: User = Depends(current_user)) -> User:
+        if user.role != UserRole.ADMIN and not getattr(user, permission, False):
+            raise HTTPException(status_code=403, detail='No tienes permiso para realizar esta acción')
+        return user
+    return dependency
+
+
 def normalize_email(email: str) -> str:
     return email.strip().lower()

@@ -42,6 +42,10 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    can_request: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    can_approve: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    can_view: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    can_configure: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -79,6 +83,28 @@ class CategoryCounter(Base):
 
     category: Mapped[str] = mapped_column(String(80), primary_key=True)
     last_value: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class ExpenseCategory(Base):
+    __tablename__ = 'expense_categories'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(80), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    subcategories = relationship('ExpenseSubcategory', back_populates='category', cascade='all, delete-orphan', order_by='ExpenseSubcategory.name')
+
+
+class ExpenseSubcategory(Base):
+    __tablename__ = 'expense_subcategories'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    category_id: Mapped[int] = mapped_column(ForeignKey('expense_categories.id', ondelete='CASCADE'), nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(80), nullable=False)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    category = relationship('ExpenseCategory', back_populates='subcategories')
 
 
 class ExpenseAttachment(Base):

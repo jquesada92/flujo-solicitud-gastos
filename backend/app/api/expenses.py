@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session, selectinload
 from app.core.database import get_db
-from app.core.security import current_user, require_roles
+from app.core.security import current_user, require_permission, require_roles
 from app.models.entities import Expense, ExpenseAttachment, ExpenseStatus, User, UserRole
 from app.schemas.expense import AttachmentOut, ExpenseCreate, ExpenseOut
 from app.services.approval_engine import expire_open_approvals, start_approval_flow
@@ -44,6 +44,8 @@ class CancellationRequest(BaseModel):
 
 @router.get('', response_model=list[ExpenseOut])
 def list_expenses(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if user.role != UserRole.ADMIN and not user.can_view:
+        raise HTTPException(status_code=403, detail='No tienes permiso para consultar solicitudes')
     stmt = select(Expense).options(selectinload(Expense.approvals), selectinload(Expense.attachments)).order_by(Expense.id.desc())
     if user.role == UserRole.REQUESTER:
         stmt = stmt.where(Expense.requested_by == user.email)
@@ -54,7 +56,7 @@ def list_expenses(db: Session = Depends(get_db), user: User = Depends(current_us
 def create_expense(
     payload: ExpenseCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.REQUESTER, UserRole.ADMIN)),
+    user: User = Depends(require_permission('can_request')),
 ):
     quotation_pending = payload.quotation_pending
     values = payload.model_dump(mode='json', exclude={'quotation_pending'})
@@ -94,7 +96,7 @@ def resubmit_expense(
     request_id: str,
     payload: ExpenseCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.REQUESTER, UserRole.ADMIN)),
+    user: User = Depends(require_permission('can_request')),
 ):
     expense = _expense_for_user(db, request_id, user)
     db.scalar(select(Expense).where(Expense.id == expense.id).with_for_update())
@@ -138,7 +140,7 @@ async def upload_attachment(
     request_id: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.REQUESTER, UserRole.ADMIN)),
+    user: User = Depends(require_permission('can_request')),
 ):
     expense = _expense_for_user(db, request_id, user)
     if file.content_type not in ALLOWED_TYPES:
@@ -184,7 +186,7 @@ def cancel_expense(request_id: str, payload: CancellationRequest, db: Session = 
     expense = _expense_for_user(db, request_id, user)
     db.scalar(select(Expense).where(Expense.id == expense.id).with_for_update())
     db.refresh(expense)
-    if user.role not in (UserRole.REQUESTER, UserRole.ADMIN):
+    if user.role != UserRole.ADMIN and not user.can_request:
         raise HTTPException(status_code=403, detail='No tienes permiso para cancelar solicitudes')
     if expense.status == ExpenseStatus.CLOSED:
         raise HTTPException(status_code=409, detail='Una solicitud cerrada no puede cancelarse')

@@ -13,6 +13,10 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     role: UserRole
+    can_request: bool | None = None
+    can_approve: bool | None = None
+    can_view: bool | None = None
+    can_configure: bool | None = None
 
 
 class UserUpdate(BaseModel):
@@ -20,6 +24,10 @@ class UserUpdate(BaseModel):
     role: UserRole | None = None
     active: bool | None = None
     password: str | None = Field(default=None, min_length=8, max_length=128)
+    can_request: bool | None = None
+    can_approve: bool | None = None
+    can_view: bool | None = None
+    can_configure: bool | None = None
 
 
 class UserOut(BaseModel):
@@ -28,6 +36,10 @@ class UserOut(BaseModel):
     email: str
     role: UserRole
     active: bool
+    can_request: bool
+    can_approve: bool
+    can_view: bool
+    can_configure: bool
 
     class Config:
         from_attributes = True
