@@ -140,7 +140,7 @@ def migrate_schema() -> None:
     approval_columns = {column['name'] for column in inspect(engine).get_columns('approvals')}
     user_columns = {column['name'] for column in inspect(engine).get_columns('users')}
     with engine.begin() as connection:
-        for name, default in (('can_request','FALSE'),('can_approve','FALSE'),('can_view','TRUE'),('can_configure','FALSE')):
+        for name, default in (('can_request','FALSE'),('can_approve','FALSE'),('can_view','TRUE'),('can_configure','FALSE'),('must_change_password','FALSE')):
             if name not in user_columns:
                 connection.execute(text(f'ALTER TABLE users ADD COLUMN {name} BOOLEAN NOT NULL DEFAULT {default}'))
         connection.execute(text("UPDATE users SET can_request=TRUE, can_approve=TRUE, can_view=TRUE, can_configure=TRUE WHERE role='ADMIN'"))
@@ -209,6 +209,22 @@ def migrate_schema() -> None:
         attachment_columns = {column['name'] for column in inspect(engine).get_columns('expense_attachments')}
         if 'document_type' not in attachment_columns:
             connection.execute(text("ALTER TABLE expense_attachments ADD COLUMN document_type VARCHAR(40) NOT NULL DEFAULT 'QUOTATION'"))
+        # The event log is an immutable CDC source. State changes and events are
+        # inserted atomically by the application; historical facts cannot change.
+        connection.execute(text('''
+            CREATE OR REPLACE FUNCTION reject_approval_step_event_mutation()
+            RETURNS trigger AS $$
+            BEGIN
+                RAISE EXCEPTION 'approval_step_events is append-only';
+            END;
+            $$ LANGUAGE plpgsql
+        '''))
+        connection.execute(text('DROP TRIGGER IF EXISTS approval_step_events_immutable ON approval_step_events'))
+        connection.execute(text('''
+            CREATE TRIGGER approval_step_events_immutable
+            BEFORE UPDATE OR DELETE ON approval_step_events
+            FOR EACH ROW EXECUTE FUNCTION reject_approval_step_event_mutation()
+        '''))
 
 
 def seed_admin() -> None:

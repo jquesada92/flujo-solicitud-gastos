@@ -82,7 +82,7 @@ def decide_approval(
     if user.role != UserRole.ADMIN and user.email != approval.approver_email.lower():
         raise HTTPException(status_code=403, detail='Esta aprobación no está asignada a tu usuario')
     try:
-        expense = apply_decision(db, approval, ApprovalStatus(payload.decision), payload.comment)
+        expense = apply_decision(db, approval, ApprovalStatus(payload.decision), payload.comment, user.email)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

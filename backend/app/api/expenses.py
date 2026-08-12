@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select, text
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.database import get_db
 from app.core.security import current_user, require_permission, require_roles
 from app.models.entities import Expense, ExpenseAttachment, ExpenseStatus, User, UserRole
-from app.schemas.expense import AttachmentOut, ExpenseCreate, ExpenseOut
+from app.schemas.expense import AttachmentOut, ExpenseCreate, ExpenseOut, InvoiceOut
 from app.services.approval_engine import expire_open_approvals, start_approval_flow
 
 router = APIRouter()
@@ -52,6 +52,62 @@ def list_expenses(db: Session = Depends(get_db), user: User = Depends(current_us
     return list(db.scalars(stmt).all())
 
 
+@router.get('/invoices', response_model=list[InvoiceOut])
+def list_invoices(
+    q: str | None = Query(default=None, max_length=200),
+    category: str | None = Query(default=None, max_length=80),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    if user.role != UserRole.ADMIN and not user.can_view:
+        raise HTTPException(status_code=403, detail='No tienes permiso para consultar facturas')
+
+    stmt = (
+        select(ExpenseAttachment, Expense)
+        .join(Expense, Expense.id == ExpenseAttachment.expense_id)
+        .where(ExpenseAttachment.document_type == 'INVOICE')
+        .order_by(ExpenseAttachment.created_at.desc(), ExpenseAttachment.id.desc())
+    )
+    if user.role == UserRole.REQUESTER:
+        stmt = stmt.where(Expense.requested_by == user.email)
+    if category:
+        stmt = stmt.where(Expense.expense_type == category)
+    if q and q.strip():
+        term = f'%{q.strip()}%'
+        stmt = stmt.where(or_(
+            ExpenseAttachment.original_name.ilike(term),
+            Expense.display_id.ilike(term),
+            Expense.request_id.ilike(term),
+            Expense.flow_id.ilike(term),
+            Expense.title.ilike(term),
+            Expense.supplier.ilike(term),
+            Expense.requested_by.ilike(term),
+        ))
+
+    return [
+        InvoiceOut(
+            attachment_id=attachment.id,
+            original_name=attachment.original_name,
+            content_type=attachment.content_type,
+            size=attachment.size,
+            uploaded_at=attachment.created_at,
+            request_id=expense.request_id,
+            display_id=expense.display_id,
+            flow_id=expense.flow_id,
+            title=expense.title,
+            expense_type=expense.expense_type,
+            expense_subcategory=expense.expense_subcategory,
+            supplier=expense.supplier,
+            amount=expense.amount,
+            requested_by=expense.requested_by,
+            expense_status=expense.status.value,
+            closed_at=expense.closed_at,
+            closed_by=expense.closed_by,
+        )
+        for attachment, expense in db.execute(stmt).all()
+    ]
+
+
 @router.post('', response_model=ExpenseOut, status_code=201)
 def create_expense(
     payload: ExpenseCreate,
@@ -69,7 +125,7 @@ def create_expense(
         )
     expense = Expense(**values, requested_by=user.email, display_id=_next_display_id(db, payload.expense_type))
     if source:
-        expire_open_approvals(source)
+        expire_open_approvals(db, source, actor_email=user.email)
         if source.status in (ExpenseStatus.SUBMITTED, ExpenseStatus.PENDING_APPROVAL, ExpenseStatus.APPROVED):
             source.status = ExpenseStatus.CANCELLED
             source.cancelled_at = datetime.utcnow()
@@ -104,7 +160,7 @@ def resubmit_expense(
     if expense.status == ExpenseStatus.CLOSED:
         raise HTTPException(status_code=409, detail='Una solicitud cerrada no puede corregirse')
 
-    expire_open_approvals(expense)
+    expire_open_approvals(db, expense, actor_email=user.email)
     values = payload.model_dump(mode='json', exclude={'quotation_pending', 'revised_from_request_id'})
     for field, value in values.items():
         setattr(expense, field, value)
@@ -195,7 +251,7 @@ def cancel_expense(request_id: str, payload: CancellationRequest, db: Session = 
     if expense.status == ExpenseStatus.REJECTED:
         raise HTTPException(status_code=409, detail='Una solicitud rechazada debe corregirse y reenviarse, no cancelarse')
     expense.status = ExpenseStatus.CANCELLED
-    expire_open_approvals(expense)
+    expire_open_approvals(db, expense, actor_email=user.email)
     expense.cancelled_at = datetime.utcnow()
     expense.cancelled_by = user.email
     expense.cancellation_reason = payload.reason.strip()
@@ -207,7 +263,6 @@ def cancel_expense(request_id: str, payload: CancellationRequest, db: Session = 
 @router.post('/{request_id}/close', response_model=ExpenseOut)
 async def close_expense(
     request_id: str,
-    purchase_order: UploadFile = File(...),
     invoice: UploadFile = File(...),
     notes: str | None = Form(default=None),
     db: Session = Depends(get_db),
@@ -216,11 +271,11 @@ async def close_expense(
     expense = _expense_for_user(db, request_id, user)
     if expense.status != ExpenseStatus.APPROVED:
         raise HTTPException(status_code=409, detail='Solo se pueden cerrar solicitudes aprobadas')
-    documents = [('PURCHASE_ORDER', purchase_order), ('INVOICE', invoice)]
+    documents = [('INVOICE', invoice)]
     prepared = []
     for document_type, upload in documents:
         if upload.content_type not in ALLOWED_TYPES:
-            raise HTTPException(status_code=415, detail='La orden y factura deben ser PDF, JPG, PNG o WEBP')
+            raise HTTPException(status_code=415, detail='La factura debe ser un archivo PDF, JPG, PNG o WEBP')
         content = await upload.read(MAX_FILE_SIZE + 1)
         if len(content) > MAX_FILE_SIZE:
             raise HTTPException(status_code=413, detail='Cada archivo debe pesar máximo 10 MB')

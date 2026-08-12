@@ -37,6 +37,32 @@ def _send(to: str, subject: str, text_body: str, html_body: str | None = None) -
             server.login(SMTP_USER, SMTP_PASSWORD); server.send_message(msg)
 
 
+def send_user_invitation(user, temporary_password: str) -> None:
+    login_url = PUBLIC_URL
+    text_body = f'''PH - Acceso al sistema de Gestión de Gastos
+
+Hola {user.name},
+
+Se creó una cuenta para ti.
+
+Usuario: {user.email}
+Contraseña temporal: {temporary_password}
+Acceso: {login_url}
+
+Al iniciar sesión deberás crear una contraseña nueva antes de continuar.
+No compartas estas credenciales.
+'''
+    html_body = f'''<!doctype html><html><body style="margin:0;background:#f4f6fa;font-family:Arial,sans-serif;color:#172033">
+<div style="max-width:580px;margin:24px auto;background:white;border:1px solid #e3e7ee;border-radius:16px;overflow:hidden">
+<div style="background:#111827;color:white;padding:20px 26px"><b>PH · Gestión de Gastos</b><div style="font-size:12px;color:#b8c0cf;margin-top:4px">INVITACIÓN DE USUARIO</div></div>
+<div style="padding:26px"><h2>Hola {html.escape(user.name)}</h2><p>Se creó una cuenta para ti.</p>
+<div style="background:#f7f8fa;padding:16px;border-radius:10px;line-height:1.8"><b>Usuario:</b> {html.escape(user.email)}<br><b>Contraseña temporal:</b> <code style="font-size:15px">{html.escape(temporary_password)}</code></div>
+<p>Al iniciar sesión deberás reemplazar esta contraseña antes de usar el sistema.</p>
+<a href="{html.escape(login_url)}" style="display:inline-block;background:#172033;color:white;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">Iniciar sesión</a>
+<p style="font-size:11px;color:#7a8494;margin-top:20px">No compartas estas credenciales.</p></div></div></body></html>'''
+    _send(user.email, 'Tu acceso a PH · Gestión de Gastos', text_body, html_body)
+
+
 def send_approval_request(approval) -> None:
     expense = approval.expense
     detail_link = f'{PUBLIC_URL}/approve/{approval.token}'

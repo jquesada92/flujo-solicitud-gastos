@@ -5,7 +5,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -39,7 +39,7 @@ def create_token(user: User) -> str:
     return jwt.encode({'sub': str(user.id), 'iat': now, 'exp': now + timedelta(minutes=TOKEN_MINUTES)}, SECRET_KEY, algorithm='HS256')
 
 
-def current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), db: Session = Depends(get_db)) -> User:
+def current_user(request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(bearer), db: Session = Depends(get_db)) -> User:
     if not credentials:
         raise HTTPException(status_code=401, detail='Debes iniciar sesión')
     try:
@@ -50,6 +50,8 @@ def current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bear
     user = db.get(User, user_id)
     if not user or not user.active:
         raise HTTPException(status_code=401, detail='Usuario inactivo o inexistente')
+    if user.must_change_password and request.url.path not in ('/api/auth/me', '/api/auth/change-password'):
+        raise HTTPException(status_code=403, detail='Debes cambiar tu contraseña temporal antes de continuar')
     return user
 
 

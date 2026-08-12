@@ -32,6 +32,26 @@ class AttachmentOut(BaseModel):
         from_attributes = True
 
 
+class InvoiceOut(BaseModel):
+    attachment_id: int
+    original_name: str
+    content_type: str
+    size: int
+    uploaded_at: datetime
+    request_id: str
+    display_id: str
+    flow_id: str
+    title: str
+    expense_type: str
+    expense_subcategory: str | None = None
+    supplier: str
+    amount: Decimal
+    requested_by: str
+    expense_status: str
+    closed_at: datetime | None = None
+    closed_by: str | None = None
+
+
 class ApprovalOut(BaseModel):
     id: int
     flow_id: str
@@ -65,6 +85,12 @@ class ExpenseOut(BaseModel):
     item_url: str | None = None
     requested_by: str
     status: str
+    cancelled_at: datetime | None = None
+    cancelled_by: str | None = None
+    cancellation_reason: str | None = None
+    closed_at: datetime | None = None
+    closed_by: str | None = None
+    closure_notes: str | None = None
     approvals: list[ApprovalOut] = Field(default_factory=list)
     attachments: list[AttachmentOut] = Field(default_factory=list)
 

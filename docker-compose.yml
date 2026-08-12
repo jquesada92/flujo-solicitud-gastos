@@ -44,7 +44,9 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "3000:80"
+      # Local-only by default. Public MVP access is provided by the optional
+      # Cloudflare tunnel, never by exposing this port on every interface.
+      - "127.0.0.1:3000:80"
     depends_on:
       - backend
 
