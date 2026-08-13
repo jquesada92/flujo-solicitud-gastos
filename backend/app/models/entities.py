@@ -225,7 +225,7 @@ class Approval(Base):
 
 
 class ApprovalStepEvent(Base):
-    """Append-only event log suitable for CDC/streaming ingestion."""
+    """Append-only approval history prepared for future CDC ingestion."""
 
     __tablename__ = 'approval_step_events'
     __table_args__ = (
@@ -233,13 +233,10 @@ class ApprovalStepEvent(Base):
         Index('ix_approval_step_events_occurred_at', 'occurred_at'),
     )
 
-    # Monotonic database cursor for ordered CDC reads. event_id is the stable
-    # cross-system identifier and must be used for idempotency in consumers.
     event_sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     event_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
-
     expense_id: Mapped[int] = mapped_column(ForeignKey('expenses.id', ondelete='RESTRICT'), nullable=False, index=True)
     approval_id: Mapped[int] = mapped_column(ForeignKey('approvals.id', ondelete='RESTRICT'), nullable=False, index=True)
     request_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
@@ -253,6 +250,4 @@ class ApprovalStepEvent(Base):
     expense_status: Mapped[str] = mapped_column(String(30), nullable=False)
     actor_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Full event envelope. Repeated typed columns make partitioning/filtering
-    # efficient while this snapshot lets the lake evolve independently.
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)

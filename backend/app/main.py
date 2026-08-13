@@ -15,10 +15,16 @@ from app.models.entities import AccessProfile, ApprovalRule, ExpenseCategory, Ex
 
 logging.basicConfig(level=logging.INFO)
 
+
+def cors_origins() -> list[str]:
+    configured = os.getenv('CORS_ALLOWED_ORIGINS', '')
+    origins = [origin.strip().rstrip('/') for origin in configured.split(',') if origin.strip()]
+    return origins or ['http://localhost:3000', 'http://localhost:5173']
+
 DEFAULT_CATEGORIES = {
     'ADMINISTRATION': ('Administración', [('EQUIPMENT','Equipo'),('SUPPLIES','Insumos'),('SERVICES_PROVIDER','Servicios / Proveedor')]),
     'MAINTENANCE': ('Mantenimiento', [('EQUIPMENT','Equipo'),('SUPPLIES','Insumos'),('SERVICES_PROVIDER','Servicios / Proveedor')]),
-    'EXTRAORDINARY': ('Extraordinario', [('EQUIPMENT','Equipo')]),
+    'EXTRAORDINARY': ('Extraordinario', [('GENERAL','General')]),
     'LEGAL': ('Legal', [('CONSULTING','Consultorías'),('PROCEDURES','Trámites'),('LITIGATION','Demandas')]),
     'POOL': ('Piscina', [('EQUIPMENT','Equipo'),('SUPPLIES','Insumos'),('SERVICES_PROVIDER','Servicios / Proveedor')]),
     'GYM': ('Gimnasio', [('EQUIPMENT','Equipo'),('SUPPLIES','Insumos'),('SERVICES_PROVIDER','Servicios / Proveedor')]),
@@ -248,8 +254,6 @@ def migrate_schema() -> None:
         approval_columns = {column['name'] for column in inspect(engine).get_columns('approvals')}
         if 'approval_mode' not in approval_columns:
             connection.execute(text("ALTER TABLE approvals ADD COLUMN approval_mode VARCHAR(20) NOT NULL DEFAULT 'SEQUENTIAL'"))
-        # The event log is an immutable CDC source. State changes and events are
-        # inserted atomically by the application; historical facts cannot change.
         connection.execute(text('''
             CREATE OR REPLACE FUNCTION reject_approval_step_event_mutation()
             RETURNS trigger AS $$
@@ -348,7 +352,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['http://localhost:3000', 'http://localhost:5173'],
+    allow_origins=cors_origins(),
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],

@@ -11,7 +11,7 @@ from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session, selectinload
 from app.core.database import get_db
 from app.core.security import current_user, require_permission, require_roles
-from app.models.entities import Expense, ExpenseAttachment, ExpenseStatus, User, UserRole
+from app.models.entities import Expense, ExpenseAttachment, ExpenseCategory, ExpenseStatus, ExpenseSubcategory, User, UserRole
 from app.schemas.expense import AttachmentOut, ExpenseCreate, ExpenseOut, InvoiceOut
 from app.services.approval_engine import expire_open_approvals, start_approval_flow
 
@@ -40,6 +40,24 @@ def _next_display_id(db: Session, category: str) -> str:
 
 class CancellationRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=1000)
+
+
+def _validate_catalog_selection(db: Session, category_code: str, subcategory_code: str | None) -> None:
+    category = db.scalar(select(ExpenseCategory).where(
+        ExpenseCategory.code == category_code,
+        ExpenseCategory.active.is_(True),
+    ))
+    if not category:
+        raise HTTPException(status_code=422, detail='La categoría seleccionada no existe o está inactiva')
+    if not subcategory_code:
+        raise HTTPException(status_code=422, detail='Debes seleccionar una subcategoría')
+    subcategory = db.scalar(select(ExpenseSubcategory).where(
+        ExpenseSubcategory.category_id == category.id,
+        ExpenseSubcategory.code == subcategory_code,
+        ExpenseSubcategory.active.is_(True),
+    ))
+    if not subcategory:
+        raise HTTPException(status_code=422, detail='La subcategoría no pertenece a la categoría seleccionada o está inactiva')
 
 
 @router.get('', response_model=list[ExpenseOut])
@@ -114,6 +132,7 @@ def create_expense(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission('can_request')),
 ):
+    _validate_catalog_selection(db, payload.expense_type, payload.expense_subcategory)
     quotation_pending = payload.quotation_pending
     values = payload.model_dump(mode='json', exclude={'quotation_pending'})
     revised_from = values.get('revised_from_request_id')
@@ -154,6 +173,7 @@ def resubmit_expense(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission('can_request')),
 ):
+    _validate_catalog_selection(db, payload.expense_type, payload.expense_subcategory)
     expense = _expense_for_user(db, request_id, user)
     db.scalar(select(Expense).where(Expense.id == expense.id).with_for_update())
     db.refresh(expense)

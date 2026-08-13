@@ -60,89 +60,19 @@ MVP dockerizado para registrar solicitudes de gastos y ejecutar un flujo secuenc
 7. Al terminar todos los pasos, la solicitud queda `APPROVED`.
 8. Si cualquier paso rechaza, queda `REJECTED`.
 
-## Historial de eventos para streaming
+## Historial de eventos de aprobación
 
-Además del estado vigente en `approvals`, cada transición se registra de forma
-append-only en `approval_step_events`. La escritura del evento ocurre en la misma
-transacción que el cambio de estado, por lo que la tabla puede ingerirse mediante
-CDC hacia un stream o datalake sin reconstruir el historial desde snapshots.
+Cada transición se registra de forma append-only en `approval_step_events`, dentro
+de la misma transacción que modifica el estado. Esto conserva el historial completo
+y permite incorporar CDC en el futuro sin perder eventos ni reconstruir snapshots.
 
-- `event_sequence`: cursor incremental de PostgreSQL para lectura ordenada.
-- `event_id`: UUID estable para deduplicación/idempotencia en consumidores.
-- `occurred_at`: fecha y hora asignadas por PostgreSQL con zona horaria.
-- `flow_id` y `step`: partición y orden lógico dentro de cada flujo.
-- Estados anterior/nuevo, actor, comentario y estado de la solicitud.
-- `payload`: sobre JSON versionado con el evento completo y snapshot de negocio.
+La tabla incluye un cursor monotónico (`event_sequence`), un UUID idempotente
+(`event_id`), fecha de base de datos con zona horaria, identificadores del flujo y
+la solicitud, estados anterior y nuevo, actor, comentario y un `payload` JSON
+versionado. PostgreSQL impide actualizar o borrar sus registros mediante un trigger.
 
-Los eventos actuales son `STEP_CREATED`, `STEP_ACTIVATED`, `STEP_APPROVED`,
-`STEP_REJECTED`, `STEP_REVISION_REQUESTED` y `STEP_EXPIRED`. Esta tabla es
-inmutable por diseño: no debe exponerse a operaciones de actualización o borrado.
-
-### Ejecutar CDC con Debezium
-
-El archivo adicional `docker-compose.cdc.yml` agrega un broker Kafka en modo
-KRaft, Kafka Connect con Debezium y un inicializador idempotente del conector.
-Es completamente opcional y no forma parte del funcionamiento de los flujos.
-La aplicación siempre captura los eventos en PostgreSQL; solo al combinar ambos
-archivos PostgreSQL arranca con `wal_level=logical`, slots y WAL senders habilitados.
-
-Para trabajar únicamente en la funcionalidad y capturar eventos en la base de
-datos, usa el arranque normal:
-
-```bash
-docker compose up --build
-```
-
-Cuando se quiera transmitir esos eventos, agrega la infraestructura CDC:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.cdc.yml up --build -d
-```
-
-El conector usa `pgoutput`, crea la publicación filtrada
-`ph_expense_approval_events_pub` y el slot persistente
-`ph_expense_approval_events_slot`. Solo captura:
-
-```text
-public.approval_step_events
-```
-
-Los registros llegan a:
-
-```text
-ph_expenses.public.approval_step_events
-```
-
-Comprobar el conector:
-
-```bash
-curl http://localhost:8083/connectors/ph-expense-approval-events/status
-```
-
-Consumir eventos desde el inicio (PowerShell):
-
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.cdc.yml exec kafka `
-  /opt/kafka/bin/kafka-console-consumer.sh `
-  --bootstrap-server kafka:9092 `
-  --topic ph_expenses.public.approval_step_events `
-  --from-beginning
-```
-
-Revisar el slot y su retención de WAL:
-
-```sql
-SELECT slot_name, active, restart_lsn, confirmed_flush_lsn,
-       pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn)) AS retained_wal
-FROM pg_replication_slots
-WHERE slot_name = 'ph_expense_approval_events_slot';
-```
-
-La imagen local reutiliza el usuario configurado en `POSTGRES_USER`, creado como
-administrador por la imagen oficial de PostgreSQL. En producción se debe usar un
-usuario dedicado con `LOGIN REPLICATION`, permisos de conexión y `SELECT` sobre
-la tabla, y crear la publicación explícitamente. Hay que monitorear el slot: si
-Debezium permanece detenido, PostgreSQL conserva WAL hasta el límite configurado.
+Los eventos registrados son `STEP_CREATED`, `STEP_ACTIVATED`, `STEP_APPROVED`,
+`STEP_REJECTED`, `STEP_REVISION_REQUESTED` y `STEP_EXPIRED`.
 
 ## Ejecutar
 

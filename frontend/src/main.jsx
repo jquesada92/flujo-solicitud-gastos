@@ -2,25 +2,9 @@ import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles.css'
 
-const expenseTypes = [
-  ['ADMINISTRATION', 'Administración'],
-  ['MAINTENANCE', 'Mantenimiento'],
-  ['EXTRAORDINARY', 'Extraordinario'],
-  ['LEGAL', 'Legal'],
-  ['POOL', 'Piscina'],
-  ['GYM', 'Gimnasio'],
-  ['SQUASH_COURT', 'Cancha de squash'],
-]
-const subcategories = {
-  ADMINISTRATION: [['EQUIPMENT', 'Equipo'], ['SUPPLIES', 'Insumos'], ['SERVICES_PROVIDER', 'Servicios / Proveedor']],
-  MAINTENANCE: [['EQUIPMENT', 'Equipo'], ['SUPPLIES', 'Insumos'], ['SERVICES_PROVIDER', 'Servicios / Proveedor']],
-  EXTRAORDINARY: [['GENERAL', 'General']],
-  LEGAL: [['CONSULTING', 'Consultorías'], ['PROCEDURES', 'Trámites'], ['LITIGATION', 'Demandas']],
-  POOL: [['EQUIPMENT', 'Equipo'], ['SUPPLIES', 'Insumos'], ['SERVICES_PROVIDER', 'Servicios / Proveedor']],
-  GYM: [['EQUIPMENT', 'Equipo'], ['SUPPLIES', 'Insumos'], ['SERVICES_PROVIDER', 'Servicios / Proveedor']],
-  SQUASH_COURT: [['EQUIPMENT', 'Equipo'], ['SUPPLIES', 'Insumos'], ['SERVICES_PROVIDER', 'Servicios / Proveedor']],
-}
-const subcategoryName = (value) => Object.values(subcategories).flat().find(([key]) => key === value)?.[1] || value
+const API_BASE_URL = String(import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+const apiUrl = path => `${API_BASE_URL}${path}`
+const subcategoryName = value => value
 const roles = [['REQUESTER', 'Puede solicitar'], ['APPROVER', 'Puede aprobar'], ['VIEWER', 'Puede consultar'], ['ADMIN', 'Administrador']]
 const roleName = (role) => roles.find(([value]) => value === role)?.[1] || role
 const userTitles = [['PRESIDENTE','Presidente'],['VICEPRESIDENTE','Vicepresidente'],['TESORERO','Tesorero'],['VOCERO','Vocero'],['ADMINISTRADORA','Administradora'],['MANTENIMIENTO','Mantenimiento'],['PROPIETARIO','Propietario']]
@@ -39,10 +23,20 @@ function latestExpenseVersions(items) {
   return [...latest.values()]
 }
 
+class AppErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null } }
+  static getDerivedStateFromError(error) { return { error } }
+  componentDidCatch(error, info) { console.error('Error al renderizar la aplicación', error, info) }
+  render() {
+    if (!this.state.error) return this.props.children
+    return <main className="single"><section className="card login-card"><p className="eyebrow">ERROR DE CARGA</p><h1>No se pudo mostrar la aplicación</h1><p className="muted">Recarga la página. Si el problema continúa, comparte el error mostrado en la consola del navegador.</p><button className="primary" onClick={()=>window.location.reload()}>Recargar</button></section></main>
+  }
+}
+
 async function api(path, options = {}) {
   const token = localStorage.getItem('access_token')
   const isFormData = options.body instanceof FormData
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     ...options,
     headers: { ...(!isFormData ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) },
   })
@@ -55,7 +49,7 @@ async function api(path, options = {}) {
 }
 
 async function downloadAttachment(attachment) {
-  const response = await fetch(`/api/expenses/attachments/${attachment.id}`, { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } })
+  const response = await fetch(apiUrl(`/api/expenses/attachments/${attachment.id}`), { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } })
   if (!response.ok) throw new Error('No se pudo descargar el archivo')
   const url = URL.createObjectURL(await response.blob())
   const link = document.createElement('a'); link.href = url; link.download = attachment.original_name; link.click(); URL.revokeObjectURL(url)
@@ -86,11 +80,11 @@ function ChangePassword({ user, onChanged }) {
   return <main className="single"><section className="card login-card"><div className="brand-mark dark">PH</div><p className="eyebrow">PRIMER INICIO DE SESIÓN</p><h1>Crea tu contraseña</h1><p className="muted">Hola {user.name}. Reemplaza la contraseña temporal que recibiste por correo antes de continuar.</p><form className="login-form" onSubmit={submit}><label>Contraseña temporal<input type="password" value={form.current_password} onChange={e=>setForm({...form,current_password:e.target.value})} required minLength="8" autoComplete="current-password" /></label><label>Nueva contraseña<input type="password" value={form.new_password} onChange={e=>setForm({...form,new_password:e.target.value})} required minLength="10" maxLength="128" autoComplete="new-password" /></label><label>Confirmar nueva contraseña<input type="password" value={form.confirmation} onChange={e=>setForm({...form,confirmation:e.target.value})} required minLength="10" maxLength="128" autoComplete="new-password" /></label>{error&&<div className="notice error">{error}</div>}<button className="primary" disabled={saving}>{saving?'Guardando...':'Guardar contraseña'}</button></form></section></main>
 }
 
-function ExpenseForm({ onCreated, draft, onCancelEdit, categoryOptions=expenseTypes, subcategoryOptions=subcategories }) {
-  const firstType=categoryOptions[0]?.[0]||'MAINTENANCE', firstSub=subcategoryOptions[firstType]?.[0]?.[0]||''
+function ExpenseForm({ onCreated, draft, onCancelEdit, categoryOptions=[], subcategoryOptions={} }) {
+  const firstType=categoryOptions[0]?.[0]||'', firstSub=subcategoryOptions[firstType]?.[0]?.[0]||''
   const empty = { title: '', description: '', expense_type: firstType, expense_subcategory: firstSub, amount: '', supplier: '', item_url: '' }
   const [form, setForm] = useState(empty); const [quotation, setQuotation] = useState(null); const [message, setMessage] = useState(null); const [saving, setSaving] = useState(false)
-  useEffect(()=>{if(draft){setForm({title:draft.title,description:draft.description,expense_type:draft.expense_type,expense_subcategory:draft.expense_subcategory,amount:String(draft.amount),supplier:draft.supplier,item_url:draft.item_url||'',revised_from_request_id:draft.request_id});setQuotation(null);setMessage(null)}},[draft?.request_id])
+  useEffect(()=>{if(draft){setForm({title:draft.title,description:draft.description,expense_type:draft.expense_type,expense_subcategory:draft.expense_subcategory,amount:String(draft.amount),supplier:draft.supplier,item_url:draft.item_url||'',revised_from_request_id:draft.request_id});setQuotation(null);setMessage(null)}else if(categoryOptions.length){const expense_type=categoryOptions[0][0];setForm(current=>current.expense_type?current:{...current,expense_type,expense_subcategory:subcategoryOptions[expense_type]?.[0]?.[0]||''})}},[draft?.request_id,categoryOptions.length])
   const submit = async e => { e.preventDefault(); setSaving(true); setMessage(null); if(!form.item_url&&!quotation){setMessage({type:'error',text:'Debes proporcionar una URL o adjuntar una cotización.'});setSaving(false);return} let item=null; try { const payload={...form,amount:Number(form.amount),item_url:form.item_url||null,quotation_pending:Boolean(quotation)}; const editing=Boolean(draft); delete payload.revised_from_request_id; item = await api(editing?`/api/expenses/${draft.request_id}/resubmit`:'/api/expenses', { method: editing?'PUT':'POST', body: JSON.stringify(payload) }); if(quotation){const data=new FormData();data.append('file',quotation);await api(`/api/expenses/${item.request_id}/attachments`,{method:'POST',body:data})} setForm(empty);setQuotation(null);e.target.reset();setMessage({type:'success', text:`Solicitud ${item.display_id} enviada a aprobación con sus soportes.`});onCreated() } catch (err) { setMessage({type:'error', text:item?`La solicitud ${item.display_id} se guardó, pero el archivo no pudo cargarse: ${err.message}`:err.message});onCreated() } finally { setSaving(false) } }
   return <section className="card" id="expense-form"><div className="card-heading"><div><p className="eyebrow">{draft?'CORRECCIÓN Y REENVÍO':'NUEVA SOLICITUD'}</p><h2>{draft?'Corregir solicitud existente':'Registrar gasto'}</h2></div>{draft&&<button className="secondary" type="button" onClick={()=>{setForm(empty);onCancelEdit?.()}}>Cancelar edición</button>}</div>{draft&&<div className="revision-notice">Se actualizará la solicitud <strong>{draft.display_id}</strong> sin crear otra fila. El flujo anterior expirará y se generarán enlaces de aprobación nuevos.</div>}<form onSubmit={submit} className="form-grid">
     <label className="full">Título<input value={form.title} onChange={e=>setForm({...form,title:e.target.value})} required minLength="3" /></label>
@@ -102,7 +96,7 @@ function ExpenseForm({ onCreated, draft, onCancelEdit, categoryOptions=expenseTy
     <label>URL del producto o servicio<input type="url" value={form.item_url} onChange={e=>setForm({...form,item_url:e.target.value})} placeholder="https://..." /></label>
     <label>Cotización (PDF o imagen, máx. 10 MB)<input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={e=>setQuotation(e.target.files[0]||null)} /></label>
     <label className="full">Descripción / justificación<textarea rows="4" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} required minLength="3" /></label>
-    <div className="full form-actions">{message && <div className={`notice ${message.type}`}>{message.text}</div>}<button className="primary" disabled={saving}>{saving?'Guardando...':draft?'Guardar y reenviar':'Crear solicitud'}</button></div>
+    <div className="full form-actions">{message && <div className={`notice ${message.type}`}>{message.text}</div>}<button className="primary" disabled={saving||!categoryOptions.length||!form.expense_subcategory}>{saving?'Guardando...':draft?'Guardar y reenviar':'Crear solicitud'}</button></div>
   </form></section>
 }
 
@@ -112,8 +106,9 @@ function ClosurePanel({ expense, onDone, onCancel }) {
   return <form className="closure-panel" onSubmit={submit}><div><p className="eyebrow">CIERRE DE APROBACIÓN</p><h3>{expense.title}</h3><span className="muted">Adjunta la factura final para cerrar esta solicitud aprobada.</span></div><label>Factura<input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={e=>setInvoice(e.target.files[0]||null)} required /></label><label>Notas de cierre<textarea rows="2" value={notes} onChange={e=>setNotes(e.target.value)} /></label>{error&&<div className="notice error">{error}</div>}<div className="closure-actions"><button type="button" className="secondary" onClick={onCancel}>Cancelar</button><button className="primary" disabled={saving}>{saving?'Cerrando...':'Cerrar aprobación'}</button></div></form>
 }
 
-function ExpenseTable({ refreshKey, canEdit, isAdmin, onEdit, onChanged, categoryOptions=expenseTypes }) {
+function ExpenseTable({ refreshKey, canEdit, isAdmin, onEdit, onChanged, categoryOptions=[], subcategoryOptions={} }) {
   const expenseTypes=categoryOptions
+  const subcategoryName=value=>Object.values(subcategoryOptions).flat().find(([code])=>code===value)?.[1]||value
   const [items,setItems]=useState([]); const [error,setError]=useState(''); const [search,setSearch]=useState(''); const [status,setStatus]=useState(''); const [category,setCategory]=useState(''); const [closing,setClosing]=useState(null)
   useEffect(()=>{ api('/api/expenses').then(data=>setItems(latestExpenseVersions(data).map(item=>({...item,approvals:item.approvals.filter(a=>a.flow_id===item.flow_id),internal_request_id:item.request_id,request_id:item.display_id})))).catch(e=>setError(e.message)) },[refreshKey])
   const cancel=async expense=>{const reason=window.prompt(`Indica el motivo para cancelar "${expense.title}":`);if(!reason)return;try{await api(`/api/expenses/${expense.request_id}/cancel`,{method:'POST',body:JSON.stringify({reason})});onChanged()}catch(err){setError(err.message)}}
@@ -128,7 +123,7 @@ function CorrectionPicker({ refreshKey, onEdit }) {
   return <section className="correction-bar"><span>¿Necesitas corregir una solicitud enviada?</span><div><select id="correction-request" defaultValue=""><option value="" disabled>Selecciona una solicitud</option>{items.map(x=><option key={x.request_id} value={x.request_id}>{x.title} · {x.status} · {x.request_id.slice(0,8)}</option>)}</select><button className="secondary nowrap" onClick={()=>{const id=document.getElementById('correction-request').value;const item=items.find(x=>x.request_id===id);if(item)onEdit(item)}}>Corregir / reenviar</button></div></section>
 }
 
-function Invoices({ categoryOptions=expenseTypes }) {
+function Invoices({ categoryOptions=[] }) {
   const [items,setItems]=useState([]),[search,setSearch]=useState(''),[category,setCategory]=useState(''),[loading,setLoading]=useState(false),[error,setError]=useState('')
   const load=async()=>{setLoading(true);setError('');try{const params=new URLSearchParams();if(search.trim())params.set('q',search.trim());if(category)params.set('category',category);setItems(await api(`/api/expenses/invoices${params.size?`?${params}`:''}`))}catch(e){setError(e.message)}finally{setLoading(false)}}
   useEffect(()=>{load()},[])
@@ -163,13 +158,14 @@ function Users() {
 }
 
 function CategorySettings({onChanged}) {
-  const [items,setItems]=useState([]),[category,setCategory]=useState({name:''}),[subforms,setSubforms]=useState({}),[message,setMessage]=useState(null)
-  const load=()=>api('/api/categories?include_inactive=true').then(setItems).catch(e=>setMessage({type:'error',text:e.message})); useEffect(load,[])
+  const [items,setItems]=useState([]),[category,setCategory]=useState({name:''}),[subforms,setSubforms]=useState({}),[drafts,setDrafts]=useState({}),[message,setMessage]=useState(null)
+  const load=()=>api('/api/categories?include_inactive=true').then(data=>{setItems(data);setDrafts(Object.fromEntries(data.flatMap(item=>[[`category-${item.id}`,item.name],...item.subcategories.map(sub=>[`subcategory-${sub.id}`,sub.name])])))}).catch(e=>setMessage({type:'error',text:e.message})); useEffect(load,[])
   const create=async e=>{e.preventDefault();try{await api('/api/categories',{method:'POST',body:JSON.stringify({name:category.name})});setCategory({name:''});setMessage({type:'success',text:'Categoría creada y código generado automáticamente.'});load();onChanged()}catch(err){setMessage({type:'error',text:err.message})}}
   const addSub=async (categoryId)=>{const form=subforms[categoryId]||{};try{await api(`/api/categories/${categoryId}/subcategories`,{method:'POST',body:JSON.stringify({name:form.name||''})});setSubforms({...subforms,[categoryId]:{name:''}});load();onChanged()}catch(err){setMessage({type:'error',text:err.message})}}
   const toggle=async (path,active)=>{try{await api(path,{method:'PATCH',body:JSON.stringify({active})});load();onChanged()}catch(err){setMessage({type:'error',text:err.message})}}
+  const rename=async (path,key)=>{try{await api(path,{method:'PATCH',body:JSON.stringify({name:drafts[key]})});setMessage({type:'success',text:'Nombre actualizado.'});load();onChanged()}catch(err){setMessage({type:'error',text:err.message})}}
   return <><section className="card"><p className="eyebrow">CATÁLOGOS</p><h2>Registrar categoría</h2><p className="muted">El código interno se genera automáticamente. Usa solamente letras y espacios; se permiten tildes y ñ.</p><form className="form-grid" onSubmit={create}><label className="full">Nombre de la categoría<input value={category.name} onChange={e=>setCategory({name:e.target.value})} placeholder="Ej. Áreas verdes" required /></label><div className="full form-actions">{message&&<div className={`notice ${message.type}`}>{message.text}</div>}<button className="primary">Crear categoría</button></div></form></section>
-  <section className="card"><h2>Categorías y subcategorías</h2><div className="catalog-grid">{items.map(item=><article className="catalog-card" key={item.id}><div className="catalog-heading"><div><strong>{item.name}</strong><span>{item.code}</span></div><button className="secondary" onClick={()=>toggle(`/api/categories/${item.id}`,!item.active)}>{item.active?'Desactivar':'Activar'}</button></div><div className="catalog-subs">{item.subcategories.map(sub=><div key={sub.id}><span>{sub.name} <small>{sub.code}</small></span><button className="link-button" onClick={()=>toggle(`/api/categories/subcategories/${sub.id}`,!sub.active)}>{sub.active?'Desactivar':'Activar'}</button></div>)}</div><div className="sub-create single-field"><input placeholder="Nombre de la subcategoría" value={subforms[item.id]?.name||''} onChange={e=>setSubforms({...subforms,[item.id]:{name:e.target.value}})}/><button className="primary" onClick={()=>addSub(item.id)}>Agregar</button></div></article>)}</div></section></>
+  <section className="card"><h2>Categorías y subcategorías</h2><div className="catalog-grid">{items.map(item=>{const categoryKey=`category-${item.id}`;return <article className="catalog-card" key={item.id}><div className="catalog-heading"><div><input value={drafts[categoryKey]||''} onChange={e=>setDrafts({...drafts,[categoryKey]:e.target.value})}/><span>{item.code}</span></div><div className="row-actions"><button className="primary" disabled={drafts[categoryKey]===item.name} onClick={()=>rename(`/api/categories/${item.id}`,categoryKey)}>Guardar</button><button className="secondary" onClick={()=>toggle(`/api/categories/${item.id}`,!item.active)}>{item.active?'Desactivar':'Activar'}</button></div></div><div className="catalog-subs">{item.subcategories.map(sub=>{const subKey=`subcategory-${sub.id}`;return <div key={sub.id}><span><input value={drafts[subKey]||''} onChange={e=>setDrafts({...drafts,[subKey]:e.target.value})}/> <small>{sub.code}</small></span><div className="row-actions"><button className="link-button" disabled={drafts[subKey]===sub.name} onClick={()=>rename(`/api/categories/subcategories/${sub.id}`,subKey)}>Guardar</button><button className="link-button" onClick={()=>toggle(`/api/categories/subcategories/${sub.id}`,!sub.active)}>{sub.active?'Desactivar':'Activar'}</button></div></div>})}</div><div className="sub-create single-field"><input placeholder="Nombre de la subcategoría" value={subforms[item.id]?.name||''} onChange={e=>setSubforms({...subforms,[item.id]:{name:e.target.value}})}/><button className="primary" onClick={()=>addSub(item.id)}>Agregar</button></div></article>})}</div></section></>
 }
 
 function ApprovalPage({token,user}) { const [data,setData]=useState(null),[comment,setComment]=useState(''),[message,setMessage]=useState(null); const load=()=>api(`/api/approvals/${token}`).then(setData).catch(e=>setMessage({type:'error',text:e.message})); useEffect(load,[token]); const decide=async decision=>{if(decision==='REVISION_REQUESTED'&&comment.trim().length<3){setMessage({type:'error',text:'Indica en el comentario qué debe corregir el solicitante.'});return}try{await api(`/api/approvals/${token}`,{method:'POST',body:JSON.stringify({decision,comment:comment||null})});setMessage({type:'success',text:decision==='REVISION_REQUESTED'?'Solicitud devuelta al solicitante para revisión.':'Decisión registrada.'});load()}catch(e){setMessage({type:'error',text:e.message})}}; if(!data)return <main className="single"><section className="card">{message?<div className="notice error">{message.text}</div>:'Cargando...'}</section></main>; const x=data.expense,pending=data.approval_status==='PENDING',preferredAction=new URLSearchParams(window.location.search).get('action'),resultClass=data.approval_status==='REVISION_REQUESTED'?'revision':data.approval_status.toLowerCase(),resultIcon=data.approval_status==='APPROVED'?'✓':data.approval_status==='REJECTED'?'×':'!',resultLabel=data.approval_status==='APPROVED'?'APROBADA':data.approval_status==='REJECTED'?'RECHAZADA':'EN REVISIÓN',promptLabel=preferredAction==='approve'?'APROBAR':preferredAction==='reject'?'RECHAZAR':'ENVIAR A REVISIÓN'; return <main className="single"><section className="card approval-card"><p className="eyebrow">APROBACIÓN DE GASTO</p><h1>Solicitud {x.display_id}</h1><p className="muted">Flujo: {x.flow_id}</p>{!pending&&['APPROVED','REJECTED','REVISION_REQUESTED'].includes(data.approval_status)&&<div className={`decision-result ${resultClass}`}><div className="decision-icon">{resultIcon}</div><strong>{resultLabel}</strong><span>{data.approval_status==='REVISION_REQUESTED'?'La solicitud volvió al solicitante para que realice las correcciones indicadas.':'La decisión fue registrada correctamente.'}</span></div>}{pending&&preferredAction&&<div className={`action-prompt ${preferredAction}`}>El correo solicitó <strong>{promptLabel}</strong>. Revisa todo el detalle y confirma tu decisión abajo.</div>}<div className="amount">${Number(x.amount).toLocaleString(undefined,{minimumFractionDigits:2})}</div><h2>{x.title}</h2><h3 className="detail-title">Detalle de la solicitud</h3><dl className="details"><div><dt>Categoría</dt><dd>{x.expense_type}</dd></div><div><dt>Subcategoría</dt><dd>{subcategoryName(x.expense_subcategory)||'—'}</dd></div><div><dt>Proveedor</dt><dd>{x.supplier}</dd></div><div><dt>Solicitante</dt><dd>{x.requested_by}</dd></div><div><dt>Responsable de esta acción</dt><dd>{user.email}</dd></div><div><dt>Estado del paso</dt><dd>{data.approval_status}</dd></div></dl><div className="description-box"><strong>Descripción / justificación</strong><p>{x.description}</p></div>{(x.item_url||x.attachments.length>0)&&<div className="support-box"><strong>Soportes de la solicitud</strong>{x.item_url&&<a href={x.item_url} target="_blank" rel="noreferrer">Abrir producto o servicio</a>}{x.attachments.map(a=><button className="link-button" key={a.id} onClick={()=>downloadAttachment(a).catch(e=>setMessage({type:'error',text:e.message}))}>Descargar {a.original_name}</button>)}</div>}<label>Comentario de la decisión<textarea rows="4" value={comment} onChange={e=>setComment(e.target.value)} disabled={!pending} placeholder="Para revisión, indica qué debe corregir el solicitante."/></label>{message&&<div className={`notice ${message.type}`}>{message.text}</div>}<div className="decision-actions"><button className="danger" disabled={!pending} onClick={()=>decide('REJECTED')}>{preferredAction==='reject'?'Confirmar rechazo':'Rechazar'}</button><button className="review" disabled={!pending} onClick={()=>decide('REVISION_REQUESTED')}>{preferredAction==='revision'?'Confirmar envío a revisión':'Enviar a revisión'}</button><button className="primary" disabled={!pending} onClick={()=>decide('APPROVED')}>{preferredAction==='approve'?'Confirmar aprobación':'Aprobar'}</button></div></section></main> }
@@ -199,10 +195,10 @@ function App(){
   const startRevision=item=>{setRevision(item);setTimeout(()=>document.getElementById('expense-form')?.scrollIntoView({behavior:'smooth'}),0)}
   const created=()=>{setRevision(null);setRefresh(x=>x+1)}
   const canCreate=user.role==='ADMIN'||user.can_request, canView=user.role==='ADMIN'||user.can_view, canConfigure=user.role==='ADMIN'||user.can_configure
-  const categoryOptions=catalog.length?catalog.map(x=>[x.code,x.name]):expenseTypes
-  const subcategoryOptions=catalog.length?Object.fromEntries(catalog.map(x=>[x.code,x.subcategories.filter(s=>s.active).map(s=>[s.code,s.name])])):subcategories
+  const categoryOptions=catalog.map(x=>[x.code,x.name])
+  const subcategoryOptions=Object.fromEntries(catalog.map(x=>[x.code,x.subcategories.filter(s=>s.active).map(s=>[s.code,s.name])]))
   const titles={expenses:'Solicitudes de gasto del PH',invoices:'Consulta de facturas',users:'Configuración de permisos',categories:'Categorías y subcategorías',rules:'Reglas de aprobación'}
   return <><header className="topbar"><div><div className="brand-mark">PH</div><div><strong>Gestión de Gastos</strong><span>{user.name} · {roleName(user.role)}</span></div></div><div className="header-actions"><button onClick={()=>setTab('expenses')}>Solicitudes</button>{canView&&<button onClick={()=>setTab('invoices')}>Facturas</button>}{canConfigure&&<><button onClick={()=>setTab('users')}>Permisos</button><button onClick={()=>setTab('categories')}>Categorías</button><button onClick={()=>setTab('rules')}>Reglas</button></>}<button onClick={logout}>Salir</button></div></header><main className="layout"><section className="hero"><p className="eyebrow">CONTROL · TRAZABILIDAD · APROBACIÓN</p><h1>{titles[tab]}</h1></section>{tab==='invoices'&&canView?<Invoices categoryOptions={categoryOptions}/>:tab==='users'&&canConfigure?<Users/>:tab==='categories'&&canConfigure?<CategorySettings onChanged={()=>setRefresh(x=>x+1)}/>:tab==='rules'&&canConfigure?<RuleSettings categoryOptions={categoryOptions}/>:<>{canCreate&&<ExpenseForm onCreated={created} draft={revision} onCancelEdit={()=>setRevision(null)} categoryOptions={categoryOptions} subcategoryOptions={subcategoryOptions}/>}<ExpenseTable refreshKey={refresh} canEdit={canCreate} isAdmin={user.role==='ADMIN'} onEdit={startRevision} onChanged={()=>setRefresh(x=>x+1)} categoryOptions={categoryOptions}/></>}</main></>
 }
 
-createRoot(document.getElementById('root')).render(<React.StrictMode><App/></React.StrictMode>)
+createRoot(document.getElementById('root')).render(<React.StrictMode><AppErrorBoundary><App/></AppErrorBoundary></React.StrictMode>)

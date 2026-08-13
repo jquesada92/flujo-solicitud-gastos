@@ -15,68 +15,41 @@ def _status_value(value) -> str:
     return value.value if hasattr(value, 'value') else str(value)
 
 
-def record_step_event(
-    db: Session,
-    approval: Approval,
-    event_type: str,
-    previous_status: ApprovalStatus | None,
-    *,
-    actor_email: str | None = None,
-    comment: str | None = None,
-) -> None:
-    """Write the immutable event in the same transaction as its state change."""
+def record_step_event(db: Session, approval: Approval, event_type: str,
+                      previous_status: ApprovalStatus | None, *,
+                      actor_email: str | None = None, comment: str | None = None) -> None:
+    """Store the event in the same transaction as the approval state change."""
     expense = approval.expense
-    new_status = _status_value(approval.status)
-    expense_status = _status_value(expense.status)
     event_id = str(uuid.uuid4())
     occurred_at = datetime.now(timezone.utc)
+    new_status = _status_value(approval.status)
+    expense_status = _status_value(expense.status)
     payload = {
-        'schema_version': 1,
-        'event_id': event_id,
-        'occurred_at': occurred_at.isoformat(),
+        'schema_version': 1, 'event_id': event_id, 'occurred_at': occurred_at.isoformat(),
         'event_type': event_type,
         'request': {
-            'expense_id': expense.id,
-            'request_id': expense.request_id,
-            'display_id': expense.display_id,
-            'flow_id': approval.flow_id,
-            'title': expense.title,
-            'expense_type': expense.expense_type,
-            'expense_subcategory': expense.expense_subcategory,
-            'amount': str(expense.amount),
-            'supplier': expense.supplier,
-            'requested_by': expense.requested_by,
+            'expense_id': expense.id, 'request_id': expense.request_id,
+            'display_id': expense.display_id, 'flow_id': approval.flow_id,
+            'title': expense.title, 'expense_type': expense.expense_type,
+            'expense_subcategory': expense.expense_subcategory, 'amount': str(expense.amount),
+            'supplier': expense.supplier, 'requested_by': expense.requested_by,
             'status': expense_status,
         },
         'approval_step': {
-            'approval_id': approval.id,
-            'step': approval.step,
-            'approver_email': approval.approver_email,
-            'approver_role': approval.approver_role,
+            'approval_id': approval.id, 'step': approval.step,
+            'approver_email': approval.approver_email, 'approver_role': approval.approver_role,
             'previous_status': _status_value(previous_status) if previous_status else None,
-            'new_status': new_status,
-            'actor_email': actor_email,
-            'comment': comment,
+            'new_status': new_status, 'actor_email': actor_email, 'comment': comment,
         },
     }
     db.add(ApprovalStepEvent(
-        event_id=event_id,
-        occurred_at=occurred_at,
-        event_type=event_type,
-        expense_id=expense.id,
-        approval_id=approval.id,
-        request_id=expense.request_id,
-        display_id=expense.display_id,
-        flow_id=approval.flow_id,
-        step=approval.step,
-        approver_email=approval.approver_email,
-        approver_role=approval.approver_role,
+        event_id=event_id, occurred_at=occurred_at, event_type=event_type,
+        expense_id=expense.id, approval_id=approval.id, request_id=expense.request_id,
+        display_id=expense.display_id, flow_id=approval.flow_id, step=approval.step,
+        approver_email=approval.approver_email, approver_role=approval.approver_role,
         previous_status=_status_value(previous_status) if previous_status else None,
-        new_status=new_status,
-        expense_status=expense_status,
-        actor_email=actor_email,
-        comment=comment,
-        payload=payload,
+        new_status=new_status, expense_status=expense_status, actor_email=actor_email,
+        comment=comment, payload=payload,
     ))
 
 

@@ -192,14 +192,12 @@ Crea tablas equivalentes a:
 - `approvals`
 - `approval_step_events` como historial append-only de todas las transiciones.
 
-La tabla de eventos debe estar preparada para CDC/streaming a un datalake. Incluye
-un cursor monotónico `event_sequence`, un `event_id` UUID para deduplicación,
-`occurred_at` con zona horaria asignado por PostgreSQL, `request_id`, `display_id`,
-`flow_id`, `approval_id`, `step`, aprobador/rol, estado anterior y nuevo, estado de
-la solicitud, actor, comentario, tipo de evento y un `payload` JSON versionado con
-el snapshot completo. Registra al menos creación, activación, aprobación, rechazo,
-solicitud de revisión y expiración. El evento y el cambio de estado deben guardarse
-en la misma transacción; nunca actualices ni borres eventos ya emitidos.
+La tabla debe quedar preparada para implementar CDC posteriormente sin perder
+datos. Incluye `event_sequence` monotónico, `event_id` UUID para idempotencia,
+`occurred_at` con zona horaria asignado por PostgreSQL, identificadores de solicitud,
+flujo y aprobación, estados anterior y nuevo, actor, comentario, tipo de evento y
+un `payload` JSON versionado. El evento y el cambio de estado se guardan en la misma
+transacción; los eventos emitidos nunca se actualizan ni se borran.
 
 Define claves foráneas, índices y restricciones únicas para correos, códigos, UUID, ID legible, tokens y nombres almacenados. Usa borrado en cascada solo donde corresponda. Evita N+1 al listar solicitudes con aprobaciones y adjuntos.
 
