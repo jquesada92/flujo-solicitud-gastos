@@ -1,0 +1,45 @@
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release
+    uses: ./.github/workflows/reusable-ci.yml
+
+  deploy-backend:
+    name: Trigger Render
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Trigger backend deployment
+        env:
+          DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          test -n "$DEPLOY_HOOK"
+          curl --fail --silent --show-error --request POST "$DEPLOY_HOOK"
+
+  deploy-frontend:
+    name: Trigger Vercel
+    needs: deploy-backend
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Trigger frontend deployment
+        env:
+          DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          test -n "$DEPLOY_HOOK"
+          curl --fail --silent --show-error --request POST "$DEPLOY_HOOK"

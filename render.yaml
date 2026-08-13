@@ -4,6 +4,7 @@ services:
     runtime: docker
     rootDir: backend
     dockerfilePath: ./Dockerfile
+    autoDeploy: false
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
