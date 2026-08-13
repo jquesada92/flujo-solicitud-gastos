@@ -76,6 +76,12 @@ Los eventos registrados son `STEP_CREATED`, `STEP_ACTIVATED`, `STEP_APPROVED`,
 
 ## Ambientes
 
+| Ambiente | Frontend | Backend | Base de datos | Archivos | Uso |
+|---|---|---|---|---|---|
+| Local | Docker/Nginx en `localhost:3000` | Docker/FastAPI | PostgreSQL Docker local | Volumen Docker local | Desarrollo diario. |
+| Preview Cloudflare | Cloudflare Quick Tunnel hacia el frontend Docker | Docker/FastAPI local | PostgreSQL Docker aislado de producción | Volumen Docker local | Demostraciones y pruebas remotas temporales. |
+| Producción | Vercel | Render | Neon | Disco persistente de Render | Aplicación estable para usuarios finales. |
+
 ### Desarrollo local
 
 Todo el ambiente de desarrollo corre localmente: PostgreSQL, FastAPI, React/Nginx
@@ -106,6 +112,31 @@ y `expense_uploads`. Para detener el ambiente sin borrar datos:
 docker compose down
 ```
 
+### Preview con Cloudflare Tunnel
+
+Este ambiente publica temporalmente el stack Docker local. No utiliza Neon,
+Vercel ni Render y nunca debe recibir `DATABASE_URL` de producción.
+
+Prepara sus variables separadas:
+
+```powershell
+.\scripts\start-preview.ps1
+```
+
+El script crea `.env.preview` cuando no existe, levanta los contenedores, captura
+automáticamente la URL `https://...trycloudflare.com`, actualiza `PUBLIC_URL`,
+recrea el backend y muestra la URL lista para compartir.
+
+Para detenerlo sin eliminar datos locales:
+
+```powershell
+.\scripts\stop-preview.ps1
+```
+
+El nombre de proyecto `flujo-gastos-preview` crea volúmenes diferentes de los del
+ambiente local. Local y preview escuchan en el mismo puerto 3000, por lo que se usa
+uno a la vez.
+
 ### Producción
 
 - Frontend en Vercel, con Root Directory `frontend` y `VITE_API_URL` apuntando a Render.
@@ -132,46 +163,6 @@ agrega estos Environment secrets:
 Si deseas aprobación manual antes de publicar, agrega Required reviewers al ambiente
 `production`. Desactiva los deploys automáticos por Git en Render y Vercel para no
 generar un segundo despliegue paralelo; GitHub Actions será el orquestador.
-
-## Publicar el MVP gratuitamente
-
-La configuración opcional `docker-compose.preview.yml` abre un Cloudflare Quick
-Tunnel HTTPS hacia el frontend. No expone PostgreSQL ni FastAPI directamente, no
-requiere abrir puertos del router y no necesita dominio ni cuenta de Cloudflare.
-
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.preview.yml up --build -d
-docker compose -f docker-compose.yml -f docker-compose.preview.yml logs tunnel
-```
-
-En los logs aparecerá una dirección parecida a:
-
-```text
-https://palabras-aleatorias.trycloudflare.com
-```
-
-Antes de probar correos de aprobación o invitaciones, copia esa dirección en
-`.env` y recrea el backend:
-
-```env
-PUBLIC_URL=https://palabras-aleatorias.trycloudflare.com
-```
-
-```powershell
-docker compose up -d --force-recreate backend
-```
-
-La URL cambia si se recrea el contenedor `tunnel`; en ese caso actualiza
-`PUBLIC_URL` nuevamente. La computadora, Docker y el túnel deben permanecer
-encendidos. Esta modalidad sirve para demostraciones y validación de un MVP, pero
-Cloudflare no ofrece SLA para Quick Tunnels. La autenticación de la aplicación
-sigue siendo obligatoria y el puerto local 3000 solo escucha en `127.0.0.1`.
-
-Para detener la publicación:
-
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.preview.yml down
-```
 
 ## Gmail real
 
@@ -232,10 +223,15 @@ POST /api/rules
 | `docker-compose.yml` | Desarrollo | Levanta PostgreSQL, backend, frontend y volúmenes locales. | Al desarrollar y probar localmente. |
 | `.env.example` | Desarrollo | Plantilla de variables locales sin secretos reales. | Se copia como `.env` al preparar el entorno local. |
 | `.env` | Desarrollo | Contiene credenciales y configuración local de cada desarrollador. | Al ejecutar Docker Compose; nunca se sube a Git. |
+| `docker-compose.preview.yml` | Preview | Agrega Cloudflare Quick Tunnel al stack Docker. | Para demostraciones remotas temporales. |
+| `.env.preview.example` | Preview | Plantilla aislada de variables para el ambiente Cloudflare. | Se copia como `.env.preview`; nunca apunta a Neon. |
+| `.env.preview` | Preview | Contiene la URL temporal de Cloudflare y credenciales de preview. | Al ejecutar el proyecto Compose `flujo-gastos-preview`; no se sube a Git. |
+| `scripts/start-preview.ps1` | Preview | Inicia el ambiente, captura la URL de Cloudflare y actualiza `PUBLIC_URL`. | Al publicar una nueva sesión temporal de preview. |
+| `scripts/stop-preview.ps1` | Preview | Detiene los contenedores de preview sin borrar sus volúmenes. | Al finalizar una demostración remota. |
 | `.env.production.example` | Producción | Documenta las variables requeridas por Render y Neon. | Como referencia al configurar producción. |
-| `frontend/.env.example` | Desarrollo/producción | Documenta `VITE_API_URL`; vacía en local y con la URL de Render en Vercel. | Al configurar el frontend en cada ambiente. |
-| `backend/Dockerfile` | Desarrollo/producción | Construye y ejecuta FastAPI con Python y Uvicorn. | En CI, Docker local y Render. |
-| `frontend/Dockerfile` | Desarrollo/CI | Compila React/Vite y lo sirve mediante Nginx. | En Docker local y validaciones de CI. |
+| `frontend/.env.example` | Local/producción | Documenta `VITE_API_URL`; vacía en Docker y con la URL de Render en Vercel. | Al configurar el frontend en cada ambiente. |
+| `backend/Dockerfile` | Todos | Construye y ejecuta FastAPI con Python y Uvicorn. | En local, preview, CI y Render. |
+| `frontend/Dockerfile` | Local/preview/CI | Compila React/Vite y lo sirve mediante Nginx. | En Docker local, Cloudflare y validaciones de CI. |
 | `frontend/package-lock.json` | Todos | Fija las versiones exactas de las dependencias npm. | En `npm ci`, Docker, Vercel y GitHub Actions. |
 | `frontend/vercel.json` | Producción | Configura Vite, rutas SPA y caché de `index.html` en Vercel. | En cada despliegue del frontend. |
 | `render.yaml` | Producción | Define el backend, health check, variables y disco persistente en Render. | Al crear o actualizar el servicio backend. |
