@@ -105,6 +105,12 @@ td { padding: 15px 12px; border-bottom: 1px solid #eef0f4; vertical-align: top; 
 .sub-create.single-field { grid-template-columns: 1fr auto; }
 .row-actions { display: grid; gap: 6px; min-width: 145px; }
 .row-actions button { padding: 7px 9px; font-size: 11px; }
+.rule-profiles { border: 1px solid #d8dee8; border-radius: 10px; padding: 14px; display: flex; flex-wrap: wrap; gap: 10px 22px; }
+.rule-profiles legend { padding: 0 7px; color: #596579; font-size: 12px; }
+.rule-profiles label, .active-check { display: flex; align-items: center; flex-direction: row; gap: 8px; }
+.rule-profiles input, .active-check input { min-height: auto; width: 17px; height: 17px; }
+.rules-form-card .card-heading .muted { font-size: 0; }
+.rules-form-card .card-heading .muted::after { content: 'Define el rango, los cargos participantes y si basta una aprobación o deben aprobar todos. El límite inferior es excluyente y el superior es inclusivo.'; font-size: 13px; }
 .closure-panel { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 14px; align-items: end; margin: 0 0 20px; padding: 18px; border: 1px solid #bce3c8; border-radius: 12px; background: #f2faf4; }
 .closure-panel h3 { margin: 5px 0; }
 .closure-panel .notice, .closure-panel .closure-actions { grid-column: 1 / -1; }
@@ -170,6 +176,28 @@ dd { margin: 4px 0 0; font-size: 13px; font-weight: 700; }
   .correction-bar select { min-width: 0; }
   .catalog-grid { grid-template-columns: 1fr; }
   .permission-picker { align-items: flex-start; flex-direction: column; }
+  .rule-profiles { display: grid; grid-template-columns: 1fr; gap: 0; padding: 7px 12px; }
+  .rule-profiles label { min-height: 48px; border-bottom: 1px solid #edf0f4; }
+  .rule-profiles label:last-child { border-bottom: 0; }
+  .rule-profiles input { flex: 0 0 20px; width: 20px; height: 20px; }
+  .rules-form-card .form-actions { position: sticky; bottom: 0; z-index: 3; margin: 0 -16px -18px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: rgba(255,255,255,.96); border-top: 1px solid #e3e7ee; }
+  .rules-table-wrap { width: 100%; margin: 0; padding: 0; overflow: visible; }
+  .rules-table { min-width: 0; display: block; }
+  .rules-table thead { display: none; }
+  .rules-table tbody { display: grid; gap: 14px; }
+  .rules-table tr { display: grid; padding: 14px; border: 1px solid #e3e7ee; border-radius: 12px; box-shadow: 0 4px 14px rgba(17,24,39,.04); }
+  .rules-table td { position: static !important; display: grid; grid-template-columns: 104px minmax(0,1fr); gap: 10px; padding: 8px 0; border-bottom: 1px solid #eef0f4; box-shadow: none !important; overflow-wrap: anywhere; }
+  .rules-table td::before { color: #717b8d; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+  .rules-table td:nth-child(1)::before { content: 'Regla'; }
+  .rules-table td:nth-child(2)::before { content: 'Categoría'; }
+  .rules-table td:nth-child(3)::before { content: 'Rango'; }
+  .rules-table td:nth-child(4)::before { content: 'Aprobación'; }
+  .rules-table td:nth-child(5)::before { content: 'Cargos'; }
+  .rules-table td:nth-child(6)::before { content: 'Estado'; }
+  .rules-table td:nth-child(7) { display: block; padding-top: 12px; border-bottom: 0; }
+  .rules-table td:nth-child(7)::before { content: none; }
+  .rules-table .row-actions { grid-template-columns: 1fr 1fr; min-width: 0; }
+  .rules-table .row-actions button { min-height: 44px; }
   .profile-create { grid-template-columns: 1fr; }
   .bulk-save { align-items: stretch; flex-direction: column; }
   .catalog-heading { align-items: flex-start; }

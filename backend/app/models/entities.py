@@ -190,6 +190,22 @@ class ApprovalRule(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
+class ApprovalPolicy(Base):
+    """Configurable amount band and the quorum required for its approvers."""
+
+    __tablename__ = 'approval_policies'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    expense_type: Mapped[str] = mapped_column(String(80), nullable=False, default='ALL', index=True)
+    min_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    max_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    approval_mode: Mapped[str] = mapped_column(String(20), nullable=False, default='ANY')
+    approver_profile_codes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class Approval(Base):
     __tablename__ = 'approvals'
 
@@ -199,6 +215,7 @@ class Approval(Base):
     approver_email: Mapped[str] = mapped_column(String(255), nullable=False)
     approver_role: Mapped[str] = mapped_column(String(100), nullable=False)
     step: Mapped[int] = mapped_column(Integer, nullable=False)
+    approval_mode: Mapped[str] = mapped_column(String(20), nullable=False, default='SEQUENTIAL')
     token: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
     status: Mapped[ApprovalStatus] = mapped_column(Enum(ApprovalStatus), default=ApprovalStatus.WAITING, nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)

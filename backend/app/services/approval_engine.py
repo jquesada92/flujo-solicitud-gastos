@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
-from app.models.entities import Approval, ApprovalRule, ApprovalStatus, ApprovalStepEvent, Expense, ExpenseStatus
+from app.models.entities import Approval, ApprovalPolicy, ApprovalRule, ApprovalStatus, ApprovalStepEvent, Expense, ExpenseStatus, User, UserRole
 from app.services.email_service import send_approval_request, send_final_notification
 
 logger = logging.getLogger(__name__)
@@ -112,6 +112,32 @@ def matching_rules(db: Session, expense: Expense) -> list[ApprovalRule]:
 
 
 def start_approval_flow(db: Session, expense: Expense) -> None:
+    amount = Decimal(expense.amount)
+    policies = list(db.scalars(select(ApprovalPolicy).where(
+        ApprovalPolicy.active.is_(True),
+        ApprovalPolicy.expense_type.in_([expense.expense_type, 'ALL']),
+        ApprovalPolicy.min_amount < amount,
+        or_(ApprovalPolicy.max_amount.is_(None), ApprovalPolicy.max_amount >= amount),
+    ).order_by(ApprovalPolicy.expense_type.desc())).all())
+    if policies:
+        policy = next((p for p in policies if p.expense_type == expense.expense_type), policies[0])
+        users = list(db.scalars(select(User).where(
+            User.active.is_(True), User.can_approve.is_(True), User.role != UserRole.ADMIN,
+            User.title.in_(policy.approver_profile_codes),
+        ).order_by(User.id)).all())
+        if not users:
+            raise ValueError('La regla aplicable no tiene usuarios activos en los cargos aprobadores seleccionados')
+        approvals = [Approval(expense_id=expense.id, flow_id=expense.flow_id, approver_email=user.email,
+            approver_role=user.title, step=index, approval_mode=policy.approval_mode,
+            token=secrets.token_urlsafe(32), status=ApprovalStatus.PENDING)
+            for index, user in enumerate(users, 1)]
+        expense.status = ExpenseStatus.PENDING_APPROVAL
+        db.add_all(approvals); db.flush()
+        for item in approvals: record_step_event(db, item, 'STEP_CREATED', None)
+        db.commit(); db.refresh(expense)
+        for item in approvals: _safe_email(send_approval_request, item)
+        return
+
     rules = matching_rules(db, expense)
     if not rules:
         raise ValueError(f'No approval rule configured for type={expense.expense_type} amount={expense.amount}')
@@ -165,6 +191,25 @@ def apply_decision(
     approval.comment = comment
     approval.decided_at = datetime.utcnow()
     expense = approval.expense
+
+    if approval.approval_mode in ('ANY', 'ALL'):
+        peers = [a for a in expense.approvals if a.flow_id == approval.flow_id]
+        record_step_event(db, approval, f'STEP_{decision.value}', previous_status, actor_email=actor_email, comment=comment)
+        if decision == ApprovalStatus.REVISION_REQUESTED:
+            if not comment or len(comment.strip()) < 3:
+                raise ValueError('Debes indicar qué debe corregir el solicitante')
+            expense.status = ExpenseStatus.NEEDS_REVISION
+            expire_open_approvals(db, expense, approval.id, actor_email)
+        elif decision == ApprovalStatus.REJECTED:
+            if approval.approval_mode == 'ALL' or not any(a.status == ApprovalStatus.PENDING for a in peers):
+                expense.status = ExpenseStatus.REJECTED
+                expire_open_approvals(db, expense, approval.id, actor_email)
+        elif approval.approval_mode == 'ANY' or all(a.status == ApprovalStatus.APPROVED for a in peers):
+            expense.status = ExpenseStatus.APPROVED
+            expire_open_approvals(db, expense, approval.id, actor_email)
+        db.commit(); db.refresh(expense)
+        if expense.status != ExpenseStatus.PENDING_APPROVAL: _safe_email(send_final_notification, expense)
+        return expense
 
     if decision == ApprovalStatus.REJECTED:
         expense.status = ExpenseStatus.REJECTED

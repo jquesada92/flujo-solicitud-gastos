@@ -245,6 +245,9 @@ def migrate_schema() -> None:
         attachment_columns = {column['name'] for column in inspect(engine).get_columns('expense_attachments')}
         if 'document_type' not in attachment_columns:
             connection.execute(text("ALTER TABLE expense_attachments ADD COLUMN document_type VARCHAR(40) NOT NULL DEFAULT 'QUOTATION'"))
+        approval_columns = {column['name'] for column in inspect(engine).get_columns('approvals')}
+        if 'approval_mode' not in approval_columns:
+            connection.execute(text("ALTER TABLE approvals ADD COLUMN approval_mode VARCHAR(20) NOT NULL DEFAULT 'SEQUENTIAL'"))
         # The event log is an immutable CDC source. State changes and events are
         # inserted atomically by the application; historical facts cannot change.
         connection.execute(text('''
