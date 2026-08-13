@@ -41,6 +41,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
+    title: Mapped[str] = mapped_column(String(40), nullable=False, default='PROPIETARIO')
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     can_request: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_approve: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -48,6 +49,59 @@ class User(Base):
     can_configure: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class UserChangeEvent(Base):
+    """Immutable audit trail for user access and permission changes."""
+
+    __tablename__ = 'user_change_events'
+    __table_args__ = (
+        Index('ix_user_change_events_user_time', 'user_id', 'occurred_at'),
+    )
+
+    event_sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='RESTRICT'), nullable=False, index=True)
+    user_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor_user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='RESTRICT'), nullable=False)
+    actor_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    changed_fields: Mapped[list] = mapped_column(JSON, nullable=False)
+    before_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    after_state: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
+class AccessProfile(Base):
+    __tablename__ = 'access_profiles'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(70), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    can_request: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    can_approve: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    can_view: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    can_configure: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    has_user_limit: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    max_users: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class AccessProfileChangeEvent(Base):
+    __tablename__ = 'access_profile_change_events'
+
+    event_sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    profile_id: Mapped[int] = mapped_column(ForeignKey('access_profiles.id', ondelete='RESTRICT'), nullable=False, index=True)
+    profile_code: Mapped[str] = mapped_column(String(70), nullable=False)
+    actor_user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='RESTRICT'), nullable=False)
+    actor_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    changed_fields: Mapped[list] = mapped_column(JSON, nullable=False)
+    before_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    after_state: Mapped[dict] = mapped_column(JSON, nullable=False)
 
 
 class Expense(Base):

@@ -19,6 +19,25 @@ una invitación a su correo. En el primer inicio de sesión, la API bloquea toda
 operaciones hasta que el usuario reemplace esa contraseña. Con `EMAIL_MODE=console`,
 la invitación se imprime en los logs del backend; para entrega real usa `smtp`.
 
+El alta permite definir los cuatro permisos iniciales. Las modificaciones posteriores
+se preparan en la interfaz y se aplican juntas con un único botón **Guardar cambios**.
+El guardado masivo es transaccional: si una modificación falla, ninguna se aplica. Cada creación o
+cambio genera un registro append-only en `user_change_events` con fecha/hora, actor,
+usuario afectado, campos modificados y estados anterior/nuevo.
+
+Los cargos se administran como perfiles persistentes en `access_profiles`: se pueden
+crear, renombrar, activar/desactivar y configurar granularmente. Al asignar un cargo,
+sus permisos se convierten en los permisos efectivos del usuario y no pueden editarse
+individualmente. Al modificar los permisos de un perfil, el cambio se propaga a todos
+sus usuarios relacionados. Los cambios de perfiles se auditan en
+`access_profile_change_events`.
+
+Cada cargo puede activar el flag **Tiene límite** y definir un máximo de personas
+activas relacionadas. Sin el flag, no existe límite. Presidente, Vicepresidente y
+Tesorero se precargan con límite 1, pero la regla es configurable para cualquier
+cargo. La API y un trigger transaccional de PostgreSQL validan el cupo; no se permite
+reducirlo por debajo de las asignaciones activas existentes.
+
 MVP dockerizado para registrar solicitudes de gastos y ejecutar un flujo secuencial de aprobación configurable por tipo de gasto y monto.
 
 ## Stack
@@ -225,6 +244,7 @@ POST /api/auth/login
 GET  /api/auth/me
 POST /api/auth/change-password
 GET  /api/users
+GET  /api/users/changes
 POST /api/users
 PATCH /api/users/{id}
 GET  /api/expenses

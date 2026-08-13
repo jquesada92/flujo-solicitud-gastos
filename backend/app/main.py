@@ -11,7 +11,7 @@ from sqlalchemy import func, inspect, select, text, update
 from app.api import approvals, auth, categories, expenses, rules, users
 from app.core.security import hash_password, normalize_email
 from app.core.database import Base, SessionLocal, engine
-from app.models.entities import ApprovalRule, ExpenseCategory, ExpenseSubcategory, User, UserRole
+from app.models.entities import AccessProfile, ApprovalRule, ExpenseCategory, ExpenseSubcategory, User, UserRole
 
 logging.basicConfig(level=logging.INFO)
 
@@ -143,6 +143,42 @@ def migrate_schema() -> None:
         for name, default in (('can_request','FALSE'),('can_approve','FALSE'),('can_view','TRUE'),('can_configure','FALSE'),('must_change_password','FALSE')):
             if name not in user_columns:
                 connection.execute(text(f'ALTER TABLE users ADD COLUMN {name} BOOLEAN NOT NULL DEFAULT {default}'))
+        if 'title' not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN title VARCHAR(40) NOT NULL DEFAULT 'PROPIETARIO'"))
+            connection.execute(text("UPDATE users SET title = CASE WHEN role='ADMIN' THEN 'ADMIN_SISTEMA' WHEN role='APPROVER' THEN 'VOCERO' WHEN role='REQUESTER' THEN 'ADMINISTRADORA' ELSE 'PROPIETARIO' END"))
+        connection.execute(text('DROP INDEX IF EXISTS uq_users_single_active_officer'))
+        profile_columns = {column['name'] for column in inspect(engine).get_columns('access_profiles')}
+        if 'has_user_limit' not in profile_columns:
+            connection.execute(text('ALTER TABLE access_profiles ADD COLUMN has_user_limit BOOLEAN NOT NULL DEFAULT FALSE'))
+        if 'max_users' not in profile_columns:
+            connection.execute(text('ALTER TABLE access_profiles ADD COLUMN max_users INTEGER'))
+        connection.execute(text("UPDATE access_profiles SET has_user_limit=TRUE, max_users=1 WHERE code IN ('PRESIDENTE','VICEPRESIDENTE','TESORERO') AND has_user_limit=FALSE"))
+        connection.execute(text('''
+            CREATE OR REPLACE FUNCTION enforce_access_profile_user_limit()
+            RETURNS trigger AS $$
+            DECLARE configured_limit INTEGER;
+            DECLARE assigned_count INTEGER;
+            BEGIN
+                IF NEW.active = FALSE OR NEW.title = 'ADMIN_SISTEMA' THEN RETURN NEW; END IF;
+                PERFORM pg_advisory_xact_lock(hashtext(NEW.title));
+                SELECT CASE WHEN has_user_limit THEN max_users ELSE NULL END INTO configured_limit
+                FROM access_profiles WHERE code = NEW.title;
+                IF configured_limit IS NULL THEN RETURN NEW; END IF;
+                SELECT count(*) INTO assigned_count FROM users
+                WHERE title = NEW.title AND active = TRUE AND id <> NEW.id;
+                IF assigned_count >= configured_limit THEN
+                    RAISE EXCEPTION 'access profile % reached its active user limit of %', NEW.title, configured_limit;
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+        '''))
+        connection.execute(text('DROP TRIGGER IF EXISTS users_access_profile_limit ON users'))
+        connection.execute(text('''
+            CREATE TRIGGER users_access_profile_limit
+            BEFORE INSERT OR UPDATE OF title, active ON users
+            FOR EACH ROW EXECUTE FUNCTION enforce_access_profile_user_limit()
+        '''))
         connection.execute(text("UPDATE users SET can_request=TRUE, can_approve=TRUE, can_view=TRUE, can_configure=TRUE WHERE role='ADMIN'"))
         connection.execute(text("UPDATE users SET can_request=TRUE WHERE role='REQUESTER'"))
         connection.execute(text("UPDATE users SET can_approve=TRUE WHERE role='APPROVER'"))
@@ -225,6 +261,26 @@ def migrate_schema() -> None:
             BEFORE UPDATE OR DELETE ON approval_step_events
             FOR EACH ROW EXECUTE FUNCTION reject_approval_step_event_mutation()
         '''))
+        connection.execute(text('''
+            CREATE OR REPLACE FUNCTION reject_user_change_event_mutation()
+            RETURNS trigger AS $$
+            BEGIN
+                RAISE EXCEPTION 'user_change_events is append-only';
+            END;
+            $$ LANGUAGE plpgsql
+        '''))
+        connection.execute(text('DROP TRIGGER IF EXISTS user_change_events_immutable ON user_change_events'))
+        connection.execute(text('''
+            CREATE TRIGGER user_change_events_immutable
+            BEFORE UPDATE OR DELETE ON user_change_events
+            FOR EACH ROW EXECUTE FUNCTION reject_user_change_event_mutation()
+        '''))
+        connection.execute(text('DROP TRIGGER IF EXISTS access_profile_change_events_immutable ON access_profile_change_events'))
+        connection.execute(text('''
+            CREATE TRIGGER access_profile_change_events_immutable
+            BEFORE UPDATE OR DELETE ON access_profile_change_events
+            FOR EACH ROW EXECUTE FUNCTION reject_user_change_event_mutation()
+        '''))
 
 
 def seed_admin() -> None:
@@ -236,7 +292,35 @@ def seed_admin() -> None:
         # users already exist. Existing credentials are never overwritten.
         if db.scalar(select(User.id).where(func.lower(User.email) == email)):
             return
-        db.add(User(name=name, email=email, password_hash=hash_password(password), role=UserRole.ADMIN, can_request=True, can_approve=True, can_view=True, can_configure=True))
+        db.add(User(name=name, email=email, password_hash=hash_password(password), role=UserRole.ADMIN, title='ADMIN_SISTEMA', can_request=True, can_approve=True, can_view=True, can_configure=True))
+        db.commit()
+
+
+def seed_access_profiles() -> None:
+    defaults = [
+        ('PRESIDENTE', 'Presidente', True, True, True, False),
+        ('VICEPRESIDENTE', 'Vicepresidente', True, True, True, False),
+        ('TESORERO', 'Tesorero', True, True, True, False),
+        ('VOCERO', 'Vocero', True, True, True, False),
+        ('ADMINISTRADORA', 'Administradora', True, False, True, False),
+        ('MANTENIMIENTO', 'Mantenimiento', True, False, True, False),
+        ('PROPIETARIO', 'Propietario', False, False, True, False),
+    ]
+    with SessionLocal() as db:
+        existing = set(db.scalars(select(AccessProfile.code)).all())
+        db.add_all(AccessProfile(code=code, name=name, can_request=req, can_approve=approve,
+                                 can_view=view, can_configure=configure,
+                                 has_user_limit=code in {'PRESIDENTE','VICEPRESIDENTE','TESORERO'},
+                                 max_users=1 if code in {'PRESIDENTE','VICEPRESIDENTE','TESORERO'} else None)
+                   for code, name, req, approve, view, configure in defaults if code not in existing)
+        db.flush()
+        profiles = {profile.code: profile for profile in db.scalars(select(AccessProfile)).all()}
+        for user in db.scalars(select(User).where(User.role != UserRole.ADMIN)).all():
+            profile = profiles.get(user.title)
+            if profile:
+                user.can_request, user.can_approve = profile.can_request, profile.can_approve
+                user.can_view, user.can_configure = profile.can_view, profile.can_configure
+                user.role = UserRole.APPROVER if profile.can_approve else UserRole.REQUESTER if profile.can_request else UserRole.VIEWER
         db.commit()
 
 
@@ -245,6 +329,7 @@ async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     migrate_schema()
     seed_admin()
+    seed_access_profiles()
     seed_categories()
     seed_rules()
     yield
