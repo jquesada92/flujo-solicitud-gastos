@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Analytics } from "@vercel/analytics/react";
+import { injectSpeedInsights } from "@vercel/speed-insights";
 import "./styles.css";
+
+injectSpeedInsights();
 
 const API_BASE_URL = String(import.meta.env.VITE_API_URL || "").replace(
   /\/$/,
