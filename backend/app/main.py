@@ -8,10 +8,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, inspect, select, text, update
 
-from app.api import approvals, auth, categories, expenses, rules, users
+from app.api import approvals, audit, auth, categories, expenses, rules, users
 from app.core.security import hash_password, normalize_email
+from app.core.privacy import analytics_identifier
 from app.core.database import Base, SessionLocal, engine
-from app.models.entities import AccessProfile, ApprovalRule, ExpenseCategory, ExpenseSubcategory, User, UserRole
+from app.models.entities import AccessProfile, ApprovalPolicy, ApprovalPolicyChangeEvent, ApprovalRule, Expense, ExpenseCategory, ExpenseSubcategory, User, UserRole
 
 logging.basicConfig(level=logging.INFO)
 
@@ -48,6 +49,9 @@ def seed_rules() -> None:
     president = normalize_email(os.getenv('PRESIDENT_EMAIL', 'presidente@example.com'))
 
     with SessionLocal() as db:
+        legacy_policy = db.scalar(select(ApprovalPolicy).where(ApprovalPolicy.name == 'Aprobación de toda la Junta Directiva'))
+        if legacy_policy:
+            legacy_policy.name = 'Aprobación de todo el Organigrama directivo'
         default_rules = [
             ApprovalRule(
                 expense_type='ADMINISTRATION',
@@ -137,6 +141,29 @@ def seed_rules() -> None:
         configured_types = set(db.scalars(select(ApprovalRule.expense_type)).all())
         missing_rules = [rule for rule in default_rules if rule.expense_type not in configured_types]
         db.add_all(missing_rules)
+        real_policy = db.scalar(select(ApprovalPolicy.id).where(~ApprovalPolicy.name.like('[PRUEBA]%')).limit(1))
+        if not real_policy:
+            policy = ApprovalPolicy(
+                name='Aprobación de todo el Organigrama directivo',
+                expense_type='ALL',
+                min_amount=Decimal('0.00'),
+                max_amount=None,
+                approval_mode='ALL',
+                approver_profile_codes=['PRESIDENTE', 'VICEPRESIDENTE', 'TESORERO', 'VOCERO'],
+                active=True,
+            )
+            db.add(policy); db.flush()
+            admin = db.scalar(select(User).where(User.role == UserRole.ADMIN).order_by(User.id))
+            state = {'name': policy.name, 'expense_type': 'ALL', 'min_amount': '0.00',
+                     'max_amount': None, 'approval_mode': 'ALL',
+                     'approver_profile_codes': policy.approver_profile_codes, 'active': True}
+            if admin:
+                db.add(ApprovalPolicyChangeEvent(event_type='POLICY_CREATED', policy_id=policy.id,
+                    policy_name=policy.name, actor_user_id=admin.id, actor_email='Sistema',
+                    changed_fields=list(state), before_state=None, after_state=state))
+            for demo_policy in db.scalars(select(ApprovalPolicy).where(
+                    ApprovalPolicy.name.like('[PRUEBA]%'), ApprovalPolicy.active.is_(True))).all():
+                demo_policy.active = False
         db.commit()
 
 
@@ -145,7 +172,15 @@ def migrate_schema() -> None:
     columns = {column['name'] for column in inspect(engine).get_columns('expenses')}
     approval_columns = {column['name'] for column in inspect(engine).get_columns('approvals')}
     user_columns = {column['name'] for column in inspect(engine).get_columns('users')}
+    profile_columns = {column['name'] for column in inspect(engine).get_columns('access_profiles')}
     with engine.begin() as connection:
+        connection.execute(text("""
+            INSERT INTO apartments (apartment_number, floor, letter, is_rental)
+            SELECT floor::text || letter, floor, letter, FALSE
+            FROM generate_series(6, 21) AS floor
+            CROSS JOIN unnest(ARRAY['A','B','C','D','E','F','G','H']) AS letter
+            ON CONFLICT (apartment_number) DO NOTHING
+        """))
         for name, default in (('can_request','FALSE'),('can_approve','FALSE'),('can_view','TRUE'),('can_configure','FALSE'),('must_change_password','FALSE')):
             if name not in user_columns:
                 connection.execute(text(f'ALTER TABLE users ADD COLUMN {name} BOOLEAN NOT NULL DEFAULT {default}'))
@@ -155,8 +190,32 @@ def migrate_schema() -> None:
         if 'apartment_number' not in user_columns:
             connection.execute(text('ALTER TABLE users ADD COLUMN apartment_number VARCHAR(30)'))
             connection.execute(text('CREATE INDEX IF NOT EXISTS ix_users_apartment_number ON users (apartment_number)'))
+        for name in ('first_name', 'middle_name', 'last_name', 'second_last_name'):
+            if name not in user_columns:
+                connection.execute(text(f'ALTER TABLE users ADD COLUMN {name} VARCHAR(70)'))
+        if 'identity_document' not in user_columns:
+            connection.execute(text('ALTER TABLE users ADD COLUMN identity_document VARCHAR(50)'))
+            connection.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_users_identity_document ON users (identity_document) WHERE identity_document IS NOT NULL'))
+        if 'analytics_id' not in user_columns:
+            connection.execute(text('ALTER TABLE users ADD COLUMN analytics_id VARCHAR(64)'))
+            connection.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_users_analytics_id ON users (analytics_id) WHERE analytics_id IS NOT NULL'))
+        if 'phone' not in user_columns:
+            connection.execute(text('ALTER TABLE users ADD COLUMN phone VARCHAR(30)'))
+        if 'person_type' not in user_columns:
+            connection.execute(text("DO $$ BEGIN CREATE TYPE persontype AS ENUM ('OWNER','CO_OWNER','CONCIERGE','ADMINISTRATOR','SYSTEM_ADMIN'); EXCEPTION WHEN duplicate_object THEN NULL; END $$"))
+            connection.execute(text('ALTER TABLE users ADD COLUMN person_type persontype'))
+            connection.execute(text("UPDATE users SET person_type = CASE WHEN role='ADMIN' THEN 'SYSTEM_ADMIN'::persontype WHEN title='ADMINISTRADORA' THEN 'ADMINISTRATOR'::persontype WHEN title IN ('MANTENIMIENTO','CONSERJE') THEN 'CONCIERGE'::persontype ELSE 'OWNER'::persontype END"))
+        if 'updated_at' not in user_columns:
+            connection.execute(text('ALTER TABLE users ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT now()'))
+        connection.execute(text("""
+            INSERT INTO user_apartments (user_id, apartment_number, ownership_role)
+            SELECT id, upper(apartment_number), 'OWNER' FROM users
+            WHERE apartment_number ~ '^([6-9]|1[0-9]|2[01])[A-H]$'
+            ON CONFLICT (user_id, apartment_number) DO NOTHING
+        """))
         connection.execute(text('DROP INDEX IF EXISTS uq_users_single_active_officer'))
-        profile_columns = {column['name'] for column in inspect(engine).get_columns('access_profiles')}
+        connection.execute(text("UPDATE access_profiles SET name='Administrador' WHERE code='ADMINISTRADORA' AND name='Administradora'"))
+        connection.execute(text("UPDATE access_profiles SET name='Vocal' WHERE code='VOCERO' AND name='Vocero'"))
         if 'has_user_limit' not in profile_columns:
             connection.execute(text('ALTER TABLE access_profiles ADD COLUMN has_user_limit BOOLEAN NOT NULL DEFAULT FALSE'))
         if 'max_users' not in profile_columns:
@@ -203,6 +262,9 @@ def migrate_schema() -> None:
             connection.execute(text('CREATE INDEX IF NOT EXISTS ix_approvals_flow_id ON approvals (flow_id)'))
         if 'expense_subcategory' not in columns:
             connection.execute(text('ALTER TABLE expenses ADD COLUMN expense_subcategory VARCHAR(80)'))
+        if 'requester_analytics_id' not in columns:
+            connection.execute(text('ALTER TABLE expenses ADD COLUMN requester_analytics_id VARCHAR(64)'))
+            connection.execute(text('CREATE INDEX IF NOT EXISTS ix_expenses_requester_analytics_id ON expenses (requester_analytics_id)'))
         if 'request_id' not in columns:
             connection.execute(text('ALTER TABLE expenses ADD COLUMN request_id VARCHAR(36)'))
         if 'flow_id' not in columns:
@@ -291,6 +353,12 @@ def migrate_schema() -> None:
             BEFORE UPDATE OR DELETE ON access_profile_change_events
             FOR EACH ROW EXECUTE FUNCTION reject_user_change_event_mutation()
         '''))
+        connection.execute(text('DROP TRIGGER IF EXISTS approval_policy_change_events_immutable ON approval_policy_change_events'))
+        connection.execute(text('''
+            CREATE TRIGGER approval_policy_change_events_immutable
+            BEFORE UPDATE OR DELETE ON approval_policy_change_events
+            FOR EACH ROW EXECUTE FUNCTION reject_user_change_event_mutation()
+        '''))
 
 
 def seed_admin() -> None:
@@ -302,7 +370,24 @@ def seed_admin() -> None:
         # users already exist. Existing credentials are never overwritten.
         if db.scalar(select(User.id).where(func.lower(User.email) == email)):
             return
-        db.add(User(name=name, email=email, password_hash=hash_password(password), role=UserRole.ADMIN, title='ADMIN_SISTEMA', can_request=True, can_approve=True, can_view=True, can_configure=True))
+        db.add(User(name=name, email=email, analytics_id=analytics_identifier(None, email),
+                    password_hash=hash_password(password), role=UserRole.ADMIN, title='ADMIN_SISTEMA',
+                    can_request=True, can_approve=True, can_view=True, can_configure=True))
+        db.commit()
+
+
+def backfill_analytics_ids() -> None:
+    with SessionLocal() as db:
+        users_by_email = {}
+        for user in db.scalars(select(User)).all():
+            if not user.analytics_id:
+                user.analytics_id = analytics_identifier(user.identity_document, user.email)
+            users_by_email[user.email.lower()] = user
+        db.flush()
+        for expense in db.scalars(select(Expense).where(Expense.requester_analytics_id.is_(None))).all():
+            requester = users_by_email.get(expense.requested_by.lower())
+            if requester:
+                expense.requester_analytics_id = requester.analytics_id
         db.commit()
 
 
@@ -311,9 +396,10 @@ def seed_access_profiles() -> None:
         ('PRESIDENTE', 'Presidente', True, True, True, False),
         ('VICEPRESIDENTE', 'Vicepresidente', True, True, True, False),
         ('TESORERO', 'Tesorero', True, True, True, False),
-        ('VOCERO', 'Vocero', True, True, True, False),
-        ('ADMINISTRADORA', 'Administradora', True, False, True, False),
+        ('VOCERO', 'Vocal', True, True, True, False),
+        ('ADMINISTRADORA', 'Administrador', True, False, True, False),
         ('MANTENIMIENTO', 'Mantenimiento', True, False, True, False),
+        ('CONSERJE', 'Conserje', True, False, True, False),
         ('PROPIETARIO', 'Propietario', False, False, True, False),
     ]
     with SessionLocal() as db:
@@ -339,6 +425,7 @@ async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     migrate_schema()
     seed_admin()
+    backfill_analytics_ids()
     seed_access_profiles()
     seed_categories()
     seed_rules()
@@ -361,12 +448,25 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
+
+@app.middleware('http')
+async def protect_sensitive_responses(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-store, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Referrer-Policy'] = 'no-referrer'
+        response.headers['X-Frame-Options'] = 'DENY'
+    return response
+
 app.include_router(expenses.router, prefix='/api/expenses', tags=['Expenses'])
 app.include_router(approvals.router, prefix='/api/approvals', tags=['Approvals'])
 app.include_router(rules.router, prefix='/api/rules', tags=['Approval Rules'])
 app.include_router(auth.router, prefix='/api/auth', tags=['Authentication'])
 app.include_router(users.router, prefix='/api/users', tags=['Users'])
 app.include_router(categories.router, prefix='/api/categories', tags=['Categories'])
+app.include_router(audit.router, prefix='/api/audit', tags=['Audit'])
 
 
 @app.get('/api/health')

@@ -5,7 +5,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import current_user, require_permission
-from app.models.entities import AccessProfile, ApprovalPolicy, User
+from app.core.privacy import mask_email
+from app.models.entities import AccessProfile, ApprovalPolicy, ApprovalPolicyChangeEvent, User
 
 router = APIRouter()
 
@@ -31,6 +32,9 @@ def output(p):
             'max_amount':str(p.max_amount) if p.max_amount is not None else None,
             'approval_mode':p.approval_mode,'approver_profile_codes':p.approver_profile_codes,'active':p.active}
 
+def snapshot(p):
+    return output(p)
+
 def validate(db, data, exclude_id=None):
     valid=set(db.scalars(select(AccessProfile.code).where(AccessProfile.active.is_(True),AccessProfile.can_approve.is_(True))).all())
     if not set(data.approver_profile_codes) <= valid:
@@ -50,19 +54,31 @@ def list_policies(db:Session=Depends(get_db),_:User=Depends(current_user)):
     return [output(x) for x in db.scalars(select(ApprovalPolicy).order_by(ApprovalPolicy.expense_type,ApprovalPolicy.min_amount)).all()]
 
 @router.post('/policies',status_code=201)
-def create_policy(data:PolicyInput,db:Session=Depends(get_db),_:User=Depends(require_permission('can_configure'))):
-    validate(db,data); item=ApprovalPolicy(**data.model_dump()); db.add(item); db.commit(); db.refresh(item); return output(item)
+def create_policy(data:PolicyInput,db:Session=Depends(get_db),actor:User=Depends(require_permission('can_configure'))):
+    validate(db,data); item=ApprovalPolicy(**data.model_dump()); db.add(item); db.flush()
+    db.add(ApprovalPolicyChangeEvent(event_type='POLICY_CREATED', policy_id=item.id, policy_name=item.name,
+        actor_user_id=actor.id, actor_email=mask_email(actor.email) or '***',
+        changed_fields=list(data.model_dump().keys()), before_state=None, after_state=snapshot(item)))
+    db.commit(); db.refresh(item); return output(item)
 
 @router.put('/policies/{policy_id}')
-def update_policy(policy_id:int,data:PolicyInput,db:Session=Depends(get_db),_:User=Depends(require_permission('can_configure'))):
+def update_policy(policy_id:int,data:PolicyInput,db:Session=Depends(get_db),actor:User=Depends(require_permission('can_configure'))):
     item=db.get(ApprovalPolicy,policy_id)
     if not item: raise HTTPException(404,'Regla no encontrada')
-    validate(db,data,policy_id)
+    validate(db,data,policy_id); before=snapshot(item)
     for key,value in data.model_dump().items(): setattr(item,key,value)
+    after=snapshot(item); changed=[key for key in data.model_dump() if before[key] != after[key]]
+    db.add(ApprovalPolicyChangeEvent(event_type='POLICY_UPDATED', policy_id=item.id, policy_name=item.name,
+        actor_user_id=actor.id, actor_email=mask_email(actor.email) or '***',
+        changed_fields=changed, before_state=before, after_state=after))
     db.commit();db.refresh(item);return output(item)
 
 @router.delete('/policies/{policy_id}',status_code=204)
-def delete_policy(policy_id:int,db:Session=Depends(get_db),_:User=Depends(require_permission('can_configure'))):
+def delete_policy(policy_id:int,db:Session=Depends(get_db),actor:User=Depends(require_permission('can_configure'))):
     item=db.get(ApprovalPolicy,policy_id)
     if not item: raise HTTPException(404,'Regla no encontrada')
+    before=snapshot(item)
+    db.add(ApprovalPolicyChangeEvent(event_type='POLICY_DELETED', policy_id=item.id, policy_name=item.name,
+        actor_user_id=actor.id, actor_email=mask_email(actor.email) or '***',
+        changed_fields=list(before.keys()), before_state=before, after_state=None))
     db.delete(item);db.commit()

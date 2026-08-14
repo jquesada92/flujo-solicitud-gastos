@@ -11,6 +11,8 @@ services:
         sync: false
       - key: SECRET_KEY
         generateValue: true
+      - key: ANALYTICS_HASH_KEY
+        generateValue: true
       - key: PUBLIC_URL
         sync: false
       - key: CORS_ALLOWED_ORIGINS

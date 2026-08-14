@@ -33,6 +33,7 @@ def record_step_event(db: Session, approval: Approval, event_type: str,
             'title': expense.title, 'expense_type': expense.expense_type,
             'expense_subcategory': expense.expense_subcategory, 'amount': str(expense.amount),
             'supplier': expense.supplier, 'requested_by': expense.requested_by,
+            'requester_analytics_id': expense.requester_analytics_id,
             'status': expense_status,
         },
         'approval_step': {
@@ -89,11 +90,14 @@ def start_approval_flow(db: Session, expense: Expense) -> None:
     policies = list(db.scalars(select(ApprovalPolicy).where(
         ApprovalPolicy.active.is_(True),
         ApprovalPolicy.expense_type.in_([expense.expense_type, 'ALL']),
-        ApprovalPolicy.min_amount < amount,
+        ApprovalPolicy.min_amount <= amount,
         or_(ApprovalPolicy.max_amount.is_(None), ApprovalPolicy.max_amount >= amount),
     ).order_by(ApprovalPolicy.expense_type.desc())).all())
     if policies:
         policy = next((p for p in policies if p.expense_type == expense.expense_type), policies[0])
+        # Every active board member participates. The requester is always
+        # excluded, so an ALL policy requires N-1 approvals when the requester
+        # is one of the N members of the board.
         users = list(db.scalars(select(User).where(
             User.active.is_(True), User.can_approve.is_(True), User.role != UserRole.ADMIN,
             User.title.in_(policy.approver_profile_codes),

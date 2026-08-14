@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.database import get_db
+from app.core.privacy import can_view_personal_data, mask_email
 from app.core.security import current_user, require_permission
 from app.models.entities import Approval, ApprovalStatus, Expense, ExpenseStatus, User, UserRole
 from app.schemas.approval import ApprovalDecision
@@ -36,7 +37,7 @@ def get_approval(token: str, db: Session = Depends(get_db), user: User = Depends
     return {
         'approval_id': approval.id,
         'approver_role': approval.approver_role,
-        'approver_email': approval.approver_email,
+        'approver_email': approval.approver_email if can_view_personal_data(user) else mask_email(approval.approver_email),
         'approval_status': approval.status.value,
         'expense': {
             'id': expense.id,
@@ -59,7 +60,7 @@ def get_approval(token: str, db: Session = Depends(get_db), user: User = Depends
                 }
                 for attachment in expense.attachments
             ],
-            'requested_by': expense.requested_by,
+            'requested_by': expense.requested_by if can_view_personal_data(user) else mask_email(expense.requested_by),
             'status': expense.status.value,
         },
     }

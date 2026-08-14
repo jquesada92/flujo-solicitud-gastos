@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { Analytics } from "@vercel/analytics/react";
 import "./styles.css";
 
 const API_BASE_URL = String(import.meta.env.VITE_API_URL || "").replace(
@@ -8,26 +9,68 @@ const API_BASE_URL = String(import.meta.env.VITE_API_URL || "").replace(
 );
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
 const subcategoryName = (value) => value;
+const descriptor = (value) => String(value || "")
+  .replaceAll("_", " ")
+  .toLowerCase()
+  .replace(/^./, (letter) => letter.toUpperCase());
 const roles = [
   ["REQUESTER", "Puede solicitar"],
   ["APPROVER", "Puede aprobar"],
   ["VIEWER", "Puede consultar"],
   ["ADMIN", "Administrador"],
 ];
-const roleName = (role) => roles.find(([value]) => value === role)?.[1] || role;
+const roleName = (role) => roles.find(([value]) => value === role)?.[1] || descriptor(role);
 const userTitles = [
   ["PRESIDENTE", "Presidente"],
   ["VICEPRESIDENTE", "Vicepresidente"],
   ["TESORERO", "Tesorero"],
   ["VOCERO", "Vocero"],
-  ["ADMINISTRADORA", "Administradora"],
+  ["ADMINISTRADORA", "Administrador"],
   ["MANTENIMIENTO", "Mantenimiento"],
   ["PROPIETARIO", "Propietario"],
 ];
 const titleName = (title) =>
   title === "ADMIN_SISTEMA"
     ? "Administrador del sistema"
-    : userTitles.find(([value]) => value === title)?.[1] || title;
+    : userTitles.find(([value]) => value === title)?.[1] || descriptor(title);
+
+const personTypeName = (type) => ({
+  OWNER: "Propietario",
+  CO_OWNER: "Co-propietario",
+  CONCIERGE: "Conserje",
+  ADMINISTRATOR: "Administrador",
+})[type] || descriptor(type);
+
+const statusName = (status) => ({
+  SUBMITTED: "Enviada",
+  PENDING: "Pendiente",
+  PENDING_APPROVAL: "Pendiente de aprobación",
+  APPROVED: "Aprobada",
+  REJECTED: "Rechazada",
+  REVISION_REQUESTED: "Corrección solicitada",
+  CANCELLED: "Cancelada",
+  CLOSED: "Cerrada",
+})[status] || descriptor(status);
+
+const fieldName = (field) => ({
+  name: "Nombre completo", identity_document: "Identificación", email: "Correo",
+  phone: "Teléfono", person_type: "Tipo de persona", active: "Estado",
+  title: "Cargo", apartments: "Apartamentos", can_request: "Puede solicitar",
+  can_approve: "Puede aprobar", can_view: "Puede consultar",
+  can_configure: "Puede configurar",
+})[field] || descriptor(field);
+
+const hasUnsavedChanges = () => Boolean(document.querySelector('[data-unsaved="true"]'));
+const confirmDiscardChanges = () => !hasUnsavedChanges() || window.confirm("¿Deseas salir sin guardar? Los cambios realizados se perderán.");
+
+function protectAnalyticsEvent(event) {
+  try {
+    if (new URL(event.url).pathname.startsWith("/approve/")) return null;
+  } catch (_) {
+    return null;
+  }
+  return event;
+}
 
 function latestExpenseVersions(items) {
   const byReference = new Map();
@@ -124,6 +167,15 @@ async function api(path, options = {}) {
 }
 
 async function downloadAttachment(attachment) {
+  const { url } = await loadAttachment(attachment);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = attachment.original_name;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function loadAttachment(attachment) {
   const response = await fetch(
     apiUrl(`/api/expenses/attachments/${attachment.id}`),
     {
@@ -132,13 +184,30 @@ async function downloadAttachment(attachment) {
       },
     },
   );
-  if (!response.ok) throw new Error("No se pudo descargar el archivo");
-  const url = URL.createObjectURL(await response.blob());
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = attachment.original_name;
-  link.click();
-  URL.revokeObjectURL(url);
+  if (!response.ok) throw new Error("No se pudo abrir el archivo");
+  const blob = await response.blob();
+  return { attachment, url: URL.createObjectURL(blob), contentType: blob.type || attachment.content_type };
+}
+
+function AttachmentViewer({ file, onClose }) {
+  useEffect(() => () => URL.revokeObjectURL(file.url), [file.url]);
+  const download = () => {
+    const link = document.createElement("a"); link.href = file.url;
+    link.download = file.attachment.original_name; link.click();
+  };
+  const isImage = file.contentType.startsWith("image/");
+  const isPdf = file.contentType === "application/pdf";
+  return <div className="document-overlay" role="dialog" aria-modal="true" aria-label={`Visor de ${file.attachment.original_name}`}>
+    <section className="document-viewer">
+      <div className="document-toolbar"><div><p className="eyebrow">VISOR DE DOCUMENTOS</p><strong>{file.attachment.original_name}</strong></div>
+        <div className="row-actions"><button className="secondary" onClick={download}>Descargar</button><button className="primary" onClick={onClose}>Cerrar</button></div>
+      </div>
+      <div className="document-content">
+        {isPdf ? <iframe src={file.url} title={file.attachment.original_name} /> : isImage ? <img src={file.url} alt={file.attachment.original_name} /> :
+          <div className="document-unsupported"><p>Este formato no puede visualizarse en el navegador.</p><button className="primary" onClick={download}>Descargar archivo</button></div>}
+      </div>
+    </section>
+  </div>;
 }
 
 function Login({ onLogin }) {
@@ -198,7 +267,7 @@ function Login({ onLogin }) {
 function StatusBadge({ status }) {
   return (
     <span className={`badge badge-${String(status).toLowerCase()}`}>
-      {String(status).replaceAll("_", " ")}
+      {statusName(status)}
     </span>
   );
 }
@@ -347,6 +416,9 @@ function ExpenseForm({
       );
     }
   }, [draft?.request_id, categoryOptions.length]);
+  const expenseDirty = Boolean(quotation) || (draft
+    ? ["title", "description", "expense_type", "expense_subcategory", "supplier", "item_url"].some((key) => String(form[key] || "") !== String(draft[key] || "")) || String(form.amount || "") !== String(draft.amount || "")
+    : ["title", "description", "amount", "supplier", "item_url"].some((key) => String(form[key] || "").trim()));
   const submit = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -405,6 +477,7 @@ function ExpenseForm({
   };
   return (
     <section className="card" id="expense-form">
+      <span hidden data-unsaved={expenseDirty ? "true" : "false"} />
       <div className="card-heading">
         <div>
           <p className="eyebrow">
@@ -633,8 +706,9 @@ function ExpenseTable({
   const [status, setStatus] = useState("");
   const [category, setCategory] = useState("");
   const [closing, setClosing] = useState(null);
+  const [viewing, setViewing] = useState(null);
   useEffect(() => {
-    api("/api/expenses")
+    const loadExpenses = () => api("/api/expenses")
       .then((data) =>
         setItems(
           latestExpenseVersions(data).map((item) => ({
@@ -646,6 +720,9 @@ function ExpenseTable({
         ),
       )
       .catch((e) => setError(e.message));
+    loadExpenses();
+    const timer = window.setInterval(loadExpenses, 5000);
+    return () => window.clearInterval(timer);
   }, [refreshKey]);
   const cancel = async (expense) => {
     const reason = window.prompt(
@@ -683,6 +760,7 @@ function ExpenseTable({
   );
   return (
     <section className="card">
+      {viewing && <AttachmentViewer file={viewing} onClose={() => setViewing(null)} />}
       <div className="card-heading">
         <div>
           <p className="eyebrow">SEGUIMIENTO</p>
@@ -761,13 +839,19 @@ function ExpenseTable({
         </p>
       ) : (
         <div className="table-wrap">
-          <table>
+          <table className="expenses-table">
+            <colgroup>
+              <col className="col-id" /><col className="col-request" /><col className="col-category" />
+              <col className="col-support" /><col className="col-invoice" /><col className="col-requester" /><col className="col-amount" />
+              <col className="col-status" /><col className="col-flow" />{canEdit && <col className="col-actions" />}
+            </colgroup>
             <thead>
               <tr>
                 <th>ID único</th>
                 <th>Solicitud</th>
                 <th>Categoría</th>
                 <th>Soportes</th>
+                <th>Factura de cierre</th>
                 <th>Solicitante</th>
                 <th>Monto</th>
                 <th>Estado</th>
@@ -788,7 +872,7 @@ function ExpenseTable({
                       </span>
                     )}
                   </td>
-                  <td>
+                  <td className="request-cell">
                     <strong>{x.title}</strong>
                     <span className="subtext">{x.supplier}</span>
                   </td>
@@ -804,15 +888,11 @@ function ExpenseTable({
                         Ver producto/servicio
                       </a>
                     )}
-                    {x.attachments.map((a) => (
+                    {x.attachments.filter((a) => a.document_type !== "INVOICE").map((a) => (
                       <button
                         className="link-button"
                         key={a.id}
-                        onClick={() =>
-                          downloadAttachment(a).catch((e) =>
-                            setError(e.message),
-                          )
-                        }
+                        onClick={() => loadAttachment(a).then(setViewing).catch((e) => setError(e.message))}
                       >
                         {a.document_type === "PURCHASE_ORDER"
                           ? "Orden: "
@@ -822,12 +902,23 @@ function ExpenseTable({
                         {a.original_name}
                       </button>
                     ))}
-                    {!x.item_url && !x.attachments.length && (
+                    {!x.item_url && !x.attachments.some((a) => a.document_type !== "INVOICE") && (
                       <span className="muted">—</span>
                     )}
                   </td>
-                  <td>{x.requested_by}</td>
-                  <td>
+                  <td className="invoice-cell">
+                    {x.status === "CLOSED" ? (
+                      x.attachments.filter((a) => a.document_type === "INVOICE").map((a) => (
+                        <button className="link-button" key={a.id} onClick={() => loadAttachment(a).then(setViewing).catch((e) => setError(e.message))}>
+                          Ver factura
+                          <span className="subtext">{a.original_name}</span>
+                        </button>
+                      ))
+                    ) : <span className="muted">Disponible al cerrar</span>}
+                    {x.status === "CLOSED" && !x.attachments.some((a) => a.document_type === "INVOICE") && <span className="muted">Sin factura registrada</span>}
+                  </td>
+                  <td><span className="cell-ellipsis" title={x.requested_by}>{x.requested_by}</span></td>
+                  <td className="amount-cell">
                     $
                     {Number(x.amount).toLocaleString(undefined, {
                       minimumFractionDigits: 2,
@@ -845,10 +936,10 @@ function ExpenseTable({
                     )}
                   </td>
                   <td className="flow-cell">
-                    <span title={x.flow_id}>Flujo: {x.flow_id}</span>
+                    <span className="cell-ellipsis" title={x.flow_id}>Flujo: {x.flow_id}</span>
                     {x.approvals.map((a) => (
                       <span key={a.id}>
-                        {a.step}. {a.approver_role} · {a.status}
+                        {a.step}. {titleName(a.approver_role)} · {statusName(a.status)}
                       </span>
                     ))}
                   </td>
@@ -908,7 +999,7 @@ function CorrectionPicker({ refreshKey, onEdit }) {
           </option>
           {items.map((x) => (
             <option key={x.request_id} value={x.request_id}>
-              {x.title} · {x.status} · {x.request_id.slice(0, 8)}
+              {x.title} · {statusName(x.status)} · {x.request_id.slice(0, 8)}
             </option>
           ))}
         </select>
@@ -1087,7 +1178,7 @@ function Invoices({ categoryOptions = [] }) {
   );
 }
 
-function Users() {
+function Users({ canConfigure, canEditPeople, view }) {
   const permissions = [
     ["can_request", "Solicitar"],
     ["can_approve", "Aprobar"],
@@ -1095,10 +1186,15 @@ function Users() {
     ["can_configure", "Configuración"],
   ];
   const blank = {
-    name: "",
+    identity_document: "",
+    first_name: "",
+    middle_name: "",
+    last_name: "",
+    second_last_name: "",
+    phone: "",
     email: "",
-    apartment_number: "",
-    title: "PROPIETARIO",
+    person_type: "OWNER",
+    active: true,
   };
   const emptyProfile = {
     name: "",
@@ -1113,29 +1209,50 @@ function Users() {
   const [form, setForm] = useState(blank),
     [users, setUsers] = useState([]),
     [drafts, setDrafts] = useState({}),
-    [history, setHistory] = useState([]),
+    [apartmentMaster, setApartmentMaster] = useState([]),
+    [apartmentDrafts, setApartmentDrafts] = useState({}),
+    [apartmentSearch, setApartmentSearch] = useState(""),
+    [board, setBoard] = useState({ president_id: "", vice_president_id: "", treasurer_id: "", vocal_ids: [] }),
     [profiles, setProfiles] = useState([]),
     [profileDrafts, setProfileDrafts] = useState({}),
     [profileForm, setProfileForm] = useState(emptyProfile),
     [message, setMessage] = useState(null),
     [saving, setSaving] = useState(null),
-    [userSearch, setUserSearch] = useState("");
+    [userSearch, setUserSearch] = useState(""),
+    [personSearch, setPersonSearch] = useState(""),
+    [personResults, setPersonResults] = useState([]),
+    [editingUserId, setEditingUserId] = useState(null);
   const draftFor = (u) => ({
     title: u.title,
     active: u.active,
-    apartment_number: u.apartment_number || "",
+    apartments: (u.apartments || []).map((item) => ({
+      apartment_number: item.apartment_number,
+      ownership_role: item.ownership_role,
+    })),
+  });
+  const apartmentDraftFor = (apartment) => ({
+    owner_identity_document: apartment.residents.find((item) => item.ownership_role === "OWNER")?.identity_document || "",
+    co_owner_identity_document: apartment.residents.find((item) => item.ownership_role === "CO_OWNER")?.identity_document || "",
+    is_rental: apartment.is_rental,
   });
   const load = async () => {
     try {
-      const [userData, changeData, profileData] = await Promise.all([
+      const [userData, profileData, apartmentData] = await Promise.all([
         api("/api/users"),
-        api("/api/users/changes"),
         api("/api/users/profiles?include_inactive=true"),
+        api("/api/users/apartments"),
       ]);
       setUsers(userData);
       setDrafts(Object.fromEntries(userData.map((u) => [u.id, draftFor(u)])));
-      setHistory(changeData);
       setProfiles(profileData);
+      setApartmentMaster(apartmentData);
+      setApartmentDrafts(Object.fromEntries(apartmentData.map((item) => [item.apartment_number, apartmentDraftFor(item)])));
+      setBoard({
+        president_id: userData.find((u) => u.title === "PRESIDENTE")?.id || "",
+        vice_president_id: userData.find((u) => u.title === "VICEPRESIDENTE")?.id || "",
+        treasurer_id: userData.find((u) => u.title === "TESORERO")?.id || "",
+        vocal_ids: userData.filter((u) => u.title === "VOCERO").map((u) => u.id),
+      });
       setProfileDrafts(
         Object.fromEntries(
           profileData.map((p) => [
@@ -1163,27 +1280,82 @@ function Users() {
     if (target === "form") setForm({ ...form, title });
     else setDrafts({ ...drafts, [target]: { ...drafts[target], title } });
   };
-  const create = async (e) => {
+  const savePerson = async (e) => {
     e.preventDefault();
+    const wasEditing = Boolean(editingUserId);
+    setSaving("person");
     try {
-      await api("/api/users", { method: "POST", body: JSON.stringify(form) });
+      const payload = { ...form };
+      if (!editingUserId) delete payload.active;
+      await api(editingUserId ? `/api/users/${editingUserId}` : "/api/users", {
+        method: editingUserId ? "PATCH" : "POST",
+        body: JSON.stringify(payload),
+      });
       setForm(blank);
+      setEditingUserId(null);
+      setPersonResults([]);
+      setPersonSearch("");
       setMessage({
         type: "success",
-        text: "Usuario registrado con sus permisos iniciales. Se envió una contraseña temporal a su correo.",
+        text: wasEditing
+          ? "Los datos de la persona fueron actualizados y auditados."
+          : "Usuario registrado con sus permisos iniciales. Se envió una contraseña temporal a su correo.",
       });
-      load();
+      await load();
     } catch (err) {
       setMessage({ type: "error", text: err.message });
+    } finally {
+      setSaving(null);
     }
+  };
+  const searchPeople = async (e) => {
+    e.preventDefault();
+    setMessage(null);
+    if (personSearch.trim().length < 2) {
+      setMessage({ type: "error", text: "Escribe al menos 2 caracteres para buscar." });
+      return;
+    }
+    setSaving("person-search");
+    try {
+      const results = await api(`/api/users/search?q=${encodeURIComponent(personSearch.trim())}&limit=10`);
+      setPersonResults(results);
+      if (!results.length) setMessage({ type: "error", text: "No se encontraron personas." });
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setSaving(null);
+    }
+  };
+  const editPerson = (user) => {
+    setEditingUserId(user.id);
+    setForm({
+      identity_document: user.identity_document || "",
+      first_name: user.first_name || "",
+      middle_name: user.middle_name || "",
+      last_name: user.last_name || "",
+      second_last_name: user.second_last_name || "",
+      phone: user.phone || "",
+      email: user.email || "",
+      person_type: user.person_type || "OWNER",
+      active: user.active,
+    });
+    setPersonResults([]);
+    setMessage(null);
+  };
+  const cancelPersonEdit = () => {
+    setEditingUserId(null);
+    setForm(blank);
+    setMessage(null);
   };
   const changedUsers = () => users.filter(dirty);
   const changesFor = (user) => {
     const draft = drafts[user.id];
     if (!draft) return {};
     return Object.fromEntries(
-      ["title", "active", "apartment_number"]
-        .filter((key) => draft[key] !== (user[key] ?? ""))
+      ["title", "active", "apartments"]
+        .filter((key) => key === "apartments"
+          ? JSON.stringify(draft.apartments) !== JSON.stringify((user.apartments || []).map(({ apartment_number, ownership_role }) => ({ apartment_number, ownership_role })))
+          : draft[key] !== user[key])
         .map((key) => [key, draft[key]]),
     );
   };
@@ -1226,6 +1398,55 @@ function Users() {
         type: "success",
         text: `Se envió una nueva contraseña temporal a ${user.email}.`,
       });
+      await load();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setSaving(null);
+    }
+  };
+  const changedApartments = () => apartmentMaster.filter((item) =>
+    JSON.stringify(apartmentDrafts[item.apartment_number]) !== JSON.stringify(apartmentDraftFor(item)),
+  );
+  const updateApartmentDraft = (apartmentNumber, changes) => setApartmentDrafts({
+    ...apartmentDrafts,
+    [apartmentNumber]: { ...apartmentDrafts[apartmentNumber], ...changes },
+  });
+  const saveApartments = async () => {
+    const changed = changedApartments();
+    if (!changed.length) return;
+    setSaving("apartments");
+    setMessage(null);
+    try {
+      await Promise.all(changed.map((apartment) => api(`/api/users/apartments/${apartment.apartment_number}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          ...apartmentDrafts[apartment.apartment_number],
+          owner_identity_document: apartmentDrafts[apartment.apartment_number].owner_identity_document || null,
+          co_owner_identity_document: apartmentDrafts[apartment.apartment_number].co_owner_identity_document || null,
+        }),
+      })));
+      setMessage({ type: "success", text: `${changed.length} apartamento(s) actualizado(s) y auditado(s).` });
+      await load();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setSaving(null);
+    }
+  };
+  const saveBoard = async () => {
+    setSaving("board");
+    try {
+      await api("/api/users/board", {
+        method: "PATCH",
+        body: JSON.stringify({
+          president_id: Number(board.president_id) || null,
+          vice_president_id: Number(board.vice_president_id) || null,
+          treasurer_id: Number(board.treasurer_id) || null,
+          vocal_ids: board.vocal_ids.map(Number),
+        }),
+      });
+      setMessage({ type: "success", text: "Organigrama actualizado." });
       await load();
     } catch (err) {
       setMessage({ type: "error", text: err.message });
@@ -1285,31 +1506,66 @@ function Users() {
   const normalizedUserSearch = userSearch.trim().toLowerCase();
   const visibleUsers = normalizedUserSearch
     ? users.filter((u) =>
-        [u.name, u.email, u.apartment_number, u.role === "ADMIN" ? "administración" : ""]
+        [u.full_name || u.name, u.email, ...(u.apartments || []).map((item) => item.apartment_number), u.role === "ADMIN" ? "administración" : ""]
           .some((value) => String(value || "").toLowerCase().includes(normalizedUserSearch)),
       )
     : users.filter((u) => u.can_approve || u.can_request);
+  const editingPerson = editingUserId ? users.find((item) => item.id === editingUserId) : null;
+  const personFormDirty = editingPerson
+    ? ["identity_document", "first_name", "middle_name", "last_name", "second_last_name", "phone", "email", "person_type", "active"].some((key) => String(form[key] ?? "") !== String(editingPerson[key] ?? ""))
+    : ["identity_document", "first_name", "middle_name", "last_name", "second_last_name", "phone", "email"].some((key) => String(form[key] || "").trim()) || form.person_type !== blank.person_type;
+  const usersHavePendingChanges = view === "people"
+    ? personFormDirty
+    : view === "apartments"
+      ? changedApartments().length > 0
+      : changedUsers().length > 0 || profiles.some(profileDirty) || Object.keys(emptyProfile).some((key) => profileForm[key] !== emptyProfile[key]);
   return (
     <>
+      <span hidden data-unsaved={usersHavePendingChanges ? "true" : "false"} />
+      {view === "people" && canEditPeople && (
       <section className="card">
         <div className="card-heading">
           <div>
             <p className="eyebrow">CONFIGURACIÓN DE ACCESOS</p>
-            <h2>Registrar usuario</h2>
+            <h2>Crear o modificar usuario</h2>
           </div>
         </div>
-        <p className="muted">
-          Selecciona un cargo. Los permisos se asignan exclusivamente desde la
-          configuración de ese perfil.
-        </p>
-        <form className="form-grid" onSubmit={create}>
+        <p className="muted">Busca por nombres, apellidos o cédula para modificar una persona existente, o completa el formulario para crearla.</p>
+        <form className="table-filters" onSubmit={searchPeople}>
           <label>
-            Nombre
+            Buscar persona para modificar
+            <input value={personSearch} onChange={(e) => setPersonSearch(e.target.value)} placeholder="Nombre, apellido o cédula/pasaporte..." />
+          </label>
+          <button className="secondary" disabled={saving === "person-search"}>{saving === "person-search" ? "Buscando..." : "Buscar"}</button>
+        </form>
+        {personResults.length > 0 && <div className="table-wrap"><table><thead><tr><th>Nombre completo</th><th>Identificación</th><th>Tipo</th><th>Acción</th></tr></thead><tbody>
+          {personResults.map((user) => <tr key={user.id}><td>{user.full_name || user.name}</td><td>{user.identity_document}</td><td>{personTypeName(user.person_type)}</td><td><button type="button" className="secondary" onClick={() => editPerson(user)}>Modificar</button></td></tr>)}
+        </tbody></table></div>}
+        {editingUserId && <div className="notice success">Editando una persona existente. La cédula y el correo se validarán antes de guardar.</div>}
+        <form className="form-grid" onSubmit={savePerson}>
+          <label>
+            Cédula o pasaporte
+            <input value={form.identity_document} onChange={(e) => setForm({ ...form, identity_document: e.target.value })} required maxLength="50" />
+          </label>
+          <label>
+            Primer nombre
             <input
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              value={form.first_name}
+              onChange={(e) => setForm({ ...form, first_name: e.target.value })}
               required
             />
+          </label>
+          <label>
+            Segundo nombre
+            <input value={form.middle_name} onChange={(e) => setForm({ ...form, middle_name: e.target.value })} />
+          </label>
+          <label>
+            Primer apellido
+            <input value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} required />
+          </label>
+          <label>
+            Segundo apellido
+            <input value={form.second_last_name} onChange={(e) => setForm({ ...form, second_last_name: e.target.value })} />
           </label>
           <label>
             Correo
@@ -1321,74 +1577,122 @@ function Users() {
             />
           </label>
           <label>
-            Apartamento
-            <input
-              value={form.apartment_number}
-              onChange={(e) =>
-                setForm({ ...form, apartment_number: e.target.value })
-              }
-              placeholder="Ej. 12B"
-              required
-              maxLength="30"
-            />
+            Teléfono
+            <input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required maxLength="30" />
           </label>
           <label>
-            Cargo inicial
-            <select
-              value={form.title}
-              onChange={(e) => setTitle(e.target.value)}
-            >
-              {profiles
-                .filter((p) => p.active)
-                .map((p) => (
-                  <option
-                    key={p.code}
-                    value={p.code}
-                    disabled={profileIsFull(p)}
-                  >
-                    {p.name}
-                    {p.has_user_limit
-                      ? ` · ${assignedCount(p.code)}/${p.max_users}`
-                      : ""}
-                  </option>
-                ))}
+            Tipo de persona
+            <select value={form.person_type} onChange={(e) => setForm({ ...form, person_type: e.target.value })}>
+              <option value="OWNER">Propietario</option>
+              <option value="CO_OWNER">Co-propietario</option>
+              <option value="CONCIERGE">Conserje</option>
+              <option value="ADMINISTRATOR">Administrador</option>
             </select>
           </label>
-          <div className="permission-summary">
-            {permissions.map(([key, label]) => (
-              <span
-                className={
-                  profiles.find((p) => p.code === form.title)?.[key]
-                    ? "granted"
-                    : "denied"
-                }
-                key={key}
-              >
-                {label}
-              </span>
-            ))}
-          </div>
+          {editingUserId && <label>
+            Estado
+            <select value={form.active ? "true" : "false"} onChange={(e) => setForm({ ...form, active: e.target.value === "true" })}>
+              <option value="true">Activo</option>
+              <option value="false">Inactivo</option>
+            </select>
+          </label>}
           <div className="full form-actions">
             {message && (
               <div className={`notice ${message.type}`}>{message.text}</div>
             )}
-            <button className="primary">Registrar y enviar acceso</button>
+            {editingUserId && <button type="button" className="secondary" onClick={cancelPersonEdit}>Cancelar modificación</button>}
+            <button className="primary" disabled={saving === "person"}>{saving === "person" ? "Guardando..." : editingUserId ? "Guardar modificación" : "Registrar y enviar acceso"}</button>
           </div>
         </form>
       </section>
+      )}
+      {view === "apartments" && (
       <section className="card">
         <div className="card-heading">
           <div>
-            <h2>Permisos por usuario</h2>
+            <p className="eyebrow">MAESTRO DE APARTAMENTOS</p>
+            <h2>Propietarios y alquileres</h2>
+          </div>
+          <div className="bulk-save">
+            <span>{changedApartments().length} cambio(s) pendiente(s)</span>
+            <button className="primary" disabled={!canEditPeople || !changedApartments().length || saving === "apartments"} onClick={saveApartments}>
+              {saving === "apartments" ? "Guardando..." : "Guardar cambios"}
+            </button>
+          </div>
+        </div>
+        {message && <div className={`notice ${message.type}`}>{message.text}</div>}
+        <div className="table-filters">
+          <label>
+            Buscar apartamento o propietario
+            <input value={apartmentSearch} onChange={(e) => setApartmentSearch(e.target.value)} placeholder="Ej. 21H o apellido..." />
+          </label>
+          <span className="filter-count">{apartmentMaster.length} apartamento(s)</span>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Apartamento</th><th>Propietario(s)</th><th>Co-propietario(s)</th><th>Alquiler</th></tr></thead>
+            <tbody>
+              {apartmentMaster.filter((apartment) => {
+                const term = apartmentSearch.trim().toLowerCase();
+                return !term || apartment.apartment_number.toLowerCase().includes(term) || apartment.residents.some((resident) => resident.full_name.toLowerCase().includes(term));
+              }).map((apartment) => {
+                const apartmentDraft = apartmentDrafts[apartment.apartment_number] || apartmentDraftFor(apartment);
+                const apartmentDirty = JSON.stringify(apartmentDraft) !== JSON.stringify(apartmentDraftFor(apartment));
+                return (
+                <tr key={apartment.apartment_number} className={apartmentDirty ? "row-dirty" : ""}>
+                  <td><strong>{apartment.apartment_number}</strong></td>
+                  {[["OWNER", "Propietario"], ["CO_OWNER", "Co-propietario"]].map(([role, label]) => (
+                    <td key={role}>
+                      <select aria-label={`${label} de ${apartment.apartment_number}`} value={role === "OWNER" ? apartmentDraft.owner_identity_document : apartmentDraft.co_owner_identity_document} disabled={!canEditPeople || saving === "apartments"} onChange={(e) => updateApartmentDraft(apartment.apartment_number, { [role === "OWNER" ? "owner_identity_document" : "co_owner_identity_document"]: e.target.value })}>
+                        <option value="">Sin asignar</option>
+                        {users.filter((user) => user.active && ["OWNER", "CO_OWNER"].includes(user.person_type)).map((user) => <option key={user.identity_document} value={user.identity_document}>{user.full_name || user.name} · {user.identity_document}</option>)}
+                      </select>
+                    </td>
+                  ))}
+                  <td><button className="secondary" disabled={!canEditPeople || saving === "apartments"} onClick={() => updateApartmentDraft(apartment.apartment_number, { is_rental: !apartmentDraft.is_rental })}>{apartmentDraft.is_rental ? "Sí" : "No"}</button></td>
+                </tr>
+              )})}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      )}
+      {view === "organization" && (
+      <section className="card">
+        <div className="card-heading">
+          <div><p className="eyebrow">ESTRUCTURA ORGANIZACIONAL</p><h2>Organigrama</h2></div>
+        </div>
+        <p className="muted">Consulta la estructura y administra sus cargos y permisos en esta misma sección.</p>
+        <div className="table-wrap"><table><thead><tr><th>Nombre completo</th><th>Cargo</th><th>Unidad / apartamento</th><th>Estado</th></tr></thead><tbody>
+          {users.filter((u) => u.role === "ADMIN" || u.title !== "PROPIETARIO").map((u) => {
+            const profile = profiles.find((p) => p.code === u.title);
+            return <tr key={u.id}><td>{u.full_name || u.name}</td><td>{profile?.name || titleName(u.title)}</td><td>{(u.apartments || []).map((item) => item.apartment_number).join(", ") || "Administración"}</td><td>{u.active ? "Activo" : "Inactivo"}</td></tr>;
+          })}
+        </tbody></table></div>
+      </section>
+      )}
+      {view === "people" && !canEditPeople && (
+      <section className="card">
+        <div className="card-heading"><div><p className="eyebrow">SOLO LECTURA</p><h2>Propietarios y usuarios</h2></div></div>
+        <div className="table-wrap"><table><thead><tr><th>Nombre completo</th><th>Identificación</th><th>Correo</th><th>Apartamento(s)</th><th>Tipo</th><th>Estado</th></tr></thead><tbody>
+          {users.map((u) => <tr key={u.id}><td>{u.full_name || u.name}</td><td>{u.identity_document || "—"}</td><td>{u.email}</td><td>{(u.apartments || []).map((item) => item.apartment_number).join(", ") || "—"}</td><td>{personTypeName(u.person_type || u.role)}</td><td>{u.active ? "Activo" : "Inactivo"}</td></tr>)}
+        </tbody></table></div>
+      </section>
+      )}
+      {view === "organization" && <>
+      <section className="card">
+        <div className="card-heading">
+          <div>
+            <h2>Asignación de cargos</h2>
             <p className="muted">
-              Los permisos son de solo lectura y provienen del cargo asignado.
+              Los permisos se administran en Perfiles de acceso y se aplican mediante el cargo asignado.
             </p>
           </div>
           <div className="bulk-save">
             <span>{changedUsers().length} cambio(s) pendiente(s)</span>
             <button
               className="primary"
-              disabled={!changedUsers().length || saving === "users"}
+              disabled={!canConfigure || !changedUsers().length || saving === "users"}
               onClick={saveUsers}
             >
               {saving === "users" ? "Guardando..." : "Guardar cambios"}
@@ -1422,9 +1726,8 @@ function Users() {
                 <th>Usuario</th>
                 <th>Apartamento</th>
                 <th>Cargo</th>
-                {permissions.map((p) => (
-                  <th key={p[0]}>{p[1]}</th>
-                ))}
+                <th>Fecha de registro</th>
+                <th>Actualización</th>
                 <th>Estado</th>
                 <th>Seguridad</th>
               </tr>
@@ -1432,13 +1735,13 @@ function Users() {
             <tbody>
               {visibleUsers.map((u) => {
                 const d = drafts[u.id] || u,
-                  isSystemAdmin = u.role === "ADMIN",
-                  selectedProfile = profiles.find((p) => p.code === d.title);
+                  isSystemAdmin = u.role === "ADMIN";
                 return (
                   <tr key={u.id} className={dirty(u) ? "row-dirty" : ""}>
                     <td>
-                      <strong>{u.name}</strong>
+                      <strong>{u.full_name || u.name}</strong>
                       <span className="subtext">{u.email}</span>
+                      {u.identity_document && <span className="subtext">ID: {u.identity_document} · Tel: {u.phone || "—"}</span>}
                       {u.must_change_password && (
                         <span className="subtext">Cambio de contraseña pendiente</span>
                       )}
@@ -1447,20 +1750,19 @@ function Users() {
                       {isSystemAdmin ? (
                         <strong>Administración</strong>
                       ) : (
-                        <input
-                          value={d.apartment_number}
-                          onChange={(e) =>
-                            setDrafts({
-                              ...drafts,
-                              [u.id]: {
-                                ...d,
-                                apartment_number: e.target.value,
-                              },
-                            })
-                          }
-                          maxLength="30"
-                          aria-label={`Apartamento de ${u.name}`}
-                        />
+                        <div>
+                          {d.apartments.map((apartment, index) => (
+                            <div className="form-actions" key={index}>
+                              <input disabled={!canConfigure} value={apartment.apartment_number} maxLength="3" pattern="(?:[6-9]|1[0-9]|2[01])[A-Ha-h]" aria-label={`Apartamento de ${u.name}`} onChange={(e) => setDrafts({ ...drafts, [u.id]: { ...d, apartments: d.apartments.map((item, itemIndex) => itemIndex === index ? { ...item, apartment_number: e.target.value.toUpperCase() } : item) } })} />
+                              <select disabled={!canConfigure} value={apartment.ownership_role} onChange={(e) => setDrafts({ ...drafts, [u.id]: { ...d, apartments: d.apartments.map((item, itemIndex) => itemIndex === index ? { ...item, ownership_role: e.target.value } : item) } })}>
+                                <option value="OWNER">Propietario</option>
+                                <option value="CO_OWNER">Co-propietario</option>
+                              </select>
+                              {canConfigure && d.apartments.length > 1 && <button type="button" className="secondary" onClick={() => setDrafts({ ...drafts, [u.id]: { ...d, apartments: d.apartments.filter((_, itemIndex) => itemIndex !== index) } })}>×</button>}
+                            </div>
+                          ))}
+                          {canConfigure && <button type="button" className="secondary" onClick={() => setDrafts({ ...drafts, [u.id]: { ...d, apartments: [...d.apartments, { apartment_number: "", ownership_role: "OWNER" }] } })}>+ Apto.</button>}
+                        </div>
                       )}
                     </td>
                     <td>
@@ -1468,6 +1770,7 @@ function Users() {
                         <strong>{titleName(u.title)}</strong>
                       ) : (
                         <select
+                          disabled={!canConfigure}
                           value={d.title}
                           onChange={(e) => setTitle(e.target.value, u.id)}
                         >
@@ -1492,23 +1795,12 @@ function Users() {
                         </select>
                       )}
                     </td>
-                    {permissions.map(([key]) => (
-                      <td key={key}>
-                        <input
-                          className="permission-check"
-                          type="checkbox"
-                          checked={
-                            isSystemAdmin || Boolean(selectedProfile?.[key])
-                          }
-                          disabled
-                          readOnly
-                        />
-                      </td>
-                    ))}
+                    <td>{new Date(u.created_at).toLocaleDateString()}</td>
+                    <td>{new Date(u.updated_at).toLocaleDateString()}</td>
                     <td>
                       <button
                         className="secondary"
-                        disabled={isSystemAdmin}
+                        disabled={!canConfigure || isSystemAdmin}
                         onClick={() =>
                           setDrafts({
                             ...drafts,
@@ -1523,7 +1815,7 @@ function Users() {
                       <button
                         className="secondary nowrap"
                         disabled={
-                          isSystemAdmin ||
+                          !canConfigure || isSystemAdmin ||
                           !u.active ||
                           saving === `password-${u.id}`
                         }
@@ -1541,14 +1833,14 @@ function Users() {
           </table>
         </div>
       </section>
-      <section className="card">
+      <section className="card" style={{ display: view === "organization" ? undefined : "none" }}>
         <div className="card-heading">
           <div>
             <p className="eyebrow">CARGOS CONFIGURABLES</p>
             <h2>Perfiles de acceso</h2>
           </div>
         </div>
-        <form className="profile-create" onSubmit={createProfile}>
+        {canConfigure && <form className="profile-create" onSubmit={createProfile}>
           <label>
             Nombre del cargo
             <input
@@ -1607,7 +1899,7 @@ function Users() {
             )}
           </label>
           <button className="primary">Crear cargo</button>
-        </form>
+        </form>}
         <div className="table-wrap">
           <table>
             <thead>
@@ -1630,6 +1922,7 @@ function Users() {
                   <tr key={p.id} className={profileDirty(p) ? "row-dirty" : ""}>
                     <td>
                       <input
+                        disabled={!canConfigure}
                         value={d.name}
                         onChange={(e) =>
                           setProfileDrafts({
@@ -1638,11 +1931,11 @@ function Users() {
                           })
                         }
                       />
-                      <span className="subtext">{p.code}</span>
                     </td>
                     {permissions.map(([key]) => (
                       <td key={key}>
                         <input
+                          disabled={!canConfigure}
                           className="permission-check"
                           type="checkbox"
                           checked={Boolean(d[key])}
@@ -1657,6 +1950,7 @@ function Users() {
                     ))}
                     <td>
                       <input
+                        disabled={!canConfigure}
                         className="permission-check"
                         type="checkbox"
                         checked={Boolean(d.has_user_limit)}
@@ -1678,6 +1972,7 @@ function Users() {
                     <td>
                       {d.has_user_limit ? (
                         <input
+                          disabled={!canConfigure}
                           className="limit-input"
                           type="number"
                           min={Math.max(1, assignedCount(p.code))}
@@ -1704,6 +1999,7 @@ function Users() {
                     <td>
                       <button
                         className="secondary"
+                        disabled={!canConfigure}
                         onClick={() =>
                           setProfileDrafts({
                             ...profileDrafts,
@@ -1718,7 +2014,7 @@ function Users() {
                       <button
                         className="primary"
                         disabled={
-                          !profileDirty(p) || saving === `profile-${p.id}`
+                          !canConfigure || !profileDirty(p) || saving === `profile-${p.id}`
                         }
                         onClick={() => saveProfile(p)}
                       >
@@ -1734,74 +2030,137 @@ function Users() {
           </table>
         </div>
       </section>
-      <section className="card">
-        <div className="card-heading">
-          <div>
-            <p className="eyebrow">AUDITORÍA</p>
-            <h2>Control de cambios</h2>
-          </div>
-          <button className="secondary" onClick={load}>
-            Actualizar
-          </button>
-        </div>
-        <p className="muted">
-          Historial inmutable de altas y modificaciones de accesos del mes actual.
-        </p>
-        {history.length === 0 ? (
-          <p className="muted">Aún no hay cambios registrados.</p>
-        ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Fecha y hora</th>
-                  <th>Usuario afectado</th>
-                  <th>Acción</th>
-                  <th>Realizado por</th>
-                  <th>Campos modificados</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((x) => (
-                  <tr key={x.event_id}>
-                    <td>{new Date(x.occurred_at).toLocaleString()}</td>
-                    <td>{x.user_email}</td>
-                    <td>
-                      {x.event_type === "USER_CREATED"
-                        ? "Usuario creado"
-                        : x.event_type === "USER_PASSWORD_REGENERATED"
-                          ? "Contraseña regenerada"
-                          : "Acceso actualizado"}
-                    </td>
-                    <td>{x.actor_email}</td>
-                    <td>
-                      {x.changed_fields.map((field) => (
-                        <span className="change-pill" key={field}>
-                          {field.replace("can_", "")}
-                        </span>
-                      ))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      </>}
     </>
   );
 }
 
+function Audit() {
+  const filters = [["ALL", "Todos"], ["FLOW", "Flujos"], ["USER", "Usuarios"], ["PERMISSION", "Permisos"], ["RULE", "Reglas"]];
+  const kindNames = { FLOW: "Flujo", USER: "Usuario", PERMISSION: "Permiso", RULE: "Regla" };
+  const actionNames = {
+    USER_CREATED: "Usuario creado", USER_ACCESS_UPDATED: "Acceso actualizado",
+    USER_PASSWORD_REGENERATED: "Contraseña regenerada", PROFILE_PERMISSIONS_APPLIED: "Permisos aplicados",
+    PROFILE_CREATED: "Perfil creado", PROFILE_UPDATED: "Perfil actualizado",
+    POLICY_CREATED: "Regla creada", POLICY_UPDATED: "Regla actualizada", POLICY_DELETED: "Regla eliminada",
+    APPROVAL_CREATED: "Aprobación creada", APPROVAL_ACTIVATED: "Aprobación activada",
+    APPROVAL_APPROVED: "Aprobación concedida", APPROVAL_REJECTED: "Aprobación rechazada",
+    REVISION_REQUESTED: "Revisión solicitada",
+  };
+  const [kind, setKind] = useState("ALL"), [events, setEvents] = useState([]),
+    [cursor, setCursor] = useState(null), [hasMore, setHasMore] = useState(false),
+    [query, setQuery] = useState(""), [appliedQuery, setAppliedQuery] = useState(""),
+    [loading, setLoading] = useState(false), [message, setMessage] = useState(null);
+  const load = async (append = false) => {
+    setLoading(true); setMessage(null);
+    try {
+      const cursorQuery = append && cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+      const searchQuery = appliedQuery ? `&q=${encodeURIComponent(appliedQuery)}` : "";
+      const result = await api(`/api/audit/events?kind=${kind}&limit=50${searchQuery}${cursorQuery}`);
+      setEvents((current) => append ? [...current, ...result.items] : result.items);
+      setCursor(result.next_cursor); setHasMore(result.has_more);
+    }
+    catch (err) { setMessage({ type: "error", text: err.message }); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => {
+    setCursor(null); load(false);
+  }, [kind, appliedQuery]);
+  return <section className="card">
+    <div className="card-heading"><div><p className="eyebrow">AUDITORÍA</p><h2>Control de cambios</h2></div>
+      <button className="secondary" onClick={() => load(false)} disabled={loading}>{loading ? "Actualizando..." : "Actualizar"}</button>
+    </div>
+    <p className="muted">Historial inmutable de flujos y cambios en usuarios, permisos y reglas de los últimos 45 días.</p>
+    <form className="audit-search" onSubmit={(event) => { event.preventDefault(); setAppliedQuery(query.trim()); }}>
+      <label>Buscar en auditoría<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Artículo, proveedor, usuario, aprobador, monto..." /></label>
+      <button className="primary" disabled={loading}>Buscar</button>
+      {(query || appliedQuery) && <button type="button" className="secondary" onClick={() => { setQuery(""); setAppliedQuery(""); }}>Limpiar</button>}
+    </form>
+    <div className="audit-filters">{filters.map(([value, label]) => <button key={value} className={kind === value ? "primary" : "secondary"} onClick={() => setKind(value)}>{label}</button>)}</div>
+    {message && <div className={`notice ${message.type}`}>{message.text}</div>}
+    {!loading && events.length === 0 ? <p className="muted">Aún no hay cambios registrados.</p> :
+      <div className="table-wrap"><table><thead><tr><th>Fecha y hora</th><th>Tipo</th><th>Elemento</th><th>Acción</th><th>Realizado por</th><th>Campos / detalle</th></tr></thead>
+        <tbody>{events.map((event) => <tr key={event.event_id}>
+          <td>{new Date(event.occurred_at).toLocaleString()}</td><td><span className="change-pill">{kindNames[event.kind] || event.kind}</span></td>
+          <td>{event.subject}</td><td>{actionNames[event.event_type] || descriptor(event.event_type)}</td><td>{event.actor}</td>
+          <td>{(event.changed_fields || []).map((field) => <span className="change-pill" key={field}>{fieldName(field)}</span>)}
+            {event.kind === "FLOW" && event.details?.paso ? <span className="subtext">Paso {event.details.paso} · {event.details.estado_anterior ? statusName(event.details.estado_anterior) : "Inicio"} → {statusName(event.details.estado_nuevo)}</span> : null}</td>
+        </tr>)}</tbody></table>
+        {hasMore && <div className="audit-load-more"><button className="secondary" disabled={loading} onClick={() => load(true)}>{loading ? "Cargando..." : "Cargar 50 eventos más"}</button></div>}
+      </div>}
+  </section>;
+}
+
 function CategorySettings({ onChanged }) {
   const [items, setItems] = useState([]),
+    [selectedCategoryId, setSelectedCategoryId] = useState(""),
+    [pendingCategoryId, setPendingCategoryId] = useState(""),
+    [savingCategorySwitch, setSavingCategorySwitch] = useState(false),
     [category, setCategory] = useState({ name: "" }),
     [subforms, setSubforms] = useState({}),
     [drafts, setDrafts] = useState({}),
     [message, setMessage] = useState(null);
-  const load = () =>
+  const selectedCategory = items.find((item) => String(item.id) === String(selectedCategoryId));
+  const categoryHasPendingChanges = (item = selectedCategory) => Boolean(category.name.trim()) || Boolean(item && (
+    drafts[`category-${item.id}`] !== item.name
+    || item.subcategories.some((sub) => drafts[`subcategory-${sub.id}`] !== sub.name)
+    || (subforms[item.id]?.name || "").trim()
+  ));
+  const requestCategoryChange = (nextId) => {
+    if (String(nextId) === String(selectedCategoryId)) return;
+    if (categoryHasPendingChanges()) setPendingCategoryId(String(nextId));
+    else setSelectedCategoryId(String(nextId));
+  };
+  const discardAndChangeCategory = () => {
+    if (selectedCategory) {
+      const restored = { ...drafts, [`category-${selectedCategory.id}`]: selectedCategory.name };
+      selectedCategory.subcategories.forEach((sub) => { restored[`subcategory-${sub.id}`] = sub.name; });
+      setDrafts(restored);
+      setSubforms({ ...subforms, [selectedCategory.id]: { name: "" } });
+    }
+    setCategory({ name: "" });
+    setSelectedCategoryId(pendingCategoryId);
+    setPendingCategoryId("");
+  };
+  const saveAndChangeCategory = async () => {
+    if (!selectedCategory) return;
+    setSavingCategorySwitch(true);
+    setMessage(null);
+    try {
+      const requests = [];
+      if (category.name.trim()) requests.push(api("/api/categories", { method: "POST", body: JSON.stringify({ name: category.name.trim() }) }));
+      const categoryKey = `category-${selectedCategory.id}`;
+      if (drafts[categoryKey] !== selectedCategory.name) requests.push(api(`/api/categories/${selectedCategory.id}`, { method: "PATCH", body: JSON.stringify({ name: drafts[categoryKey] }) }));
+      selectedCategory.subcategories.forEach((sub) => {
+        const key = `subcategory-${sub.id}`;
+        if (drafts[key] !== sub.name) requests.push(api(`/api/categories/subcategories/${sub.id}`, { method: "PATCH", body: JSON.stringify({ name: drafts[key] }) }));
+      });
+      const newSubcategory = (subforms[selectedCategory.id]?.name || "").trim();
+      if (newSubcategory) requests.push(api(`/api/categories/${selectedCategory.id}/subcategories`, { method: "POST", body: JSON.stringify({ name: newSubcategory }) }));
+      await Promise.all(requests);
+      setCategory({ name: "" });
+      setSubforms({ ...subforms, [selectedCategory.id]: { name: "" } });
+      const destination = pendingCategoryId;
+      setPendingCategoryId("");
+      await load(destination);
+      onChanged();
+      setMessage({ type: "success", text: "Cambios guardados correctamente." });
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setSavingCategorySwitch(false);
+    }
+  };
+  const load = (preferredId = null) =>
     api("/api/categories?include_inactive=true")
       .then((data) => {
         setItems(data);
+        setSelectedCategoryId((current) => {
+          const requested = preferredId || current;
+          return data.some((item) => String(item.id) === String(requested))
+            ? String(requested)
+            : String(data.find((item) => item.active)?.id || data[0]?.id || "");
+        });
         setDrafts(
           Object.fromEntries(
             data.flatMap((item) => [
@@ -1819,7 +2178,7 @@ function CategorySettings({ onChanged }) {
   const create = async (e) => {
     e.preventDefault();
     try {
-      await api("/api/categories", {
+      const created = await api("/api/categories", {
         method: "POST",
         body: JSON.stringify({ name: category.name }),
       });
@@ -1828,7 +2187,7 @@ function CategorySettings({ onChanged }) {
         type: "success",
         text: "Categoría creada y código generado automáticamente.",
       });
-      load();
+      load(created.id);
       onChanged();
     } catch (err) {
       setMessage({ type: "error", text: err.message });
@@ -1872,6 +2231,7 @@ function CategorySettings({ onChanged }) {
   };
   return (
     <>
+      <span hidden data-unsaved={categoryHasPendingChanges() || category.name.trim() ? "true" : "false"} />
       <section className="card">
         <p className="eyebrow">CATÁLOGOS</p>
         <h2>Registrar categoría</h2>
@@ -1899,11 +2259,20 @@ function CategorySettings({ onChanged }) {
       </section>
       <section className="card">
         <h2>Categorías y subcategorías</h2>
-        <div className="catalog-grid">
-          {items.map((item) => {
+        <div className="catalog-selector">
+          <label>
+            Categoría
+            <select value={selectedCategoryId} onChange={(e) => requestCategoryChange(e.target.value)}>
+              {items.map((item) => <option key={item.id} value={item.id}>{item.name}{item.active ? "" : " (inactiva)"}</option>)}
+            </select>
+          </label>
+          <span className="filter-count">{items.length} categoría(s)</span>
+        </div>
+        <div className="catalog-single">
+          {items.filter((item) => String(item.id) === String(selectedCategoryId)).map((item) => {
             const categoryKey = `category-${item.id}`;
             return (
-              <article className="catalog-card" key={item.id}>
+              <article className={`catalog-card ${item.active ? "" : "catalog-inactive"}`} key={item.id}>
                 <div className="catalog-heading">
                   <div>
                     <input
@@ -1912,7 +2281,7 @@ function CategorySettings({ onChanged }) {
                         setDrafts({ ...drafts, [categoryKey]: e.target.value })
                       }
                     />
-                    <span>{item.code}</span>
+                    <div className="catalog-meta"><span className={`catalog-status ${item.active ? "active" : "inactive"}`}>{item.active ? "Activa" : "Inactiva"}</span></div>
                   </div>
                   <div className="row-actions">
                     <button
@@ -1938,7 +2307,7 @@ function CategorySettings({ onChanged }) {
                   {item.subcategories.map((sub) => {
                     const subKey = `subcategory-${sub.id}`;
                     return (
-                      <div key={sub.id}>
+                      <div className={sub.active ? "" : "catalog-inactive"} key={sub.id}>
                         <span>
                           <input
                             value={drafts[subKey] || ""}
@@ -1946,7 +2315,7 @@ function CategorySettings({ onChanged }) {
                               setDrafts({ ...drafts, [subKey]: e.target.value })
                             }
                           />{" "}
-                          <small>{sub.code}</small>
+                          <small>{sub.active ? "Activa" : "Inactiva"}</small>
                         </span>
                         <div className="row-actions">
                           <button
@@ -1978,6 +2347,7 @@ function CategorySettings({ onChanged }) {
                   })}
                 </div>
                 <div className="sub-create single-field">
+                  <span className="sub-create-label">Nueva subcategoría</span>
                   <input
                     placeholder="Nombre de la subcategoría"
                     value={subforms[item.id]?.name || ""}
@@ -1997,6 +2367,18 @@ function CategorySettings({ onChanged }) {
           })}
         </div>
       </section>
+      {pendingCategoryId && <div className="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="category-change-title">
+        <section className="confirm-dialog">
+          <p className="eyebrow">CAMBIOS PENDIENTES</p>
+          <h2 id="category-change-title">¿Deseas guardar antes de continuar?</h2>
+          <p className="muted">Hay cambios sin guardar en {selectedCategory?.name}. Elige qué hacer antes de cambiar de categoría.</p>
+          <div className="form-actions">
+            <button className="primary" disabled={savingCategorySwitch} onClick={saveAndChangeCategory}>{savingCategorySwitch ? "Guardando..." : "Guardar y continuar"}</button>
+            <button className="danger" disabled={savingCategorySwitch} onClick={discardAndChangeCategory}>Desechar y continuar</button>
+            <button className="secondary" disabled={savingCategorySwitch} onClick={() => setPendingCategoryId("")}>Cancelar</button>
+          </div>
+        </section>
+      </div>}
     </>
   );
 }
@@ -2129,7 +2511,7 @@ function ApprovalPage({ token, user }) {
           </div>
           <div>
             <dt>Estado del paso</dt>
-            <dd>{data.approval_status}</dd>
+            <dd>{statusName(data.approval_status)}</dd>
           </div>
         </dl>
         <div className="description-box">
@@ -2208,8 +2590,8 @@ function RuleSettings({ categoryOptions }) {
     expense_type: "ALL",
     min_amount: "0",
     max_amount: "",
-    approval_mode: "ANY",
-    approver_profile_codes: [],
+    approval_mode: "ALL",
+    approver_profile_codes: ["PRESIDENTE", "VICEPRESIDENTE", "TESORERO", "VOCERO"],
     active: true,
   };
   const [items, setItems] = useState([]),
@@ -2279,8 +2661,17 @@ function RuleSettings({ categoryOptions }) {
     code === "ALL"
       ? "Todas las categorías"
       : categoryOptions.find((x) => x[0] === code)?.[1] || code;
+  const ruleBaseline = editing ? items.find((item) => item.id === editing) : blank;
+  const normalizedRule = (value) => JSON.stringify({
+    name: value?.name || "", expense_type: value?.expense_type || "ALL",
+    min_amount: String(value?.min_amount ?? "0"), max_amount: value?.max_amount == null ? "" : String(value.max_amount),
+    approval_mode: value?.approval_mode || "ALL",
+    approver_profile_codes: [...(value?.approver_profile_codes || [])].sort(), active: value?.active ?? true,
+  });
+  const ruleHasPendingChanges = normalizedRule(form) !== normalizedRule(ruleBaseline);
   return (
     <>
+      <span hidden data-unsaved={ruleHasPendingChanges ? "true" : "false"} />
       <section className="card rules-form-card">
         <div className="card-heading">
           <div>
@@ -2470,6 +2861,7 @@ function App() {
   const [user, setUser] = useState(null),
     [loading, setLoading] = useState(true),
     [tab, setTab] = useState("expenses"),
+    [configOpen, setConfigOpen] = useState(false),
     [refresh, setRefresh] = useState(0),
     [revision, setRevision] = useState(null),
     [catalog, setCatalog] = useState([]);
@@ -2489,6 +2881,15 @@ function App() {
         .then(setCatalog)
         .catch(() => setCatalog([]));
   }, [user, refresh]);
+  useEffect(() => {
+    const warnBeforeUnload = (event) => {
+      if (!hasUnsavedChanges()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, []);
   if (loading) return <main className="single">Cargando...</main>;
   if (!user) return <Login onLogin={setUser} />;
   if (user.must_change_password)
@@ -2496,8 +2897,14 @@ function App() {
   const match = window.location.pathname.match(/^\/approve\/([^/]+)$/);
   if (match) return <ApprovalPage token={match[1]} user={user} />;
   const logout = () => {
+    if (!confirmDiscardChanges()) return;
     localStorage.removeItem("access_token");
     setUser(null);
+  };
+  const navigateTo = (nextTab) => {
+    if (nextTab === tab || !confirmDiscardChanges()) return;
+    setTab(nextTab);
+    setConfigOpen(false);
   };
   const startRevision = (item) => {
     setRevision(item);
@@ -2515,7 +2922,11 @@ function App() {
   };
   const canCreate = user.role === "ADMIN" || user.can_request,
     canView = user.role === "ADMIN" || user.can_view,
-    canConfigure = user.role === "ADMIN" || user.can_configure;
+    canConfigure = user.role === "ADMIN" || user.can_configure,
+    isBoardMember = ["PRESIDENTE", "VICEPRESIDENTE", "TESORERO", "VOCERO"].includes(user.title),
+    canEditPeople = user.role === "ADMIN" || user.person_type === "ADMINISTRATOR",
+    canManagePeople = canConfigure || canEditPeople || isBoardMember,
+    canAccessOrganization = canConfigure || isBoardMember;
   const categoryOptions = catalog.map((x) => [x.code, x.name]);
   const subcategoryOptions = Object.fromEntries(
     catalog.map((x) => [
@@ -2526,9 +2937,12 @@ function App() {
   const titles = {
     expenses: "Solicitudes de gasto del PH",
     invoices: "Consulta de facturas",
-    users: "Configuración de permisos",
+    people: "Configuración · Propietarios y usuarios",
+    apartments: "Configuración · Apartamentos",
+    organization: "Configuración · Organigrama",
     categories: "Categorías y subcategorías",
     rules: "Reglas de aprobación",
+    audit: "Configuración · Auditoría",
   };
   return (
     <>
@@ -2543,16 +2957,24 @@ function App() {
           </div>
         </div>
         <div className="header-actions">
-          <button onClick={() => setTab("expenses")}>Solicitudes</button>
+          <button onClick={() => navigateTo("expenses")}>Solicitudes</button>
           {canView && (
-            <button onClick={() => setTab("invoices")}>Facturas</button>
+            <button onClick={() => navigateTo("invoices")}>Facturas</button>
           )}
           {canConfigure && (
-            <>
-              <button onClick={() => setTab("users")}>Permisos</button>
-              <button onClick={() => setTab("categories")}>Categorías</button>
-              <button onClick={() => setTab("rules")}>Reglas</button>
-            </>
+            <button onClick={() => navigateTo("audit")}>Auditoría</button>
+          )}
+          {canManagePeople && (
+            <div className="config-menu">
+              <button onClick={() => setConfigOpen((open) => !open)}>Configuración {configOpen ? "▴" : "▾"}</button>
+              {configOpen && <div className="config-menu-items">
+                <button onClick={() => navigateTo("people")}>Personas</button>
+                <button onClick={() => navigateTo("apartments")}>Apartamentos</button>
+                {canAccessOrganization && <button onClick={() => navigateTo("organization")}>Organigrama</button>}
+                {canConfigure && <button onClick={() => navigateTo("categories")}>Categorías</button>}
+                {canConfigure && <button onClick={() => navigateTo("rules")}>Reglas</button>}
+              </div>}
+            </div>
           )}
           <button onClick={logout}>Salir</button>
         </div>
@@ -2564,12 +2986,14 @@ function App() {
         </section>
         {tab === "invoices" && canView ? (
           <Invoices categoryOptions={categoryOptions} />
-        ) : tab === "users" && canConfigure ? (
-          <Users />
+        ) : ["people", "apartments", "organization"].includes(tab) && canManagePeople && (tab !== "organization" || canAccessOrganization) ? (
+          <Users canConfigure={canConfigure} canEditPeople={canEditPeople} view={tab} />
         ) : tab === "categories" && canConfigure ? (
           <CategorySettings onChanged={() => setRefresh((x) => x + 1)} />
         ) : tab === "rules" && canConfigure ? (
           <RuleSettings categoryOptions={categoryOptions} />
+        ) : tab === "audit" && canConfigure ? (
+          <Audit />
         ) : (
           <>
             {canCreate && (
@@ -2600,6 +3024,7 @@ createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <AppErrorBoundary>
       <App />
+      <Analytics beforeSend={protectAnalyticsEvent} />
     </AppErrorBoundary>
   </React.StrictMode>,
 );

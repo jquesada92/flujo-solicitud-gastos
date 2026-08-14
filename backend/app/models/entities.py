@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text, func
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
@@ -33,11 +33,32 @@ class UserRole(str, enum.Enum):
     ADMIN = 'ADMIN'
 
 
+class OwnershipRole(str, enum.Enum):
+    OWNER = 'OWNER'
+    CO_OWNER = 'CO_OWNER'
+
+
+class PersonType(str, enum.Enum):
+    OWNER = 'OWNER'
+    CO_OWNER = 'CO_OWNER'
+    CONCIERGE = 'CONCIERGE'
+    ADMINISTRATOR = 'ADMINISTRATOR'
+    SYSTEM_ADMIN = 'SYSTEM_ADMIN'
+
+
 class User(Base):
     __tablename__ = 'users'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
+    identity_document: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True, index=True)
+    analytics_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    person_type: Mapped[PersonType | None] = mapped_column(Enum(PersonType), nullable=True, index=True)
+    first_name: Mapped[str | None] = mapped_column(String(70), nullable=True)
+    middle_name: Mapped[str | None] = mapped_column(String(70), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(70), nullable=True)
+    second_last_name: Mapped[str | None] = mapped_column(String(70), nullable=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     apartment_number: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
@@ -50,6 +71,49 @@ class User(Base):
     can_configure: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    apartments = relationship('UserApartment', back_populates='user', cascade='all, delete-orphan', order_by='UserApartment.apartment_number')
+
+    @property
+    def full_name(self) -> str:
+        parts = (self.first_name, self.middle_name, self.last_name, self.second_last_name)
+        return ' '.join(part.strip() for part in parts if part and part.strip()) or self.name
+
+
+class UserApartment(Base):
+    __tablename__ = 'user_apartments'
+    __table_args__ = (UniqueConstraint('user_id', 'apartment_number', name='uq_user_apartment'),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    apartment_number: Mapped[str] = mapped_column(ForeignKey('apartments.apartment_number', ondelete='RESTRICT'), nullable=False, index=True)
+    ownership_role: Mapped[OwnershipRole] = mapped_column(Enum(OwnershipRole), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    user = relationship('User', back_populates='apartments')
+
+
+class Apartment(Base):
+    __tablename__ = 'apartments'
+
+    apartment_number: Mapped[str] = mapped_column(String(3), primary_key=True)
+    floor: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    letter: Mapped[str] = mapped_column(String(1), nullable=False)
+    is_rental: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    assignments = relationship('UserApartment', viewonly=True, order_by='UserApartment.ownership_role')
+
+
+class ApartmentChangeEvent(Base):
+    __tablename__ = 'apartment_change_events'
+
+    event_sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    apartment_number: Mapped[str] = mapped_column(ForeignKey('apartments.apartment_number', ondelete='RESTRICT'), nullable=False, index=True)
+    actor_user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='RESTRICT'), nullable=False)
+    actor_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    before_state: Mapped[dict] = mapped_column(JSON, nullable=False)
+    after_state: Mapped[dict] = mapped_column(JSON, nullable=False)
 
 
 class UserChangeEvent(Base):
@@ -121,6 +185,7 @@ class Expense(Base):
     supplier: Mapped[str] = mapped_column(String(200), nullable=False)
     item_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     requested_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    requester_analytics_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     status: Mapped[ExpenseStatus] = mapped_column(Enum(ExpenseStatus), default=ExpenseStatus.SUBMITTED, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -205,6 +270,24 @@ class ApprovalPolicy(Base):
     approver_profile_codes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ApprovalPolicyChangeEvent(Base):
+    """Append-only history for approval-rule configuration changes."""
+
+    __tablename__ = 'approval_policy_change_events'
+
+    event_sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    policy_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    policy_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    actor_user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='RESTRICT'), nullable=False)
+    actor_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    changed_fields: Mapped[list] = mapped_column(JSON, nullable=False)
+    before_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    after_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class Approval(Base):

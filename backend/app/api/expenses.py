@@ -55,6 +55,26 @@ class CancellationRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=1000)
 
 
+def _user_names(db: Session) -> dict[str, str]:
+    return {email.lower(): full_name for email, full_name in db.execute(select(User.email, User.name)).all()}
+
+
+def _display_name(value: str | None, names: dict[str, str]) -> str | None:
+    if not value:
+        return None
+    return names.get(value.lower(), 'Sistema')
+
+
+def _present_expense(expense: Expense, names: dict[str, str]) -> ExpenseOut:
+    output = ExpenseOut.model_validate(expense)
+    return output.model_copy(update={
+        'requested_by': _display_name(output.requested_by, names),
+        'cancelled_by': _display_name(output.cancelled_by, names),
+        'closed_by': _display_name(output.closed_by, names),
+        'approvals': [item.model_copy(update={'approver_email': _display_name(item.approver_email, names)}) for item in output.approvals],
+    })
+
+
 def _validate_catalog_selection(db: Session, category_code: str, subcategory_code: str | None) -> None:
     category = db.scalar(select(ExpenseCategory).where(
         ExpenseCategory.code == category_code,
@@ -95,7 +115,7 @@ def list_expenses(db: Session = Depends(get_db), user: User = Depends(current_us
             Expense.status.in_(open_statuses),
             and_(
                 Expense.status == ExpenseStatus.CLOSED,
-                Expense.closed_at >= func.now() - text("INTERVAL '45 days'"),
+                Expense.closed_at >= func.now() - text("INTERVAL '7 days'"),
                 has_invoice,
             ),
         ))
@@ -104,7 +124,8 @@ def list_expenses(db: Session = Depends(get_db), user: User = Depends(current_us
     )
     if user.role == UserRole.REQUESTER:
         stmt = stmt.where(Expense.requested_by == user.email)
-    return list(db.scalars(stmt).all())
+    names = _user_names(db)
+    return [_present_expense(expense, names) for expense in db.scalars(stmt).all()]
 
 
 @router.get('/invoices', response_model=list[InvoiceOut])
@@ -139,6 +160,7 @@ def list_invoices(
             Expense.requested_by.ilike(term),
         ))
 
+    names = _user_names(db)
     return [
         InvoiceOut(
             attachment_id=attachment.id,
@@ -154,10 +176,11 @@ def list_invoices(
             expense_subcategory=expense.expense_subcategory,
             supplier=expense.supplier,
             amount=expense.amount,
-            requested_by=expense.requested_by,
+            requested_by=_display_name(expense.requested_by, names),
+            requester_analytics_id=expense.requester_analytics_id,
             expense_status=expense.status.value,
             closed_at=expense.closed_at,
-            closed_by=expense.closed_by,
+            closed_by=_display_name(expense.closed_by, names),
         )
         for attachment, expense in db.execute(stmt).all()
     ]
@@ -179,7 +202,8 @@ def create_expense(
             status_code=409,
             detail='Esta pantalla de corrección está desactualizada. Recarga la aplicación y usa nuevamente “Corregir / reenviar”.',
         )
-    expense = Expense(**values, requested_by=user.email, display_id=_next_display_id(db, payload.expense_type))
+    expense = Expense(**values, requested_by=user.email, requester_analytics_id=user.analytics_id,
+                      display_id=_next_display_id(db, payload.expense_type))
     if source:
         expire_open_approvals(db, source, actor_email=user.email)
         if source.status in (ExpenseStatus.SUBMITTED, ExpenseStatus.PENDING_APPROVAL, ExpenseStatus.APPROVED):

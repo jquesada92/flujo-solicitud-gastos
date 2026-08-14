@@ -4,20 +4,52 @@ import unicodedata
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
+from app.core.privacy import analytics_identifier, can_view_personal_data, mask_email, mask_tail
 from app.core.security import current_user, hash_password, normalize_email, require_permission
-from app.models.entities import AccessProfile, AccessProfileChangeEvent, User, UserChangeEvent, UserRole
-from app.schemas.user import AccessProfileOut, AccessProfileUpdate, AccessProfileWrite, UserBulkUpdate, UserChangeEventOut, UserCreate, UserOut, UserUpdate
+from app.models.entities import AccessProfile, AccessProfileChangeEvent, Apartment, ApartmentChangeEvent, OwnershipRole, PersonType, User, UserApartment, UserChangeEvent, UserRole
+from app.schemas.user import ApartmentOut, ApartmentUpdate, AccessProfileOut, AccessProfileUpdate, AccessProfileWrite, BoardAssignmentUpdate, UserBulkUpdate, UserChangeEventOut, UserCreate, UserOut, UserUpdate
 from app.services.email_service import send_user_invitation
 
-router = APIRouter(dependencies=[Depends(require_permission('can_configure'))])
+def require_people_access(user: User = Depends(current_user)) -> User:
+    board_codes = {'PRESIDENTE', 'VICEPRESIDENTE', 'TESORERO', 'VOCERO'}
+    if user.role != UserRole.ADMIN and user.person_type != PersonType.ADMINISTRATOR and user.title not in board_codes and not user.can_configure:
+        raise HTTPException(status_code=403, detail='No tienes acceso a la administración de personas')
+    return user
 
-AUDITED_FIELDS = ('name', 'apartment_number', 'title', 'role', 'active', 'can_request', 'can_approve', 'can_view', 'can_configure', 'must_change_password')
+
+def require_system_configuration(user: User = Depends(current_user)) -> User:
+    if user.role != UserRole.ADMIN and not user.can_configure:
+        raise HTTPException(status_code=403, detail='Esta acción está reservada al Administrador del sistema')
+    return user
+
+
+def require_people_write(user: User = Depends(current_user)) -> User:
+    if user.role != UserRole.ADMIN and user.person_type != PersonType.ADMINISTRATOR:
+        raise HTTPException(status_code=403, detail='Tienes acceso de solo lectura')
+    return user
+
+
+router = APIRouter(dependencies=[Depends(require_people_access)])
+
+AUDITED_FIELDS = ('name', 'analytics_id', 'identity_document', 'email', 'phone', 'person_type', 'apartment_number', 'title', 'role', 'active', 'can_request', 'can_approve', 'can_view', 'can_configure', 'must_change_password')
 
 def _snapshot(user: User) -> dict:
-    return {key: (getattr(user, key).value if key == 'role' else getattr(user, key)) for key in AUDITED_FIELDS}
+    snapshot = {key: (value.value if hasattr((value := getattr(user, key)), 'value') else value) for key in AUDITED_FIELDS}
+    snapshot['identity_document'] = mask_tail(snapshot.get('identity_document'))
+    snapshot['email'] = mask_email(snapshot.get('email'))
+    snapshot['phone'] = mask_tail(snapshot.get('phone'))
+    snapshot['apartments'] = [
+        {'apartment_number': item.apartment_number, 'ownership_role': item.ownership_role.value}
+        for item in user.apartments
+    ]
+    return snapshot
+
+
+def _audit_email(value: str) -> str:
+    return mask_email(value) or '***'
 
 
 def _profile_snapshot(profile: AccessProfile) -> dict:
@@ -58,12 +90,46 @@ def _ensure_title_available(db: Session, profile: AccessProfile, active: bool, e
 
 
 @router.get('', response_model=list[UserOut])
-def list_users(db: Session = Depends(get_db)):
-    return list(db.scalars(select(User).order_by(User.name)).all())
+def list_users(db: Session = Depends(get_db), viewer: User = Depends(current_user)):
+    users = list(db.scalars(select(User).order_by(User.name)).all())
+    if can_view_personal_data(viewer):
+        return users
+    output = []
+    for user in users:
+        data = UserOut.model_validate(user).model_dump()
+        if user.id != viewer.id:
+            data['identity_document'] = mask_tail(data['identity_document'])
+            data['phone'] = mask_tail(data['phone'])
+            data['email'] = mask_email(data['email'])
+        output.append(data)
+    return output
+
+
+@router.get('/search', response_model=list[UserOut])
+def search_users(q: str, limit: int = 10, db: Session = Depends(get_db), viewer: User = Depends(require_people_write)):
+    query = q.strip()
+    if len(query) < 2:
+        raise HTTPException(status_code=422, detail='Escribe al menos 2 caracteres para buscar')
+    pattern = f'%{query}%'
+    stmt = (
+        select(User)
+        .where(
+            User.role != UserRole.ADMIN,
+            (User.name.ilike(pattern))
+            | (User.first_name.ilike(pattern))
+            | (User.middle_name.ilike(pattern))
+            | (User.last_name.ilike(pattern))
+            | (User.second_last_name.ilike(pattern))
+            | (User.identity_document.ilike(pattern)),
+        )
+        .order_by(User.name)
+        .limit(min(max(limit, 1), 20))
+    )
+    return list(db.scalars(stmt).all())
 
 
 @router.get('/changes', response_model=list[UserChangeEventOut])
-def list_user_changes(limit: int = 100, db: Session = Depends(get_db)):
+def list_user_changes(limit: int = 100, db: Session = Depends(get_db), _: User = Depends(require_system_configuration)):
     safe_limit = min(max(limit, 1), 500)
     month_start = func.date_trunc('month', func.now())
     stmt = (
@@ -86,20 +152,85 @@ def list_profiles(include_inactive: bool = False, db: Session = Depends(get_db))
     return list(db.scalars(stmt).all())
 
 
+@router.get('/apartments', response_model=list[ApartmentOut])
+def list_apartments(db: Session = Depends(get_db), viewer: User = Depends(current_user)):
+    apartments = db.scalars(
+        select(Apartment).options(selectinload(Apartment.assignments).selectinload(UserApartment.user))
+        .order_by(Apartment.floor, Apartment.letter)
+    ).all()
+    return [
+        {
+            'apartment_number': apartment.apartment_number,
+            'floor': apartment.floor,
+            'letter': apartment.letter,
+            'is_rental': apartment.is_rental,
+            'residents': [
+                {'identity_document': item.user.identity_document if can_view_personal_data(viewer) else mask_tail(item.user.identity_document),
+                 'full_name': item.user.full_name,
+                 'email': item.user.email if can_view_personal_data(viewer) or item.user.id == viewer.id else mask_email(item.user.email),
+                 'ownership_role': item.ownership_role}
+                for item in apartment.assignments
+            ],
+        }
+        for apartment in apartments
+    ]
+
+
+@router.patch('/apartments/{apartment_number}', response_model=ApartmentOut)
+def update_apartment(apartment_number: str, payload: ApartmentUpdate,
+                     db: Session = Depends(get_db), actor: User = Depends(require_people_write)):
+    apartment = db.get(Apartment, apartment_number.upper())
+    if not apartment:
+        raise HTTPException(status_code=404, detail='Apartamento no encontrado')
+    before = {'is_rental': apartment.is_rental,
+              'residents': [{'identity_document': mask_tail(item.user.identity_document), 'ownership_role': item.ownership_role.value} for item in apartment.assignments]}
+    if payload.is_rental is not None:
+        apartment.is_rental = payload.is_rental
+    requested = [(payload.owner_identity_document, OwnershipRole.OWNER), (payload.co_owner_identity_document, OwnershipRole.CO_OWNER)]
+    assignments_supplied = bool({'owner_identity_document', 'co_owner_identity_document'} & payload.model_fields_set)
+    if assignments_supplied:
+        documents = [document.strip().upper() for document, _ in requested if document]
+        if len(documents) != len(set(documents)):
+            raise HTTPException(status_code=422, detail='Propietario y co-propietario deben ser personas distintas')
+        selected_users = {user.identity_document: user for user in db.scalars(select(User).where(
+            User.identity_document.in_(documents), User.active.is_(True),
+            User.person_type.in_([PersonType.OWNER, PersonType.CO_OWNER]))).all()} if documents else {}
+        if set(selected_users) != set(documents):
+            raise HTTPException(status_code=422, detail='Selecciona propietarios activos válidos')
+        db.query(UserApartment).filter(UserApartment.apartment_number == apartment.apartment_number).delete(synchronize_session=False)
+        for document, ownership_role in requested:
+            if document:
+                normalized_document = document.strip().upper()
+                db.add(UserApartment(user_id=selected_users[normalized_document].id, apartment_number=apartment.apartment_number,
+                                     ownership_role=ownership_role))
+        db.flush()
+    after = {'is_rental': apartment.is_rental,
+             'residents': [{'identity_document': mask_tail(document.strip().upper()), 'ownership_role': role.value} for document, role in requested if document]
+             if assignments_supplied else before['residents']}
+    if before != after:
+        db.add(ApartmentChangeEvent(apartment_number=apartment.apartment_number,
+                                    actor_user_id=actor.id, actor_email=_audit_email(actor.email),
+                                    before_state=before, after_state=after))
+    db.commit()
+    db.expire_all()
+    return list_apartments(db, actor)[(apartment.floor - 6) * 8 + ord(apartment.letter) - ord('A')]
+
+
 @router.post('/profiles', response_model=AccessProfileOut, status_code=201)
-def create_profile(payload: AccessProfileWrite, db: Session = Depends(get_db), actor: User = Depends(current_user)):
-    profile = AccessProfile(code=_profile_code(db, payload.name), **payload.model_dump())
+def create_profile(payload: AccessProfileWrite, db: Session = Depends(get_db), actor: User = Depends(require_system_configuration)):
+    code = _profile_code(db, payload.name)
+    profile = AccessProfile(code=code, **payload.model_dump())
     db.add(profile); db.flush()
     after = _profile_snapshot(profile)
     db.add(AccessProfileChangeEvent(event_type='PROFILE_CREATED', profile_id=profile.id, profile_code=profile.code,
-                                    actor_user_id=actor.id, actor_email=actor.email,
+                                    actor_user_id=actor.id, actor_email=_audit_email(actor.email),
                                     changed_fields=list(after.keys()), before_state=None, after_state=after))
     db.commit(); db.refresh(profile)
     return profile
 
 
 @router.patch('/profiles/{profile_id}', response_model=AccessProfileOut)
-def update_profile(profile_id: int, payload: AccessProfileUpdate, db: Session = Depends(get_db), actor: User = Depends(current_user)):
+def update_profile(profile_id: int, payload: AccessProfileUpdate, db: Session = Depends(get_db), actor: User = Depends(require_system_configuration)):
     profile = db.get(AccessProfile, profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail='Cargo no encontrado')
@@ -121,7 +252,7 @@ def update_profile(profile_id: int, payload: AccessProfileUpdate, db: Session = 
     changed = [key for key in after if before[key] != after[key]]
     if changed:
         db.add(AccessProfileChangeEvent(event_type='PROFILE_UPDATED', profile_id=profile.id, profile_code=profile.code,
-                                        actor_user_id=actor.id, actor_email=actor.email,
+                                        actor_user_id=actor.id, actor_email=_audit_email(actor.email),
                                         changed_fields=changed, before_state=before, after_state=after))
         permission_fields = {'can_request', 'can_approve', 'can_view', 'can_configure'}
         if permission_fields.intersection(changed):
@@ -132,24 +263,42 @@ def update_profile(profile_id: int, payload: AccessProfileUpdate, db: Session = 
                 user_changed = [key for key in AUDITED_FIELDS if user_before[key] != user_after[key]]
                 if user_changed:
                     db.add(UserChangeEvent(event_type='PROFILE_PERMISSIONS_APPLIED', user_id=assigned_user.id,
-                                           user_email=assigned_user.email, actor_user_id=actor.id,
-                                           actor_email=actor.email, changed_fields=user_changed,
+                                           user_email=_audit_email(assigned_user.email), actor_user_id=actor.id,
+                                           actor_email=_audit_email(actor.email), changed_fields=user_changed,
                                            before_state=user_before, after_state=user_after))
     db.commit(); db.refresh(profile)
     return profile
 
 
 @router.post('', response_model=UserOut, status_code=201)
-def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User = Depends(current_user)):
+def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User = Depends(require_people_write)):
     email = normalize_email(str(payload.email))
     if db.scalar(select(User.id).where(func.lower(User.email) == email)):
         raise HTTPException(status_code=409, detail='Ya existe un usuario con ese correo')
-    profile = db.scalar(select(AccessProfile).where(AccessProfile.code == payload.title, AccessProfile.active.is_(True)))
+    document = payload.identity_document.strip().upper()
+    if db.scalar(select(User.id).where(func.upper(User.identity_document) == document)):
+        raise HTTPException(status_code=409, detail='Ya existe un usuario con esa cédula o pasaporte')
+    default_profiles = {
+        PersonType.OWNER: 'PROPIETARIO', PersonType.CO_OWNER: 'PROPIETARIO',
+        PersonType.CONCIERGE: 'CONSERJE', PersonType.ADMINISTRATOR: 'ADMINISTRADORA',
+    }
+    title = default_profiles.get(payload.person_type)
+    if not title:
+        raise HTTPException(status_code=422, detail='Tipo de persona no permitido')
+    profile = db.scalar(select(AccessProfile).where(AccessProfile.code == title, AccessProfile.active.is_(True)))
     if not profile:
         raise HTTPException(status_code=422, detail='El cargo seleccionado no existe o está inactivo')
     _ensure_title_available(db, profile, True)
     temporary_password = secrets.token_urlsafe(15)
-    user = User(name=payload.name.strip(), email=email, apartment_number=payload.apartment_number.strip().upper(), password_hash=hash_password(temporary_password),
+    name_parts = [payload.first_name, payload.middle_name, payload.last_name, payload.second_last_name]
+    full_name = ' '.join(part.strip() for part in name_parts if part and part.strip())
+    user = User(name=full_name, first_name=payload.first_name.strip(),
+                middle_name=payload.middle_name.strip() if payload.middle_name else None,
+                last_name=payload.last_name.strip(),
+                second_last_name=payload.second_last_name.strip() if payload.second_last_name else None,
+                identity_document=document, analytics_id=analytics_identifier(document, email),
+                phone=payload.phone.strip(), person_type=payload.person_type,
+                email=email, apartment_number=None, password_hash=hash_password(temporary_password),
                 role=_role_for_permissions(profile.can_request, profile.can_approve), title=profile.code,
                 can_request=profile.can_request, can_approve=profile.can_approve,
                 can_view=profile.can_view, can_configure=profile.can_configure,
@@ -158,8 +307,8 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User 
     try:
         db.flush()
         after = _snapshot(user)
-        db.add(UserChangeEvent(event_type='USER_CREATED', user_id=user.id, user_email=user.email,
-                               actor_user_id=actor.id, actor_email=actor.email,
+        db.add(UserChangeEvent(event_type='USER_CREATED', user_id=user.id, user_email=_audit_email(user.email),
+                               actor_user_id=actor.id, actor_email=_audit_email(actor.email),
                                changed_fields=list(after.keys()), before_state=None, after_state=after))
         send_user_invitation(user, temporary_password)
         db.commit()
@@ -174,6 +323,19 @@ def _apply_user_changes(db: Session, user: User, changes: dict, actor: User) -> 
     if user.role == UserRole.ADMIN:
         raise HTTPException(status_code=403, detail='El Administrador del sistema no puede modificarse desde esta pantalla')
     before = _snapshot(user)
+    apartment_changes = changes.pop('apartments', None)
+    if 'email' in changes:
+        email = normalize_email(str(changes['email']))
+        duplicate = db.scalar(select(User.id).where(func.lower(User.email) == email, User.id != user.id))
+        if duplicate:
+            raise HTTPException(status_code=409, detail='Ya existe un usuario con ese correo')
+        changes['email'] = email
+    if 'identity_document' in changes:
+        document = changes['identity_document'].strip().upper()
+        duplicate = db.scalar(select(User.id).where(func.upper(User.identity_document) == document, User.id != user.id))
+        if duplicate:
+            raise HTTPException(status_code=409, detail='Ya existe un usuario con esa cédula o pasaporte')
+        changes['identity_document'] = document
     new_title = changes.get('title')
     profile = None
     if new_title:
@@ -186,21 +348,29 @@ def _apply_user_changes(db: Session, user: User, changes: dict, actor: User) -> 
     if target_profile:
         _ensure_title_available(db, target_profile, resulting_active, user.id)
     for key, value in changes.items():
-        if key in ('name', 'apartment_number') and value:
+        if key in ('name', 'first_name', 'middle_name', 'last_name', 'second_last_name', 'phone', 'apartment_number') and value:
             value = value.strip().upper() if key == 'apartment_number' else value.strip()
         setattr(user, key, value)
+    personal_name_fields = {'first_name', 'middle_name', 'last_name', 'second_last_name'}
+    if personal_name_fields.intersection(changes):
+        user.name = ' '.join(part for part in (user.first_name, user.middle_name, user.last_name, user.second_last_name) if part)
+    if {'identity_document', 'email'}.intersection(changes):
+        user.analytics_id = analytics_identifier(user.identity_document, user.email)
+    if apartment_changes is not None:
+        user.apartments = [UserApartment(**item) for item in apartment_changes]
+        user.apartment_number = apartment_changes[0]['apartment_number']
     if target_profile:
         _apply_profile_permissions(user, target_profile)
     after = _snapshot(user)
-    changed_fields = [key for key in AUDITED_FIELDS if before[key] != after[key]]
+    changed_fields = [key for key in after if before[key] != after[key]]
     if changed_fields:
-        db.add(UserChangeEvent(event_type='USER_ACCESS_UPDATED', user_id=user.id, user_email=user.email,
-                               actor_user_id=actor.id, actor_email=actor.email,
+        db.add(UserChangeEvent(event_type='USER_ACCESS_UPDATED', user_id=user.id, user_email=_audit_email(user.email),
+                               actor_user_id=actor.id, actor_email=_audit_email(actor.email),
                                changed_fields=changed_fields, before_state=before, after_state=after))
 
 
 @router.patch('/bulk', response_model=list[UserOut])
-def bulk_update_users(payload: UserBulkUpdate, db: Session = Depends(get_db), actor: User = Depends(current_user)):
+def bulk_update_users(payload: UserBulkUpdate, db: Session = Depends(get_db), actor: User = Depends(require_system_configuration)):
     ids = [item.id for item in payload.users]
     if len(ids) != len(set(ids)):
         raise HTTPException(status_code=422, detail='La solicitud contiene usuarios repetidos')
@@ -220,8 +390,39 @@ def bulk_update_users(payload: UserBulkUpdate, db: Session = Depends(get_db), ac
     return list(db.scalars(select(User).order_by(User.name)).all())
 
 
+@router.patch('/board', response_model=list[UserOut])
+def update_board(payload: BoardAssignmentUpdate, db: Session = Depends(get_db), actor: User = Depends(require_system_configuration)):
+    assignments = {
+        'PRESIDENTE': [payload.president_id] if payload.president_id else [],
+        'VICEPRESIDENTE': [payload.vice_president_id] if payload.vice_president_id else [],
+        'TESORERO': [payload.treasurer_id] if payload.treasurer_id else [],
+        'VOCERO': payload.vocal_ids,
+    }
+    selected_ids = {user_id for ids in assignments.values() for user_id in ids}
+    selected = {user.id: user for user in db.scalars(select(User).where(User.id.in_(selected_ids)).with_for_update()).all()} if selected_ids else {}
+    if set(selected) != selected_ids or any(not user.active or user.role == UserRole.ADMIN or user.person_type not in (PersonType.OWNER, PersonType.CO_OWNER) for user in selected.values()):
+        raise HTTPException(status_code=422, detail='El nivel directivo solo puede incluir propietarios o co-propietarios activos')
+    profiles = {item.code: item for item in db.scalars(select(AccessProfile).where(AccessProfile.code.in_([*assignments, 'PROPIETARIO']))).all()}
+    if len(profiles) != 5:
+        raise HTTPException(status_code=422, detail='Faltan perfiles requeridos para configurar el organigrama directivo')
+    current = list(db.scalars(select(User).where(User.title.in_(assignments)).with_for_update()).all())
+    try:
+        for user in current:
+            if user.id not in selected_ids:
+                _apply_user_changes(db, user, {'title': 'PROPIETARIO'}, actor)
+        db.flush()
+        for code, ids in assignments.items():
+            for user_id in ids:
+                _apply_user_changes(db, selected[user_id], {'title': code}, actor)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return list(db.scalars(select(User).where(User.title.in_(assignments)).order_by(User.title, User.name)).all())
+
+
 @router.post('/{user_id}/regenerate-password', response_model=UserOut)
-def regenerate_password(user_id: int, db: Session = Depends(get_db), actor: User = Depends(current_user)):
+def regenerate_password(user_id: int, db: Session = Depends(get_db), actor: User = Depends(require_system_configuration)):
     user = db.scalar(select(User).where(User.id == user_id).with_for_update())
     if not user:
         raise HTTPException(status_code=404, detail='Usuario no encontrado')
@@ -236,8 +437,8 @@ def regenerate_password(user_id: int, db: Session = Depends(get_db), actor: User
     user.must_change_password = True
     after = _snapshot(user)
     db.add(UserChangeEvent(
-        event_type='USER_PASSWORD_REGENERATED', user_id=user.id, user_email=user.email,
-        actor_user_id=actor.id, actor_email=actor.email,
+        event_type='USER_PASSWORD_REGENERATED', user_id=user.id, user_email=_audit_email(user.email),
+        actor_user_id=actor.id, actor_email=_audit_email(actor.email),
         changed_fields=['password_hash', 'must_change_password'],
         before_state=before, after_state=after,
     ))
@@ -252,7 +453,7 @@ def regenerate_password(user_id: int, db: Session = Depends(get_db), actor: User
 
 
 @router.patch('/{user_id}', response_model=UserOut)
-def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db), actor: User = Depends(current_user)):
+def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db), actor: User = Depends(require_people_write)):
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail='Usuario no encontrado')

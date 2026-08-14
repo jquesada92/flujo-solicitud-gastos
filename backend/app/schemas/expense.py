@@ -47,6 +47,7 @@ class InvoiceOut(BaseModel):
     supplier: str
     amount: Decimal
     requested_by: str
+    requester_analytics_id: str | None = None
     expense_status: str
     closed_at: datetime | None = None
     closed_by: str | None = None
@@ -84,6 +85,7 @@ class ExpenseOut(BaseModel):
     supplier: str
     item_url: str | None = None
     requested_by: str
+    requester_analytics_id: str | None = None
     status: str
     cancelled_at: datetime | None = None
     cancelled_by: str | None = None
