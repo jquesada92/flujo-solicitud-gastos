@@ -18,8 +18,6 @@ services:
     environment:
       # Development is intentionally isolated from Neon.
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ph_user}:${POSTGRES_PASSWORD:-ph_password}@db:5432/${POSTGRES_DB:-ph_expenses}
-      TREASURER_EMAIL: ${TREASURER_EMAIL:-tesorero@example.com}
-      PRESIDENT_EMAIL: ${PRESIDENT_EMAIL:-presidente@example.com}
       EMAIL_MODE: ${EMAIL_MODE:-console}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-465}

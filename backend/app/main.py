@@ -72,102 +72,13 @@ def seed_categories() -> None:
 
 
 def seed_rules() -> None:
-    treasurer = normalize_email(os.getenv('TREASURER_EMAIL', 'tesorero@example.com'))
-    president = normalize_email(os.getenv('PRESIDENT_EMAIL', 'presidente@example.com'))
-
     with SessionLocal() as db:
         legacy_policy = db.scalar(select(ApprovalPolicy).where(ApprovalPolicy.name == 'Aprobación de toda la Junta Directiva'))
         if legacy_policy:
             legacy_policy.name = 'Aprobación de todo el Organigrama directivo'
-        default_rules = [
-            ApprovalRule(
-                expense_type='ADMINISTRATION',
-                min_amount=Decimal('0.00'),
-                max_amount=Decimal('500.00'),
-                approver_email=treasurer,
-                approver_role='TESORERO',
-                step=1,
-            ),
-            ApprovalRule(
-                expense_type='ADMINISTRATION',
-                min_amount=Decimal('500.01'),
-                max_amount=None,
-                approver_email=treasurer,
-                approver_role='TESORERO',
-                step=1,
-            ),
-            ApprovalRule(
-                expense_type='ADMINISTRATION',
-                min_amount=Decimal('500.01'),
-                max_amount=None,
-                approver_email=president,
-                approver_role='PRESIDENTE',
-                step=2,
-            ),
-            ApprovalRule(
-                expense_type='MAINTENANCE',
-                min_amount=Decimal('0.00'),
-                max_amount=None,
-                approver_email=treasurer,
-                approver_role='TESORERO',
-                step=1,
-            ),
-            ApprovalRule(
-                expense_type='MAINTENANCE',
-                min_amount=Decimal('0.00'),
-                max_amount=None,
-                approver_email=president,
-                approver_role='PRESIDENTE',
-                step=2,
-            ),
-            ApprovalRule(
-                expense_type='EXTRAORDINARY',
-                min_amount=Decimal('0.00'),
-                max_amount=None,
-                approver_email=president,
-                approver_role='PRESIDENTE',
-                step=1,
-            ),
-            ApprovalRule(
-                expense_type='LEGAL',
-                min_amount=Decimal('0.00'),
-                max_amount=None,
-                approver_email=president,
-                approver_role='PRESIDENTE',
-                step=1,
-            ),
-            ApprovalRule(
-                expense_type='POOL', min_amount=Decimal('0.00'), max_amount=None,
-                approver_email=treasurer, approver_role='TESORERO', step=1,
-            ),
-            ApprovalRule(
-                expense_type='POOL', min_amount=Decimal('0.00'), max_amount=None,
-                approver_email=president, approver_role='PRESIDENTE', step=2,
-            ),
-            ApprovalRule(
-                expense_type='GYM', min_amount=Decimal('0.00'), max_amount=None,
-                approver_email=treasurer, approver_role='TESORERO', step=1,
-            ),
-            ApprovalRule(
-                expense_type='GYM', min_amount=Decimal('0.00'), max_amount=None,
-                approver_email=president, approver_role='PRESIDENTE', step=2,
-            ),
-            ApprovalRule(
-                expense_type='SQUASH_COURT', min_amount=Decimal('0.00'), max_amount=None,
-                approver_email=treasurer, approver_role='TESORERO', step=1,
-            ),
-            ApprovalRule(
-                expense_type='SQUASH_COURT', min_amount=Decimal('0.00'), max_amount=None,
-                approver_email=president, approver_role='PRESIDENTE', step=2,
-            ),
-        ]
-
-        # SUPPLIES used to be a top-level category. It is now a subcategory
-        # under OPERATING and MAINTENANCE, whose parent rules apply.
-        db.execute(update(ApprovalRule).where(ApprovalRule.expense_type == 'SUPPLIES').values(active=False))
-        configured_types = set(db.scalars(select(ApprovalRule.expense_type)).all())
-        missing_rules = [rule for rule in default_rules if rule.expense_type not in configured_types]
-        db.add_all(missing_rules)
+        # Approval recipients are resolved from the portal's active board
+        # assignments. Legacy rules tied to fixed email addresses stay disabled.
+        db.execute(update(ApprovalRule).values(active=False))
         real_policy = db.scalar(select(ApprovalPolicy.id).where(~ApprovalPolicy.name.like('[PRUEBA]%')).limit(1))
         if not real_policy:
             policy = ApprovalPolicy(

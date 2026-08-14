@@ -1,13 +1,11 @@
-import os
 import re
 import unicodedata
-from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 from app.core.database import get_db
-from app.core.security import current_user, normalize_email, require_permission
-from app.models.entities import ApprovalRule, ExpenseCategory, ExpenseSubcategory, User
+from app.core.security import current_user, require_permission
+from app.models.entities import ExpenseCategory, ExpenseSubcategory, User
 from app.schemas.category import CategoryCreate, CategoryOut, CategoryUpdate, SubcategoryCreate, SubcategoryOut
 
 router = APIRouter()
@@ -58,12 +56,6 @@ def list_categories(include_inactive: bool = False, db: Session = Depends(get_db
 def create_category(payload: CategoryCreate, db: Session = Depends(get_db)):
     item = ExpenseCategory(code=_unique_category_code(db, payload.name), name=payload.name)
     db.add(item)
-    treasurer = normalize_email(os.getenv('TREASURER_EMAIL', 'tesorero@example.com'))
-    president = normalize_email(os.getenv('PRESIDENT_EMAIL', 'presidente@example.com'))
-    db.add_all([
-        ApprovalRule(expense_type=item.code, min_amount=Decimal('0'), max_amount=None, approver_email=treasurer, approver_role='TESORERO', step=1),
-        ApprovalRule(expense_type=item.code, min_amount=Decimal('0'), max_amount=None, approver_email=president, approver_role='PRESIDENTE', step=2),
-    ])
     db.commit(); db.refresh(item)
     return _category(db, item.id)
 
