@@ -308,7 +308,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User 
                 last_name=payload.last_name.strip(),
                 second_last_name=payload.second_last_name.strip() if payload.second_last_name else None,
                 identity_document=document, analytics_id=analytics_identifier(document, email),
-                phone=payload.phone.strip(), person_type=payload.person_type,
+                phone=payload.phone.strip() if payload.phone else None, person_type=payload.person_type,
                 email=email, apartment_number=None, password_hash=hash_password(temporary_password),
                 role=_role_for_permissions(profile.can_request, profile.can_approve), title=profile.code,
                 can_request=profile.can_request, can_approve=profile.can_approve,

@@ -55,8 +55,13 @@ class UserCreate(BaseModel):
     last_name: str = Field(min_length=2, max_length=70)
     second_last_name: str | None = Field(default=None, max_length=70)
     email: EmailStr
-    phone: str = Field(min_length=7, max_length=30)
-    person_type: PersonType
+    phone: str | None = Field(default=None, min_length=7, max_length=30)
+    person_type: PersonType = PersonType.OWNER
+
+    @field_validator('middle_name', 'second_last_name', 'phone', mode='before')
+    @classmethod
+    def empty_optional_fields(cls, value):
+        return value if value is not None and str(value).strip() else None
 
 
 class UserUpdate(BaseModel):
@@ -73,6 +78,11 @@ class UserUpdate(BaseModel):
     active: bool | None = None
     apartment_number: str | None = Field(default=None, min_length=1, max_length=30)
     apartments: list[UserApartmentWrite] | None = Field(default=None, min_length=1, max_length=20)
+
+    @field_validator('middle_name', 'second_last_name', 'phone', mode='before')
+    @classmethod
+    def empty_optional_fields(cls, value):
+        return value if value is not None and str(value).strip() else None
 
     @field_validator('apartments')
     @classmethod

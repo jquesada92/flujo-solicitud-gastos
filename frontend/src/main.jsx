@@ -1533,7 +1533,7 @@ function Users({ canConfigure, canEditPeople, view }) {
             <h2>Crear o modificar usuario</h2>
           </div>
         </div>
-        <p className="muted">Busca por nombres, apellidos o cédula para modificar una persona existente, o completa el formulario para crearla.</p>
+        <p className="muted">Para registrar una persona solo son obligatorios la cédula, el primer nombre, el primer apellido y el correo. Los demás datos son opcionales.</p>
         <form className="table-filters" onSubmit={searchPeople}>
           <label>
             Buscar persona para modificar
@@ -1581,7 +1581,7 @@ function Users({ canConfigure, canEditPeople, view }) {
           </label>
           <label>
             Teléfono
-            <input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required maxLength="30" />
+            <input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} maxLength="30" placeholder="Opcional" />
           </label>
           <label>
             Tipo de persona
