@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select, text
+from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 from app.core.database import get_db
 from app.core.security import current_user, require_permission, require_roles
@@ -18,11 +18,24 @@ from app.services.approval_engine import expire_open_approvals, start_approval_f
 router = APIRouter()
 UPLOAD_DIR = Path(os.getenv('UPLOAD_DIR', '/app/uploads'))
 MAX_FILE_SIZE = 10 * 1024 * 1024
+MAX_UPLOAD_STORAGE_MB = int(os.getenv('MAX_UPLOAD_STORAGE_MB', '450'))
+MAX_UPLOAD_STORAGE = MAX_UPLOAD_STORAGE_MB * 1024 * 1024
 ALLOWED_TYPES = {'application/pdf', 'image/jpeg', 'image/png', 'image/webp'}
 DISPLAY_PREFIXES = {
     'ADMINISTRATION': 'ADM', 'MAINTENANCE': 'MAN', 'EXTRAORDINARY': 'EXT',
     'LEGAL': 'LEG', 'POOL': 'PIS', 'GYM': 'GYM', 'SQUASH_COURT': 'SQU',
 }
+
+
+def _ensure_storage_capacity(additional_bytes: int) -> None:
+    """Keep uploaded documents below the configured application storage budget."""
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    used_bytes = sum(path.stat().st_size for path in UPLOAD_DIR.iterdir() if path.is_file())
+    if used_bytes + additional_bytes > MAX_UPLOAD_STORAGE:
+        raise HTTPException(
+            status_code=507,
+            detail=f'El almacenamiento de documentos alcanzó su límite de {MAX_UPLOAD_STORAGE_MB} MB. Contacta al administrador.',
+        )
 
 
 def _next_display_id(db: Session, category: str) -> str:
@@ -64,7 +77,31 @@ def _validate_catalog_selection(db: Session, category_code: str, subcategory_cod
 def list_expenses(db: Session = Depends(get_db), user: User = Depends(current_user)):
     if user.role != UserRole.ADMIN and not user.can_view:
         raise HTTPException(status_code=403, detail='No tienes permiso para consultar solicitudes')
-    stmt = select(Expense).options(selectinload(Expense.approvals), selectinload(Expense.attachments)).order_by(Expense.id.desc())
+    open_statuses = (
+        ExpenseStatus.SUBMITTED,
+        ExpenseStatus.PENDING_APPROVAL,
+        ExpenseStatus.APPROVED,
+        ExpenseStatus.NEEDS_REVISION,
+    )
+    has_invoice = exists(
+        select(ExpenseAttachment.id).where(
+            ExpenseAttachment.expense_id == Expense.id,
+            ExpenseAttachment.document_type == 'INVOICE',
+        )
+    )
+    stmt = (
+        select(Expense)
+        .where(or_(
+            Expense.status.in_(open_statuses),
+            and_(
+                Expense.status == ExpenseStatus.CLOSED,
+                Expense.closed_at >= func.now() - text("INTERVAL '45 days'"),
+                has_invoice,
+            ),
+        ))
+        .options(selectinload(Expense.approvals), selectinload(Expense.attachments))
+        .order_by(Expense.id.desc())
+    )
     if user.role == UserRole.REQUESTER:
         stmt = stmt.where(Expense.requested_by == user.email)
     return list(db.scalars(stmt).all())
@@ -227,7 +264,7 @@ async def upload_attachment(
     safe_original = Path(file.filename or 'cotizacion').name[:255]
     suffix = Path(safe_original).suffix.lower()
     stored_name = f'{secrets.token_hex(20)}{suffix}'
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    _ensure_storage_capacity(len(content))
     (UPLOAD_DIR / stored_name).write_bytes(content)
     attachment = ExpenseAttachment(expense_id=expense.id, original_name=safe_original, stored_name=stored_name, content_type=file.content_type, size=len(content))
     db.add(attachment); db.commit(); db.refresh(attachment)
@@ -303,6 +340,7 @@ async def close_expense(
         stored = f'{secrets.token_hex(20)}{Path(original).suffix.lower()}'
         prepared.append((document_type, upload.content_type, original, stored, content))
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    _ensure_storage_capacity(sum(len(item[4]) for item in prepared))
     written = []
     try:
         for document_type, content_type, original, stored, content in prepared:

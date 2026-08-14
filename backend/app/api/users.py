@@ -3,7 +3,7 @@ import re
 import unicodedata
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -14,7 +14,7 @@ from app.services.email_service import send_user_invitation
 
 router = APIRouter(dependencies=[Depends(require_permission('can_configure'))])
 
-AUDITED_FIELDS = ('name', 'title', 'role', 'active', 'can_request', 'can_approve', 'can_view', 'can_configure')
+AUDITED_FIELDS = ('name', 'apartment_number', 'title', 'role', 'active', 'can_request', 'can_approve', 'can_view', 'can_configure', 'must_change_password')
 
 def _snapshot(user: User) -> dict:
     return {key: (getattr(user, key).value if key == 'role' else getattr(user, key)) for key in AUDITED_FIELDS}
@@ -65,7 +65,17 @@ def list_users(db: Session = Depends(get_db)):
 @router.get('/changes', response_model=list[UserChangeEventOut])
 def list_user_changes(limit: int = 100, db: Session = Depends(get_db)):
     safe_limit = min(max(limit, 1), 500)
-    return list(db.scalars(select(UserChangeEvent).order_by(UserChangeEvent.event_sequence.desc()).limit(safe_limit)).all())
+    month_start = func.date_trunc('month', func.now())
+    stmt = (
+        select(UserChangeEvent)
+        .where(
+            UserChangeEvent.occurred_at >= month_start,
+            UserChangeEvent.occurred_at < month_start + text("INTERVAL '1 month'"),
+        )
+        .order_by(UserChangeEvent.event_sequence.desc())
+        .limit(safe_limit)
+    )
+    return list(db.scalars(stmt).all())
 
 
 @router.get('/profiles', response_model=list[AccessProfileOut])
@@ -139,7 +149,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User 
         raise HTTPException(status_code=422, detail='El cargo seleccionado no existe o está inactivo')
     _ensure_title_available(db, profile, True)
     temporary_password = secrets.token_urlsafe(15)
-    user = User(name=payload.name.strip(), email=email, password_hash=hash_password(temporary_password),
+    user = User(name=payload.name.strip(), email=email, apartment_number=payload.apartment_number.strip().upper(), password_hash=hash_password(temporary_password),
                 role=_role_for_permissions(profile.can_request, profile.can_approve), title=profile.code,
                 can_request=profile.can_request, can_approve=profile.can_approve,
                 can_view=profile.can_view, can_configure=profile.can_configure,
@@ -176,7 +186,9 @@ def _apply_user_changes(db: Session, user: User, changes: dict, actor: User) -> 
     if target_profile:
         _ensure_title_available(db, target_profile, resulting_active, user.id)
     for key, value in changes.items():
-        setattr(user, key, value.strip() if key == 'name' else value)
+        if key in ('name', 'apartment_number') and value:
+            value = value.strip().upper() if key == 'apartment_number' else value.strip()
+        setattr(user, key, value)
     if target_profile:
         _apply_profile_permissions(user, target_profile)
     after = _snapshot(user)
@@ -206,6 +218,37 @@ def bulk_update_users(payload: UserBulkUpdate, db: Session = Depends(get_db), ac
         db.rollback()
         raise
     return list(db.scalars(select(User).order_by(User.name)).all())
+
+
+@router.post('/{user_id}/regenerate-password', response_model=UserOut)
+def regenerate_password(user_id: int, db: Session = Depends(get_db), actor: User = Depends(current_user)):
+    user = db.scalar(select(User).where(User.id == user_id).with_for_update())
+    if not user:
+        raise HTTPException(status_code=404, detail='Usuario no encontrado')
+    if user.role == UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail='La contraseña del Administrador del sistema no puede regenerarse desde esta pantalla')
+    if not user.active:
+        raise HTTPException(status_code=409, detail='Activa el usuario antes de regenerar su contraseña')
+
+    before = _snapshot(user)
+    temporary_password = secrets.token_urlsafe(15)
+    user.password_hash = hash_password(temporary_password)
+    user.must_change_password = True
+    after = _snapshot(user)
+    db.add(UserChangeEvent(
+        event_type='USER_PASSWORD_REGENERATED', user_id=user.id, user_email=user.email,
+        actor_user_id=actor.id, actor_email=actor.email,
+        changed_fields=['password_hash', 'must_change_password'],
+        before_state=before, after_state=after,
+    ))
+    try:
+        send_user_invitation(user, temporary_password)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=502, detail='No se pudo enviar la nueva contraseña. La contraseña anterior continúa vigente.') from exc
+    db.refresh(user)
+    return user
 
 
 @router.patch('/{user_id}', response_model=UserOut)

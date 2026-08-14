@@ -27,6 +27,8 @@ services:
         value: console
       - key: UPLOAD_DIR
         value: /app/uploads
+      - key: MAX_UPLOAD_STORAGE_MB
+        value: "450"
     disk:
       name: expense-uploads
       mountPath: /app/uploads

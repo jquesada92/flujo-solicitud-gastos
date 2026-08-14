@@ -12,12 +12,14 @@ class UserCreate(BaseModel):
     name: str = Field(min_length=2, max_length=150)
     email: EmailStr
     title: str = Field(min_length=2, max_length=70)
+    apartment_number: str = Field(min_length=1, max_length=30)
 
 
 class UserUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=150)
     title: str | None = Field(default=None, min_length=2, max_length=70)
     active: bool | None = None
+    apartment_number: str | None = Field(default=None, min_length=1, max_length=30)
 
 
 class UserBulkUpdateItem(UserUpdate):
@@ -32,6 +34,7 @@ class UserOut(BaseModel):
     id: int
     name: str
     email: str
+    apartment_number: str | None
     role: UserRole
     title: str
     active: bool

@@ -152,6 +152,9 @@ def migrate_schema() -> None:
         if 'title' not in user_columns:
             connection.execute(text("ALTER TABLE users ADD COLUMN title VARCHAR(40) NOT NULL DEFAULT 'PROPIETARIO'"))
             connection.execute(text("UPDATE users SET title = CASE WHEN role='ADMIN' THEN 'ADMIN_SISTEMA' WHEN role='APPROVER' THEN 'VOCERO' WHEN role='REQUESTER' THEN 'ADMINISTRADORA' ELSE 'PROPIETARIO' END"))
+        if 'apartment_number' not in user_columns:
+            connection.execute(text('ALTER TABLE users ADD COLUMN apartment_number VARCHAR(30)'))
+            connection.execute(text('CREATE INDEX IF NOT EXISTS ix_users_apartment_number ON users (apartment_number)'))
         connection.execute(text('DROP INDEX IF EXISTS uq_users_single_active_officer'))
         profile_columns = {column['name'] for column in inspect(engine).get_columns('access_profiles')}
         if 'has_user_limit' not in profile_columns:

@@ -144,6 +144,13 @@ uno a la vez.
 - PostgreSQL en Neon mediante `DATABASE_URL` configurada en Render.
 - Archivos en el disco persistente `/app/uploads` de Render.
 
+Para mantener el almacenamiento de documentos por debajo de 0.5 GB, el backend
+usa `MAX_UPLOAD_STORAGE_MB=450`. Antes de guardar cotizaciones o facturas calcula
+el espacio utilizado y rechaza la carga con HTTP `507` si excedería ese límite.
+Los 50 MB restantes funcionan como margen operativo. Este límite corresponde al
+disco de archivos de Render; el almacenamiento relacional de Neon se monitorea por
+separado desde su panel.
+
 Las variables de referencia están en `.env.production.example`. Los valores reales
 se configuran en los paneles de Render y Vercel y nunca se guardan en Git.
 

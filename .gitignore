@@ -1,6 +1,7 @@
 .env
 .env.local
 .env.preview
+.env.render
 .env.production
 frontend/.env.local
 frontend/.env.production
