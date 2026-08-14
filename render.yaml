@@ -18,7 +18,7 @@ services:
       - key: CORS_ALLOWED_ORIGINS
         sync: false
       - key: ADMIN_NAME
-        value: Administrador
+        value: Administrador del sistema
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_PASSWORD

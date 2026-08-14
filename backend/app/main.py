@@ -227,6 +227,7 @@ def migrate_schema() -> None:
         if 'identity_document' not in user_columns:
             connection.execute(text('ALTER TABLE users ADD COLUMN identity_document VARCHAR(50)'))
             connection.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_users_identity_document ON users (identity_document) WHERE identity_document IS NOT NULL'))
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_identity_document_normalized ON users (upper(trim(identity_document))) WHERE identity_document IS NOT NULL AND trim(identity_document) <> ''"))
         if 'analytics_id' not in user_columns:
             connection.execute(text('ALTER TABLE users ADD COLUMN analytics_id VARCHAR(64)'))
             connection.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ix_users_analytics_id ON users (analytics_id) WHERE analytics_id IS NOT NULL'))
@@ -397,7 +398,7 @@ def migrate_schema() -> None:
 def seed_admin() -> None:
     email = normalize_email(os.getenv('ADMIN_EMAIL', 'admin@example.com'))
     password = os.getenv('ADMIN_PASSWORD', 'Admin123!')
-    name = os.getenv('ADMIN_NAME', 'Administrador')
+    name = os.getenv('ADMIN_NAME', 'Administrador del sistema')
     with SessionLocal() as db:
         # Guarantee the configured bootstrap administrator even when other
         # users already exist. Existing credentials are never overwritten.

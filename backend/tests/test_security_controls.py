@@ -12,6 +12,7 @@ os.environ.setdefault('SECRET_KEY', 'unit-test-secret-key-at-least-32-characters
 
 from app.api import auth
 from app.api.expenses import _validate_file_content
+from app.api.users import _require_board_apartment
 from app.services import email_service
 from app.core.rate_limit import (
     READ_POLICY,
@@ -93,6 +94,13 @@ class SecurityControlTests(unittest.TestCase):
         self.assertEqual(request.full_url, 'https://api.brevo.com/v3/smtp/email')
         self.assertIn('verified@example.com', payload)
         self.assertNotIn('test-api-key', payload)
+
+    def test_active_board_member_requires_apartment(self):
+        with self.assertRaises(HTTPException) as raised:
+            _require_board_apartment('PRESIDENTE', True, [])
+        self.assertEqual(raised.exception.status_code, 422)
+        _require_board_apartment('PRESIDENTE', True, ['21H'])
+        _require_board_apartment('PROPIETARIO', True, [])
 
     def test_production_rejects_development_secrets(self):
         values = {

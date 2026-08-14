@@ -37,7 +37,7 @@ services:
       USER_WRITE_RATE_LIMIT: ${USER_WRITE_RATE_LIMIT:-30}
       USER_UPLOAD_RATE_LIMIT: ${USER_UPLOAD_RATE_LIMIT:-6}
       USER_SENSITIVE_RATE_LIMIT: ${USER_SENSITIVE_RATE_LIMIT:-10}
-      ADMIN_NAME: ${ADMIN_NAME:-Administrador}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrador del sistema}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123!}
       UPLOAD_DIR: /app/uploads

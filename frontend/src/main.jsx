@@ -1509,7 +1509,7 @@ function Users({ canConfigure, canEditPeople, view }) {
   const normalizedUserSearch = userSearch.trim().toLowerCase();
   const visibleUsers = normalizedUserSearch
     ? users.filter((u) =>
-        [u.full_name || u.name, u.email, ...(u.apartments || []).map((item) => item.apartment_number), u.role === "ADMIN" ? "administración" : ""]
+        [u.full_name || u.name, u.first_name, u.middle_name, u.last_name, u.second_last_name, u.identity_document, u.email, ...(u.apartments || []).map((item) => item.apartment_number), u.role === "ADMIN" ? "administración" : ""]
           .some((value) => String(value || "").toLowerCase().includes(normalizedUserSearch)),
       )
     : users.filter((u) => u.can_approve || u.can_request);
@@ -1537,7 +1537,7 @@ function Users({ canConfigure, canEditPeople, view }) {
         <form className="table-filters" onSubmit={searchPeople}>
           <label>
             Buscar persona para modificar
-            <input value={personSearch} onChange={(e) => setPersonSearch(e.target.value)} placeholder="Nombre, apellido o cédula/pasaporte..." />
+            <input value={personSearch} onChange={(e) => setPersonSearch(e.target.value)} placeholder="Cédula, nombre o correo electrónico..." />
           </label>
           <button className="secondary" disabled={saving === "person-search"}>{saving === "person-search" ? "Buscando..." : "Buscar"}</button>
         </form>
@@ -1665,7 +1665,7 @@ function Users({ canConfigure, canEditPeople, view }) {
         <div className="card-heading">
           <div><p className="eyebrow">ESTRUCTURA ORGANIZACIONAL</p><h2>Organigrama</h2></div>
         </div>
-        <p className="muted">Consulta la estructura y administra sus cargos y permisos en esta misma sección.</p>
+        <p className="muted">Los miembros activos de la junta directiva deben estar asignados al menos a un apartamento.</p>
         <div className="table-wrap"><table><thead><tr><th>Nombre completo</th><th>Cargo</th><th>Unidad / apartamento</th><th>Estado</th></tr></thead><tbody>
           {users.filter((u) => u.role === "ADMIN" || u.title !== "PROPIETARIO").map((u) => {
             const profile = profiles.find((p) => p.code === u.title);

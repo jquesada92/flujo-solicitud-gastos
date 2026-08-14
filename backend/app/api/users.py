@@ -4,6 +4,7 @@ import unicodedata
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
@@ -33,8 +34,17 @@ def require_people_write(user: User = Depends(current_user)) -> User:
 
 
 router = APIRouter(dependencies=[Depends(require_people_access)])
+BOARD_CODES = {'PRESIDENTE', 'VICEPRESIDENTE', 'TESORERO', 'VOCERO'}
 
 AUDITED_FIELDS = ('name', 'analytics_id', 'identity_document', 'email', 'phone', 'person_type', 'apartment_number', 'title', 'role', 'active', 'can_request', 'can_approve', 'can_view', 'can_configure', 'must_change_password')
+
+
+def _require_board_apartment(title: str, active: bool, apartments) -> None:
+    if active and title in BOARD_CODES and not apartments:
+        raise HTTPException(
+            status_code=422,
+            detail='Cada miembro activo de la junta directiva debe estar asignado al menos a un apartamento',
+        )
 
 def _snapshot(user: User) -> dict:
     snapshot = {key: (value.value if hasattr((value := getattr(user, key)), 'value') else value) for key in AUDITED_FIELDS}
@@ -120,7 +130,8 @@ def search_users(q: str, limit: int = 10, db: Session = Depends(get_db), viewer:
             | (User.middle_name.ilike(pattern))
             | (User.last_name.ilike(pattern))
             | (User.second_last_name.ilike(pattern))
-            | (User.identity_document.ilike(pattern)),
+            | (User.identity_document.ilike(pattern))
+            | (User.email.ilike(pattern)),
         )
         .order_by(User.name)
         .limit(min(max(limit, 1), 20))
@@ -276,7 +287,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User 
     if db.scalar(select(User.id).where(func.lower(User.email) == email)):
         raise HTTPException(status_code=409, detail='Ya existe un usuario con ese correo')
     document = payload.identity_document.strip().upper()
-    if db.scalar(select(User.id).where(func.upper(User.identity_document) == document)):
+    if db.scalar(select(User.id).where(func.upper(func.trim(User.identity_document)) == document)):
         raise HTTPException(status_code=409, detail='Ya existe un usuario con esa cédula o pasaporte')
     default_profiles = {
         PersonType.OWNER: 'PROPIETARIO', PersonType.CO_OWNER: 'PROPIETARIO',
@@ -312,6 +323,9 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), actor: User 
                                changed_fields=list(after.keys()), before_state=None, after_state=after))
         send_user_invitation(user, temporary_password)
         db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Ya existe un usuario con ese correo o cédula') from exc
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=502, detail='No se pudo enviar la invitación. El usuario no fue creado.') from exc
@@ -332,7 +346,7 @@ def _apply_user_changes(db: Session, user: User, changes: dict, actor: User) -> 
         changes['email'] = email
     if 'identity_document' in changes:
         document = changes['identity_document'].strip().upper()
-        duplicate = db.scalar(select(User.id).where(func.upper(User.identity_document) == document, User.id != user.id))
+        duplicate = db.scalar(select(User.id).where(func.upper(func.trim(User.identity_document)) == document, User.id != user.id))
         if duplicate:
             raise HTTPException(status_code=409, detail='Ya existe un usuario con esa cédula o pasaporte')
         changes['identity_document'] = document
@@ -344,6 +358,8 @@ def _apply_user_changes(db: Session, user: User, changes: dict, actor: User) -> 
             raise HTTPException(status_code=422, detail='El cargo seleccionado no existe o está inactivo')
     resulting_title = new_title or user.title
     resulting_active = changes.get('active', user.active)
+    resulting_apartments = apartment_changes if apartment_changes is not None else user.apartments
+    _require_board_apartment(resulting_title, resulting_active, resulting_apartments)
     target_profile = profile if new_title else db.scalar(select(AccessProfile).where(AccessProfile.code == resulting_title))
     if target_profile:
         _ensure_title_available(db, target_profile, resulting_active, user.id)
@@ -384,6 +400,9 @@ def bulk_update_users(payload: UserBulkUpdate, db: Session = Depends(get_db), ac
             _apply_user_changes(db, records[item.id], changes, actor)
             db.flush()
         db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Ya existe un usuario con ese correo o cédula') from exc
     except Exception:
         db.rollback()
         raise
@@ -402,6 +421,8 @@ def update_board(payload: BoardAssignmentUpdate, db: Session = Depends(get_db), 
     selected = {user.id: user for user in db.scalars(select(User).where(User.id.in_(selected_ids)).with_for_update()).all()} if selected_ids else {}
     if set(selected) != selected_ids or any(not user.active or user.role == UserRole.ADMIN or user.person_type not in (PersonType.OWNER, PersonType.CO_OWNER) for user in selected.values()):
         raise HTTPException(status_code=422, detail='El nivel directivo solo puede incluir propietarios o co-propietarios activos')
+    if any(not user.apartments for user in selected.values()):
+        raise HTTPException(status_code=422, detail='Cada miembro de la junta directiva debe estar asignado al menos a un apartamento')
     profiles = {item.code: item for item in db.scalars(select(AccessProfile).where(AccessProfile.code.in_([*assignments, 'PROPIETARIO']))).all()}
     if len(profiles) != 5:
         raise HTTPException(status_code=422, detail='Faltan perfiles requeridos para configurar el organigrama directivo')
@@ -459,6 +480,10 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
     if not user:
         raise HTTPException(status_code=404, detail='Usuario no encontrado')
     _apply_user_changes(db, user, payload.model_dump(exclude_unset=True), actor)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Ya existe un usuario con ese correo o cédula') from exc
     db.refresh(user)
     return user
