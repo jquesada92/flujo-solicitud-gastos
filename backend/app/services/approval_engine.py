@@ -3,7 +3,7 @@ import secrets
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 from app.models.entities import Approval, ApprovalPolicy, ApprovalRule, ApprovalStatus, ApprovalStepEvent, Expense, ExpenseStatus, User, UserRole
 from app.services.email_service import send_approval_request, send_final_notification
@@ -97,9 +97,12 @@ def start_approval_flow(db: Session, expense: Expense) -> None:
         users = list(db.scalars(select(User).where(
             User.active.is_(True), User.can_approve.is_(True), User.role != UserRole.ADMIN,
             User.title.in_(policy.approver_profile_codes),
+            func.lower(User.email) != expense.requested_by.lower(),
         ).order_by(User.id)).all())
         if not users:
-            raise ValueError('La regla aplicable no tiene usuarios activos en los cargos aprobadores seleccionados')
+            raise ValueError(
+                'La regla aplicable no tiene otro usuario activo que pueda aprobar esta solicitud'
+            )
         approvals = [Approval(expense_id=expense.id, flow_id=expense.flow_id, approver_email=user.email,
             approver_role=user.title, step=index, approval_mode=policy.approval_mode,
             token=secrets.token_urlsafe(32), status=ApprovalStatus.PENDING)
@@ -111,9 +114,15 @@ def start_approval_flow(db: Session, expense: Expense) -> None:
         for item in approvals: _safe_email(send_approval_request, item)
         return
 
-    rules = matching_rules(db, expense)
+    rules = [
+        rule
+        for rule in matching_rules(db, expense)
+        if rule.approver_email.lower() != expense.requested_by.lower()
+    ]
     if not rules:
-        raise ValueError(f'No approval rule configured for type={expense.expense_type} amount={expense.amount}')
+        raise ValueError(
+            'La regla aplicable no tiene otro usuario que pueda aprobar esta solicitud'
+        )
 
     approvals: list[Approval] = []
     for index, rule in enumerate(rules):

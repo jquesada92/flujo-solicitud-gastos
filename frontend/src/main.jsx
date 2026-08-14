@@ -1288,7 +1288,7 @@ function Users() {
         [u.name, u.email, u.apartment_number, u.role === "ADMIN" ? "administración" : ""]
           .some((value) => String(value || "").toLowerCase().includes(normalizedUserSearch)),
       )
-    : users.filter((u) => u.can_approve);
+    : users.filter((u) => u.can_approve || u.can_request);
   return (
     <>
       <section className="card">
@@ -1412,7 +1412,7 @@ function Users() {
           <span className="filter-count">
             {normalizedUserSearch
               ? `${visibleUsers.length} resultado(s)`
-              : `${visibleUsers.length} aprobador(es)`}
+              : `${visibleUsers.length} solicitante(s) o aprobador(es)`}
           </span>
         </div>
         <div className="table-wrap">

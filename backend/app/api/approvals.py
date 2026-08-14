@@ -79,6 +79,8 @@ def decide_approval(
     db.scalar(select(Expense).where(Expense.id == approval.expense_id).with_for_update())
     db.refresh(approval)
     _ensure_link_is_current(approval)
+    if user.email.lower() == approval.expense.requested_by.lower():
+        raise HTTPException(status_code=403, detail='No puedes aprobar tu propia solicitud')
     if user.role != UserRole.ADMIN and user.email != approval.approver_email.lower():
         raise HTTPException(status_code=403, detail='Esta aprobación no está asignada a tu usuario')
     try:
