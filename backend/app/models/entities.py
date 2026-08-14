@@ -70,6 +70,8 @@ class User(Base):
     can_view: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     can_configure: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    session_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     apartments = relationship('UserApartment', back_populates='user', cascade='all, delete-orphan', order_by='UserApartment.apartment_number')
@@ -304,6 +306,7 @@ class Approval(Base):
     status: Mapped[ApprovalStatus] = mapped_column(Enum(ApprovalStatus), default=ApprovalStatus.WAITING, nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     expense = relationship('Expense', back_populates='approvals')
 

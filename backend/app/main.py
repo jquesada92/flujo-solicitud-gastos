@@ -5,16 +5,43 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, inspect, select, text, update
 
 from app.api import approvals, audit, auth, categories, expenses, rules, users
 from app.core.security import hash_password, normalize_email
+from app.core.rate_limit import (
+    authenticated_subject,
+    consume_user_request,
+    policy_for_request,
+)
 from app.core.privacy import analytics_identifier
 from app.core.database import Base, SessionLocal, engine
 from app.models.entities import AccessProfile, ApprovalPolicy, ApprovalPolicyChangeEvent, ApprovalRule, Expense, ExpenseCategory, ExpenseSubcategory, User, UserRole
 
 logging.basicConfig(level=logging.INFO)
+
+
+def validate_runtime_security() -> None:
+    production = os.getenv('ENVIRONMENT', '').lower() == 'production' or os.getenv('RENDER', '').lower() == 'true'
+    if not production:
+        return
+    errors = []
+    secret_key = os.getenv('SECRET_KEY', '')
+    analytics_key = os.getenv('ANALYTICS_HASH_KEY', '')
+    admin_password = os.getenv('ADMIN_PASSWORD', '')
+    origins = cors_origins()
+    if len(secret_key) < 32 or secret_key == 'development-only-change-me':
+        errors.append('SECRET_KEY must contain at least 32 characters')
+    if len(analytics_key) < 32 or analytics_key == secret_key:
+        errors.append('ANALYTICS_HASH_KEY must be a separate value of at least 32 characters')
+    if len(admin_password) < 12 or admin_password == 'Admin123!':
+        errors.append('ADMIN_PASSWORD must contain at least 12 characters')
+    if not origins or '*' in origins or any(not origin.startswith('https://') for origin in origins):
+        errors.append('CORS_ALLOWED_ORIGINS must contain only explicit HTTPS origins')
+    if errors:
+        raise RuntimeError('Unsafe production configuration: ' + '; '.join(errors))
 
 
 def cors_origins() -> list[str]:
@@ -184,6 +211,10 @@ def migrate_schema() -> None:
         for name, default in (('can_request','FALSE'),('can_approve','FALSE'),('can_view','TRUE'),('can_configure','FALSE'),('must_change_password','FALSE')):
             if name not in user_columns:
                 connection.execute(text(f'ALTER TABLE users ADD COLUMN {name} BOOLEAN NOT NULL DEFAULT {default}'))
+        if 'session_version' not in user_columns:
+            connection.execute(text('ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 1'))
+        if 'last_activity_at' not in user_columns:
+            connection.execute(text('ALTER TABLE users ADD COLUMN last_activity_at TIMESTAMPTZ'))
         if 'title' not in user_columns:
             connection.execute(text("ALTER TABLE users ADD COLUMN title VARCHAR(40) NOT NULL DEFAULT 'PROPIETARIO'"))
             connection.execute(text("UPDATE users SET title = CASE WHEN role='ADMIN' THEN 'ADMIN_SISTEMA' WHEN role='APPROVER' THEN 'VOCERO' WHEN role='REQUESTER' THEN 'ADMINISTRADORA' ELSE 'PROPIETARIO' END"))
@@ -259,6 +290,8 @@ def migrate_schema() -> None:
             connection.execute(text('ALTER TABLE approvals ADD COLUMN flow_id VARCHAR(36)'))
             connection.execute(text('UPDATE approvals SET flow_id = expenses.flow_id FROM expenses WHERE approvals.expense_id = expenses.id'))
             connection.execute(text('ALTER TABLE approvals ALTER COLUMN flow_id SET NOT NULL'))
+        if 'created_at' not in approval_columns:
+            connection.execute(text('ALTER TABLE approvals ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT now()'))
             connection.execute(text('CREATE INDEX IF NOT EXISTS ix_approvals_flow_id ON approvals (flow_id)'))
         if 'expense_subcategory' not in columns:
             connection.execute(text('ALTER TABLE expenses ADD COLUMN expense_subcategory VARCHAR(80)'))
@@ -422,6 +455,7 @@ def seed_access_profiles() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    validate_runtime_security()
     Base.metadata.create_all(bind=engine)
     migrate_schema()
     seed_admin()
@@ -447,6 +481,32 @@ app.add_middleware(
     allow_methods=['*'],
     allow_headers=['*'],
 )
+
+
+@app.middleware('http')
+async def limit_authenticated_users(request, call_next):
+    excluded = {'/api/health', '/api/auth/login', '/api/auth/activity'}
+    if request.method != 'OPTIONS' and request.url.path.startswith('/api/') and request.url.path not in excluded:
+        subject = authenticated_subject(request.headers.get('authorization'))
+        if subject:
+            policy = policy_for_request(request.method, request.url.path)
+            allowed, remaining, retry_after = consume_user_request(subject, policy)
+            if not allowed:
+                return JSONResponse(
+                    status_code=429,
+                    content={'detail': f'Máximo {policy.limit} acciones de tipo {policy.name} por minuto'},
+                    headers={'Retry-After': str(retry_after)},
+                )
+            request.state.rate_limit_remaining = remaining
+            request.state.rate_limit_policy = policy
+    response = await call_next(request)
+    if hasattr(request.state, 'rate_limit_remaining'):
+        policy = request.state.rate_limit_policy
+        response.headers['X-RateLimit-Policy'] = policy.name
+        response.headers['X-RateLimit-Limit'] = str(policy.limit)
+        response.headers['X-RateLimit-Remaining'] = str(request.state.rate_limit_remaining)
+        response.headers['X-RateLimit-Window'] = str(policy.window_seconds)
+    return response
 
 
 @app.middleware('http')

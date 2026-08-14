@@ -2,6 +2,9 @@ import html
 import logging
 import os
 import smtplib
+import json
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 from email.message import EmailMessage
 
 logger = logging.getLogger(__name__)
@@ -14,12 +17,54 @@ SMTP_SECURITY = os.getenv('SMTP_SECURITY', 'ssl').lower()
 EMAIL_FROM = os.getenv('EMAIL_FROM', SMTP_USER or 'noreply@ph.local')
 EMAIL_MODE = os.getenv('EMAIL_MODE', 'console').lower()
 PUBLIC_URL = os.getenv('PUBLIC_URL', 'http://localhost:3000').rstrip('/')
+BREVO_API_KEY = os.getenv('BREVO_API_KEY', '')
+BREVO_SENDER_NAME = os.getenv('BREVO_SENDER_NAME', 'PH · Gestión de Gastos')
+BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email'
+
+
+def _send_brevo(to: str, subject: str, text_body: str, html_body: str | None) -> None:
+    if not BREVO_API_KEY:
+        raise RuntimeError('BREVO_API_KEY is required when EMAIL_MODE=brevo')
+    if not EMAIL_FROM or EMAIL_FROM.endswith('@ph.local'):
+        raise RuntimeError('A verified EMAIL_FROM is required when EMAIL_MODE=brevo')
+    payload = {
+        'sender': {'email': EMAIL_FROM, 'name': BREVO_SENDER_NAME},
+        'to': [{'email': to}],
+        'subject': subject,
+    }
+    if html_body:
+        payload['htmlContent'] = html_body
+    else:
+        payload['textContent'] = text_body
+    request = Request(
+        BREVO_API_URL,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            'accept': 'application/json',
+            'api-key': BREVO_API_KEY,
+            'content-type': 'application/json',
+        },
+        method='POST',
+    )
+    try:
+        with urlopen(request, timeout=10) as response:
+            if response.status != 201:
+                raise RuntimeError(f'Brevo rejected the email with HTTP {response.status}')
+    except HTTPError as exc:
+        raise RuntimeError(f'Brevo rejected the email with HTTP {exc.code}') from exc
+    except URLError as exc:
+        raise RuntimeError('Could not connect to the Brevo email API') from exc
 
 
 def _send(to: str, subject: str, text_body: str, html_body: str | None = None) -> None:
-    if EMAIL_MODE != 'smtp':
+    if EMAIL_MODE == 'console':
         logger.warning('\n--- EMAIL (console mode) ---\nTO: %s\nSUBJECT: %s\n%s\n----------------------------', to, subject, text_body)
         return
+    if EMAIL_MODE == 'brevo':
+        _send_brevo(to, subject, text_body, html_body)
+        return
+    if EMAIL_MODE != 'smtp':
+        raise RuntimeError(f'Unsupported EMAIL_MODE: {EMAIL_MODE}')
     if not SMTP_USER or not SMTP_PASSWORD:
         raise RuntimeError('SMTP_USER and SMTP_PASSWORD are required when EMAIL_MODE=smtp')
 

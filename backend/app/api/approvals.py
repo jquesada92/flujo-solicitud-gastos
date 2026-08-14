@@ -1,3 +1,6 @@
+import os
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -10,6 +13,7 @@ from app.schemas.expense import ExpenseOut
 from app.services.approval_engine import apply_decision
 
 router = APIRouter()
+APPROVAL_LINK_HOURS = int(os.getenv('APPROVAL_LINK_HOURS', '72'))
 
 
 def _approval_by_token(db: Session, token: str) -> Approval:
@@ -21,6 +25,11 @@ def _approval_by_token(db: Session, token: str) -> Approval:
 
 
 def _ensure_link_is_current(approval: Approval) -> None:
+    created_at = approval.created_at
+    if created_at and created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    if created_at and datetime.now(timezone.utc) > created_at + timedelta(hours=APPROVAL_LINK_HOURS):
+        raise HTTPException(status_code=410, detail='Este enlace de aprobación venció')
     if approval.status == ApprovalStatus.EXPIRED:
         raise HTTPException(status_code=410, detail='Este enlace expiró porque el flujo fue cancelado, rechazado o reemplazado por una corrección')
     if approval.expense.status in (ExpenseStatus.CANCELLED, ExpenseStatus.CLOSED):

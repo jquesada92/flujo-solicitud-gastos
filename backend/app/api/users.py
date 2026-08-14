@@ -435,6 +435,7 @@ def regenerate_password(user_id: int, db: Session = Depends(get_db), actor: User
     temporary_password = secrets.token_urlsafe(15)
     user.password_hash = hash_password(temporary_password)
     user.must_change_password = True
+    user.session_version += 1
     after = _snapshot(user)
     db.add(UserChangeEvent(
         event_type='USER_PASSWORD_REGENERATED', user_id=user.id, user_email=_audit_email(user.email),

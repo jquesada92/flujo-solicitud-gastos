@@ -21,6 +21,18 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_UPLOAD_STORAGE_MB = int(os.getenv('MAX_UPLOAD_STORAGE_MB', '450'))
 MAX_UPLOAD_STORAGE = MAX_UPLOAD_STORAGE_MB * 1024 * 1024
 ALLOWED_TYPES = {'application/pdf', 'image/jpeg', 'image/png', 'image/webp'}
+CONTENT_SIGNATURES = {
+    'application/pdf': (b'%PDF-',),
+    'image/jpeg': (b'\xff\xd8\xff',),
+    'image/png': (b'\x89PNG\r\n\x1a\n',),
+    'image/webp': (b'RIFF',),
+}
+SAFE_SUFFIXES = {
+    'application/pdf': '.pdf',
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+}
 DISPLAY_PREFIXES = {
     'ADMINISTRATION': 'ADM', 'MAINTENANCE': 'MAN', 'EXTRAORDINARY': 'EXT',
     'LEGAL': 'LEG', 'POOL': 'PIS', 'GYM': 'GYM', 'SQUASH_COURT': 'SQU',
@@ -36,6 +48,15 @@ def _ensure_storage_capacity(additional_bytes: int) -> None:
             status_code=507,
             detail=f'El almacenamiento de documentos alcanzó su límite de {MAX_UPLOAD_STORAGE_MB} MB. Contacta al administrador.',
         )
+
+
+def _validate_file_content(content: bytes, content_type: str) -> str:
+    signatures = CONTENT_SIGNATURES.get(content_type)
+    if not signatures or not any(content.startswith(signature) for signature in signatures):
+        raise HTTPException(status_code=415, detail='El contenido del archivo no coincide con su formato declarado')
+    if content_type == 'image/webp' and (len(content) < 12 or content[8:12] != b'WEBP'):
+        raise HTTPException(status_code=415, detail='El archivo WEBP no es válido')
+    return SAFE_SUFFIXES[content_type]
 
 
 def _next_display_id(db: Session, category: str) -> str:
@@ -285,8 +306,8 @@ async def upload_attachment(
     content = await file.read(MAX_FILE_SIZE + 1)
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail='El archivo supera el límite de 10 MB')
+    suffix = _validate_file_content(content, file.content_type)
     safe_original = Path(file.filename or 'cotizacion').name[:255]
-    suffix = Path(safe_original).suffix.lower()
     stored_name = f'{secrets.token_hex(20)}{suffix}'
     _ensure_storage_capacity(len(content))
     (UPLOAD_DIR / stored_name).write_bytes(content)
@@ -360,8 +381,9 @@ async def close_expense(
         content = await upload.read(MAX_FILE_SIZE + 1)
         if len(content) > MAX_FILE_SIZE:
             raise HTTPException(status_code=413, detail='Cada archivo debe pesar máximo 10 MB')
+        suffix = _validate_file_content(content, upload.content_type)
         original = Path(upload.filename or document_type.lower()).name[:255]
-        stored = f'{secrets.token_hex(20)}{Path(original).suffix.lower()}'
+        stored = f'{secrets.token_hex(20)}{suffix}'
         prepared.append((document_type, upload.content_type, original, stored, content))
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     _ensure_storage_capacity(sum(len(item[4]) for item in prepared))

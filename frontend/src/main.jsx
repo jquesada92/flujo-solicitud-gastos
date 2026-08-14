@@ -166,6 +166,9 @@ async function api(path, options = {}) {
   return response.json();
 }
 
+const SESSION_IDLE_MS = 30 * 60 * 1000;
+const ACTIVITY_SYNC_MS = 60 * 1000;
+
 async function downloadAttachment(attachment) {
   const { url } = await loadAttachment(attachment);
   const link = document.createElement("a");
@@ -2881,6 +2884,47 @@ function App() {
         .then(setCatalog)
         .catch(() => setCatalog([]));
   }, [user, refresh]);
+  useEffect(() => {
+    if (!user) return undefined;
+    let lastHumanActivity = Date.now();
+    let lastSync = 0;
+    let syncing = false;
+
+    const expireSession = () => {
+      localStorage.removeItem("access_token");
+      setUser(null);
+    };
+    const registerActivity = () => {
+      const now = Date.now();
+      lastHumanActivity = now;
+      if (syncing || now - lastSync < ACTIVITY_SYNC_MS) return;
+      syncing = true;
+      lastSync = now;
+      api("/api/auth/activity", { method: "POST" })
+        .then((result) => localStorage.setItem("access_token", result.access_token))
+        .catch((error) => {
+          if (error.status === 401) expireSession();
+        })
+        .finally(() => {
+          syncing = false;
+        });
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") registerActivity();
+    };
+    const events = ["pointerdown", "keydown", "touchstart", "scroll"];
+    events.forEach((event) => window.addEventListener(event, registerActivity, { passive: true }));
+    document.addEventListener("visibilitychange", onVisibility);
+    const timer = window.setInterval(() => {
+      if (Date.now() - lastHumanActivity >= SESSION_IDLE_MS) expireSession();
+    }, 15000);
+
+    return () => {
+      events.forEach((event) => window.removeEventListener(event, registerActivity));
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(timer);
+    };
+  }, [user]);
   useEffect(() => {
     const warnBeforeUnload = (event) => {
       if (!hasUnsavedChanges()) return;
