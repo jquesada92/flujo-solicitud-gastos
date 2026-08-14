@@ -100,7 +100,21 @@ async function api(path, options = {}) {
   if (!response.ok) {
     let detail = "Ocurrió un error";
     try {
-      detail = (await response.json()).detail || detail;
+      const payload = await response.json();
+      if (typeof payload.detail === "string") {
+        detail = payload.detail;
+      } else if (Array.isArray(payload.detail)) {
+        detail = payload.detail
+          .map((item) => {
+            const field = Array.isArray(item.loc)
+              ? item.loc.filter((part) => part !== "body").join(".")
+              : "";
+            return `${field ? `${field}: ` : ""}${item.msg || "Valor inválido"}`;
+          })
+          .join(" ");
+      } else if (payload.detail) {
+        detail = payload.detail.message || JSON.stringify(payload.detail);
+      }
     } catch (_) {}
     const error = new Error(detail);
     error.status = response.status;
@@ -1164,6 +1178,15 @@ function Users() {
     }
   };
   const changedUsers = () => users.filter(dirty);
+  const changesFor = (user) => {
+    const draft = drafts[user.id];
+    if (!draft) return {};
+    return Object.fromEntries(
+      ["title", "active", "apartment_number"]
+        .filter((key) => draft[key] !== (user[key] ?? ""))
+        .map((key) => [key, draft[key]]),
+    );
+  };
   const saveUsers = async () => {
     const changed = changedUsers();
     if (!changed.length) return;
@@ -1172,7 +1195,7 @@ function Users() {
       await api("/api/users/bulk", {
         method: "PATCH",
         body: JSON.stringify({
-          users: changed.map((u) => ({ id: u.id, ...drafts[u.id] })),
+          users: changed.map((u) => ({ id: u.id, ...changesFor(u) })),
         }),
       });
       setMessage({
@@ -1253,13 +1276,7 @@ function Users() {
     );
   };
   const dirty = (user) => {
-    const d = drafts[user.id];
-    return (
-      d &&
-      ["title", "active", "apartment_number"].some(
-        (key) => d[key] !== (user[key] || ""),
-      )
-    );
+    return Object.keys(changesFor(user)).length > 0;
   };
   const assignedCount = (code) =>
     users.filter((u) => u.active && u.title === code).length;
