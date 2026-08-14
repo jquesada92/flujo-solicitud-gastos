@@ -111,14 +111,11 @@ def migrate_schema() -> None:
     approval_columns = {column['name'] for column in inspect(engine).get_columns('approvals')}
     user_columns = {column['name'] for column in inspect(engine).get_columns('users')}
     profile_columns = {column['name'] for column in inspect(engine).get_columns('access_profiles')}
-    with engine.begin() as connection:
-        connection.execute(text("""
-            INSERT INTO apartments (apartment_number, floor, letter, is_rental)
-            SELECT floor::text || letter, floor, letter, FALSE
-            FROM generate_series(6, 21) AS floor
-            CROSS JOIN unnest(ARRAY['A','B','C','D','E','F','G','H']) AS letter
-            ON CONFLICT (apartment_number) DO NOTHING
-        """))
+    # Use explicit checkpoints instead of one long startup transaction. Hosted
+    # Postgres providers commonly enforce a short idle-in-transaction timeout;
+    # Python-side backfills and schema inspection must not keep every migration
+    # statement open until the very end of application startup.
+    with engine.connect() as connection:
         for name, default in (('can_request','FALSE'),('can_approve','FALSE'),('can_view','TRUE'),('can_configure','FALSE'),('must_change_password','FALSE')):
             if name not in user_columns:
                 connection.execute(text(f'ALTER TABLE users ADD COLUMN {name} BOOLEAN NOT NULL DEFAULT {default}'))
@@ -261,9 +258,11 @@ def migrate_schema() -> None:
         attachment_columns = {column['name'] for column in inspect(engine).get_columns('expense_attachments')}
         if 'document_type' not in attachment_columns:
             connection.execute(text("ALTER TABLE expense_attachments ADD COLUMN document_type VARCHAR(40) NOT NULL DEFAULT 'QUOTATION'"))
-        approval_columns = {column['name'] for column in inspect(engine).get_columns('approvals')}
         if 'approval_mode' not in approval_columns:
             connection.execute(text("ALTER TABLE approvals ADD COLUMN approval_mode VARCHAR(20) NOT NULL DEFAULT 'SEQUENTIAL'"))
+        # Persist schema/backfill work before installing the immutable audit
+        # triggers. This starts the trigger DDL in a fresh, short transaction.
+        connection.commit()
         connection.execute(text('''
             CREATE OR REPLACE FUNCTION reject_approval_step_event_mutation()
             RETURNS trigger AS $$
@@ -304,6 +303,7 @@ def migrate_schema() -> None:
             BEFORE UPDATE OR DELETE ON approval_policy_change_events
             FOR EACH ROW EXECUTE FUNCTION reject_user_change_event_mutation()
         '''))
+        connection.commit()
 
 
 def seed_admin() -> None:
@@ -372,9 +372,6 @@ async def lifespan(_: FastAPI):
     migrate_schema()
     seed_admin()
     backfill_analytics_ids()
-    seed_access_profiles()
-    seed_categories()
-    seed_rules()
     yield
 
 
