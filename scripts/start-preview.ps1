@@ -7,6 +7,8 @@ $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
 $previewEnv = Join-Path $workspace '.env.preview'
 $previewExample = Join-Path $workspace '.env.preview.example'
+$backendPreviewEnv = Join-Path $workspace 'backend\.env.preview'
+$backendPreviewExample = Join-Path $workspace 'backend\.env.preview.example'
 $composeFiles = @(
     '-f', (Join-Path $workspace 'docker-compose.yml'),
     '-f', (Join-Path $workspace 'docker-compose.preview.yml')
@@ -21,6 +23,15 @@ if (-not (Test-Path -LiteralPath $previewEnv)) {
     Copy-Item -LiteralPath $previewExample -Destination $previewEnv
     Write-Host 'Se creó .env.preview desde la plantilla.'
 }
+
+if (-not (Test-Path -LiteralPath $backendPreviewEnv)) {
+    Copy-Item -LiteralPath $backendPreviewExample -Destination $backendPreviewEnv
+    Write-Host 'Se creó backend/.env.preview desde la plantilla.'
+}
+
+# Ensure preview always uses the backend-specific preview file, including when
+# an older root .env.preview does not yet define BACKEND_ENV_FILE.
+$env:BACKEND_ENV_FILE = './backend/.env.preview'
 
 & docker @composeBase up --build -d
 if ($LASTEXITCODE -ne 0) {
@@ -45,13 +56,13 @@ if (-not $tunnelUrl) {
     throw "Cloudflare no publicó una URL en $TimeoutSeconds segundos. Revisa: docker compose -p flujo-gastos-preview --env-file .env.preview -f docker-compose.yml -f docker-compose.preview.yml logs tunnel"
 }
 
-$envContent = Get-Content -LiteralPath $previewEnv -Raw
+$envContent = Get-Content -LiteralPath $backendPreviewEnv -Raw
 if ($envContent -match '(?m)^PUBLIC_URL=.*$') {
     $envContent = [regex]::Replace($envContent, '(?m)^PUBLIC_URL=.*$', "PUBLIC_URL=$tunnelUrl")
 } else {
     $envContent = $envContent.TrimEnd() + "`r`nPUBLIC_URL=$tunnelUrl`r`n"
 }
-Set-Content -LiteralPath $previewEnv -Value $envContent -Encoding utf8
+Set-Content -LiteralPath $backendPreviewEnv -Value $envContent -Encoding utf8
 
 & docker @composeBase up -d --force-recreate backend
 if ($LASTEXITCODE -ne 0) {

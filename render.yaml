@@ -7,6 +7,8 @@ services:
     autoDeploy: false
     healthCheckPath: /api/health
     envVars:
+      - key: ENVIRONMENT
+        value: production
       - key: DATABASE_URL
         sync: false
       - key: SECRET_KEY
@@ -35,19 +37,17 @@ services:
         value: "6"
       - key: USER_SENSITIVE_RATE_LIMIT
         value: "10"
+      - key: DEFAULT_PAGE_SIZE
+        value: "25"
+      - key: MAX_PAGE_SIZE
+        value: "100"
+      - key: SEARCH_MIN_CHARS
+        value: "2"
+      - key: QUERY_TIMEOUT_MS
+        value: "5000"
       - key: APP_TIME_ZONE
         value: "America/Panama"
       - key: EMAIL_MODE
-        sync: false
-      - key: SMTP_HOST
-        sync: false
-      - key: SMTP_PORT
-        sync: false
-      - key: SMTP_SECURITY
-        sync: false
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
         sync: false
       - key: EMAIL_FROM
         sync: false

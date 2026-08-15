@@ -132,11 +132,23 @@ npm install
 npm run dev
 ```
 
-Copia los archivos `.env.example` correspondientes y reemplaza únicamente los marcadores `< LO QUE SE SUPONE QUE DEBERIA IR >`. Nunca uses claves reales en archivos versionados.
+Copia la plantilla del sistema que vas a ejecutar y reemplaza únicamente sus marcadores. Nunca uses claves reales en archivos versionados.
+
+| Sistema | Plantilla canónica | Archivo local no versionado |
+| --- | --- | --- |
+| Backend FastAPI | `backend/.env.example` | `backend/.env` |
+| Backend de preview | `backend/.env.preview.example` | `backend/.env.preview` |
+| Frontend React + Vite | `frontend/.env.example` | `frontend/.env` |
+| Infraestructura Docker Compose | `.env.example` | `.env` |
+| Infraestructura preview | `.env.preview.example` | `.env.preview` |
+
+Las variables privadas pertenecen al backend. El frontend acepta únicamente variables públicas con prefijo `VITE_*`.
 
 ## Variables de Render
 
 Estas variables pertenecen al backend. Las credenciales deben configurarse únicamente en Render y nunca copiarse al frontend ni guardarse en el repositorio.
+
+La plantilla canónica es `backend/.env.example`; en Render configura su variante de producción directamente en el panel.
 
 ```env
 ENVIRONMENT=production
@@ -206,6 +218,8 @@ La lista observada en Render coincide con las variables anteriores, con dos cons
 ## Variables de Vercel
 
 Según la configuración actual mostrada en Vercel, ambas variables aplican a los entornos **Production** y **Preview**:
+
+La plantilla canónica es `frontend/.env.example`.
 
 ```env
 VITE_API_URL=< URL PUBLICA DEL BACKEND EN RENDER >
