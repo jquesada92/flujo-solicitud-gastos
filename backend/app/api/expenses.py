@@ -14,7 +14,7 @@ from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 from app.core.database import get_db
 from app.core.security import current_user, require_permission
-from app.models.entities import Approval, ApprovalStatus, ApprovalStepEvent, Expense, ExpenseAttachment, ExpenseCategory, ExpenseStatus, ExpenseSubcategory, QuotationOption, QuotationVote, QuotationVoteEvent, QuotationVotingInvitation, User, UserRole
+from app.models.entities import Approval, ApprovalStatus, ApprovalStepEvent, Expense, ExpenseAttachment, ExpenseCategory, ExpenseStatus, ExpenseSubcategory, InvoiceChangeEvent, QuotationOption, QuotationVote, QuotationVoteEvent, QuotationVotingInvitation, User, UserRole
 from app.schemas.expense import AttachmentOut, ExpenseCreate, ExpenseOut, InvoiceOut
 from app.services.approval_engine import expire_open_approvals, start_approval_flow
 from app.services.email_service import send_quotation_vote_request
@@ -704,4 +704,62 @@ async def close_expense(
             if path.exists(): path.unlink()
         raise
     stmt = select(Expense).where(Expense.id == expense.id).options(selectinload(Expense.approvals), selectinload(Expense.attachments))
+    return db.scalars(stmt).one()
+
+
+@router.put('/{request_id}/invoice', response_model=ExpenseOut)
+async def replace_invoice(
+    request_id: str,
+    invoice: UploadFile = File(...),
+    reason: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    if len(reason.strip()) < 3:
+        raise HTTPException(status_code=422, detail='Debes indicar el motivo de la correcciÃ³n')
+    expense = db.scalar(select(Expense).where(or_(
+        Expense.request_id == request_id,
+        Expense.display_id == request_id,
+    )).with_for_update())
+    if not expense:
+        raise HTTPException(status_code=404, detail='Solicitud no encontrada')
+    if expense.status != ExpenseStatus.CLOSED:
+        raise HTTPException(status_code=409, detail='Solo se puede corregir la factura de una solicitud cerrada')
+    previous = db.scalar(select(ExpenseAttachment).where(
+        ExpenseAttachment.expense_id == expense.id,
+        ExpenseAttachment.document_type == 'INVOICE',
+    ).order_by(ExpenseAttachment.id.desc()))
+    if not previous:
+        raise HTTPException(status_code=409, detail='La solicitud no tiene una factura vigente para reemplazar')
+    if invoice.content_type not in ALLOWED_TYPES:
+        raise HTTPException(status_code=415, detail='La factura debe ser un archivo PDF, JPG, PNG o WEBP')
+    content = await invoice.read(MAX_FILE_SIZE + 1)
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail='La factura debe pesar mÃ¡ximo 10 MB')
+    suffix = _validate_file_content(content, invoice.content_type)
+    original = Path(invoice.filename or 'factura').name[:255]
+    stored = f'{secrets.token_hex(20)}{suffix}'
+    _ensure_storage_capacity(len(content))
+    path = UPLOAD_DIR / stored
+    try:
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        previous.document_type = 'INVOICE_REPLACED'
+        replacement = ExpenseAttachment(
+            expense_id=expense.id, original_name=original, stored_name=stored,
+            content_type=invoice.content_type, size=len(content), document_type='INVOICE')
+        db.add(replacement)
+        db.flush()
+        db.add(InvoiceChangeEvent(
+            expense_id=expense.id, previous_attachment_id=previous.id,
+            new_attachment_id=replacement.id, actor_email=user.email,
+            reason=reason.strip()))
+        db.commit()
+    except Exception:
+        db.rollback()
+        if path.exists():
+            path.unlink()
+        raise
+    stmt = select(Expense).where(Expense.id == expense.id).options(
+        selectinload(Expense.approvals), selectinload(Expense.attachments))
     return db.scalars(stmt).one()

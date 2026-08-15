@@ -323,6 +323,12 @@ def migrate_schema() -> None:
             BEFORE UPDATE OR DELETE ON approval_policy_change_events
             FOR EACH ROW EXECUTE FUNCTION reject_user_change_event_mutation()
         '''))
+        connection.execute(text('DROP TRIGGER IF EXISTS invoice_change_events_immutable ON invoice_change_events'))
+        connection.execute(text('''
+            CREATE TRIGGER invoice_change_events_immutable
+            BEFORE UPDATE OR DELETE ON invoice_change_events
+            FOR EACH ROW EXECUTE FUNCTION reject_user_change_event_mutation()
+        '''))
         connection.commit()
 
 

@@ -306,6 +306,18 @@ class ExpenseAttachment(Base):
     expense = relationship('Expense', back_populates='attachments')
 
 
+class InvoiceChangeEvent(Base):
+    __tablename__ = 'invoice_change_events'
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    expense_id: Mapped[int] = mapped_column(ForeignKey('expenses.id', ondelete='RESTRICT'), nullable=False, index=True)
+    previous_attachment_id: Mapped[int] = mapped_column(ForeignKey('expense_attachments.id', ondelete='RESTRICT'), nullable=False)
+    new_attachment_id: Mapped[int] = mapped_column(ForeignKey('expense_attachments.id', ondelete='RESTRICT'), nullable=False)
+    actor_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class ApprovalRule(Base):
     __tablename__ = 'approval_rules'
 

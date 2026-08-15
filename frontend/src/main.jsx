@@ -700,6 +700,7 @@ function ExpenseForm({
 }
 
 function ClosurePanel({ expense, onDone, onCancel }) {
+  const replacing = expense.status === "CLOSED";
   const [invoice, setInvoice] = useState(null),
     [notes, setNotes] = useState(""),
     [saving, setSaving] = useState(false),
@@ -711,9 +712,10 @@ function ClosurePanel({ expense, onDone, onCancel }) {
     try {
       const data = new FormData();
       data.append("invoice", invoice);
-      if (notes) data.append("notes", notes);
-      await api(`/api/expenses/${expense.request_id}/close`, {
-        method: "POST",
+      if (replacing) data.append("reason", notes);
+      else if (notes) data.append("notes", notes);
+      await api(`/api/expenses/${expense.request_id}/${replacing ? "invoice" : "close"}`, {
+        method: replacing ? "PUT" : "POST",
         body: data,
       });
       onDone();
@@ -726,10 +728,10 @@ function ClosurePanel({ expense, onDone, onCancel }) {
   return (
     <form className="closure-panel" onSubmit={submit}>
       <div>
-        <p className="eyebrow">CIERRE DE APROBACIÓN</p>
+        <p className="eyebrow">{replacing ? "CORRECCIÓN DE FACTURA" : "CIERRE DE APROBACIÓN"}</p>
         <h3>{expense.title}</h3>
         <span className="muted">
-          Adjunta la factura final para cerrar esta solicitud aprobada.
+          {replacing ? "Adjunta la factura correcta. La anterior se conservará para auditoría." : "Adjunta la factura final para cerrar esta solicitud aprobada."}
         </span>
       </div>
       <label>
@@ -742,11 +744,13 @@ function ClosurePanel({ expense, onDone, onCancel }) {
         />
       </label>
       <label>
-        Notas de cierre
+        {replacing ? "Motivo de la corrección" : "Notas de cierre"}
         <textarea
           rows="2"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
+          required={replacing}
+          minLength={replacing ? 3 : undefined}
         />
       </label>
       {error && <div className="notice error">{error}</div>}
@@ -755,7 +759,7 @@ function ClosurePanel({ expense, onDone, onCancel }) {
           Cancelar
         </button>
         <button className="primary" disabled={saving}>
-          {saving ? "Cerrando..." : "Cerrar solicitud"}
+          {saving ? "Guardando..." : replacing ? "Reemplazar factura" : "Cerrar solicitud"}
         </button>
       </div>
     </form>
@@ -1132,15 +1136,21 @@ function ExpenseTable({
                       <small>{progress.answered} respuesta(s) · {progress.pending} pendiente(s)</small>
                     </button> })()}
                   </td>
-                  {canEdit && (
+                  {(canEdit || canClose) && (
                     <td>
                       <div className="row-actions">
-                        <button
+                        {canEdit && x.status !== "CLOSED" && <button
                           className="secondary nowrap"
                           onClick={() => onEdit(x)}
                         >
                           Corregir / reenviar
-                        </button>
+                        </button>}
+                        {canClose && x.status === "CLOSED" && x.attachments.some((a) => a.document_type === "INVOICE") && <button
+                          className="secondary nowrap"
+                          onClick={() => setClosing(x)}
+                        >
+                          Corregir factura
+                        </button>}
                         {["SUBMITTED", "PENDING_APPROVAL", "APPROVED"].includes(
                           x.status,
                         ) && (

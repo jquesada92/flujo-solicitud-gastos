@@ -30,16 +30,3 @@ jobs:
         run: |
           test -n "$DEPLOY_HOOK"
           curl --fail --silent --show-error --request POST "$DEPLOY_HOOK"
-
-  deploy-frontend:
-    name: Trigger Vercel
-    needs: deploy-backend
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Trigger frontend deployment
-        env:
-          DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
-        run: |
-          test -n "$DEPLOY_HOOK"
-          curl --fail --silent --show-error --request POST "$DEPLOY_HOOK"
