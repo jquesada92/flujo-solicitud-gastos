@@ -99,7 +99,12 @@ def _as_utc(value: datetime | None) -> datetime | None:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
-def _present_expense(expense: Expense, names: dict[str, str], last_event: ApprovalStepEvent | None = None) -> ExpenseOut:
+def _present_expense(
+    expense: Expense,
+    names: dict[str, str],
+    last_event: ApprovalStepEvent | None = None,
+    quotation_voter_count: int = 0,
+) -> ExpenseOut:
     output = ExpenseOut.model_validate(expense)
     return output.model_copy(update={
         'created_at': _as_utc(expense.created_at),
@@ -107,6 +112,8 @@ def _present_expense(expense: Expense, names: dict[str, str], last_event: Approv
         'cancelled_by': _display_name(output.cancelled_by, names),
         'closed_by': _display_name(output.closed_by, names),
         'approvals': [item.model_copy(update={'approver_name': _display_name(item.approver_email, names)}) for item in output.approvals],
+        'quotation_votes': [item.model_copy(update={'voter_name': _display_name(item.voter_email, names)}) for item in output.quotation_votes],
+        'quotation_voter_count': quotation_voter_count,
         'last_event_at': _as_utc(last_event.occurred_at) if last_event else _as_utc(expense.created_at),
         'last_event_type': last_event.event_type if last_event else 'REQUEST_CREATED',
     })
@@ -166,6 +173,7 @@ def list_expenses(db: Session = Depends(get_db), user: User = Depends(current_us
     expenses = list(db.scalars(stmt).all())
     expense_ids = [expense.id for expense in expenses]
     latest_events = {}
+    quotation_voter_counts = {}
     if expense_ids:
         events = db.scalars(select(ApprovalStepEvent).where(
             ApprovalStepEvent.expense_id.in_(expense_ids)).order_by(
@@ -173,6 +181,11 @@ def list_expenses(db: Session = Depends(get_db), user: User = Depends(current_us
             ApprovalStepEvent.event_sequence.desc())).all()
         for event in events:
             latest_events.setdefault(event.expense_id, event)
+        quotation_voter_counts = dict(db.execute(select(
+            QuotationVotingInvitation.expense_id,
+            func.count(QuotationVotingInvitation.id),
+        ).where(QuotationVotingInvitation.expense_id.in_(expense_ids)).group_by(
+            QuotationVotingInvitation.expense_id)).all())
     output = []
     for expense in expenses:
         event = latest_events.get(expense.id)
@@ -183,10 +196,10 @@ def list_expenses(db: Session = Depends(get_db), user: User = Depends(current_us
         lifecycle_at, lifecycle_type = max(
             ((at, kind) for at, kind in lifecycle if at), default=(None, None), key=lambda item: item[0])
         if lifecycle_at and (not event or lifecycle_at.replace(tzinfo=None) > event.occurred_at.replace(tzinfo=None)):
-            presented = _present_expense(expense, names, event).model_copy(update={
+            presented = _present_expense(expense, names, event, quotation_voter_counts.get(expense.id, 0)).model_copy(update={
                 'last_event_at': _as_utc(lifecycle_at), 'last_event_type': lifecycle_type})
         else:
-            presented = _present_expense(expense, names, event)
+            presented = _present_expense(expense, names, event, quotation_voter_counts.get(expense.id, 0))
         if presented.last_event_at and presented.last_event_at < presented.created_at:
             presented = presented.model_copy(update={
                 'last_event_at': presented.created_at,

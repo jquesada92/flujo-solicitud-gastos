@@ -30,6 +30,7 @@ class QuotationOptionOut(BaseModel):
 class QuotationVoteOut(BaseModel):
     quotation_option_id: int
     voter_email: str
+    voter_name: str | None = None
     voter_role: str
     created_at: datetime
     updated_at: datetime
@@ -154,6 +155,7 @@ class ExpenseOut(BaseModel):
     attachments: list[AttachmentOut] = Field(default_factory=list)
     quotation_options: list[QuotationOptionOut] = Field(default_factory=list)
     quotation_votes: list[QuotationVoteOut] = Field(default_factory=list)
+    quotation_voter_count: int = 0
     selected_quotation_id: int | None = None
 
     class Config:

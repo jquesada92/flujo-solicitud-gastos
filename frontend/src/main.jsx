@@ -768,6 +768,17 @@ const flowMetrics = (approvals = []) => {
   const pending = approvals.filter((item) => ["PENDING", "WAITING"].includes(item.status)).length;
   return { answered, pending, total: approvals.length, percentage: approvals.length ? Math.round(answered * 100 / approvals.length) : 0 };
 };
+const expenseFlowMetrics = (expense) => {
+  if (expense.request_type !== "MULTI_QUOTE") return flowMetrics(expense.approvals);
+  const answered = expense.quotation_votes?.length || 0;
+  const total = Math.max(Number(expense.quotation_voter_count) || 0, answered);
+  return {
+    answered,
+    pending: Math.max(0, total - answered),
+    total,
+    percentage: total ? Math.round(answered * 100 / total) : 0,
+  };
+};
 const APP_TIME_ZONE = import.meta.env.VITE_TIME_ZONE || "America/Panama";
 const approvalTimestamp = (value) => value ? new Date(value).toLocaleString("es-PA", {
   dateStyle: "medium",
@@ -801,12 +812,17 @@ const flowEventName = (event) => ({
 })[event] || descriptor(event);
 
 function FlowProgressViewer({ expense, onClose }) {
-  const metrics = flowMetrics(expense.approvals);
+  const metrics = expenseFlowMetrics(expense);
+  const multiQuote = expense.request_type === "MULTI_QUOTE";
   return <div className="confirm-overlay" role="presentation" onMouseDown={onClose}>
     <section className="confirm-dialog flow-progress-dialog" role="dialog" aria-modal="true" aria-labelledby="flow-progress-title" onMouseDown={(event) => event.stopPropagation()}>
       <div className="card-heading"><div><p className="eyebrow">AVANCE DEL FLUJO</p><h2 id="flow-progress-title">{expense.display_id}</h2><span className="muted">{expense.title}</span></div><button className="secondary" onClick={onClose}>Cerrar</button></div>
       <div className="flow-summary"><strong>{metrics.percentage}% respondido</strong><span>{metrics.answered} respuesta(s) · {metrics.pending} pendiente(s) · {metrics.total} participante(s)</span><div className="flow-progress-track"><span style={{width:`${metrics.percentage}%`}} /></div></div>
-      <div className="flow-response-list">{expense.approvals.map((approval) => <article key={approval.id} className="flow-response-card">
+      <div className="flow-response-list">{multiQuote ? expense.quotation_votes.map((vote) => { const option = expense.quotation_options.find((item) => item.id === vote.quotation_option_id); return <article key={`${vote.voter_email}-${vote.quotation_option_id}`} className="flow-response-card">
+        <div><strong>{vote.voter_name || vote.voter_email}</strong><span>{titleName(vote.voter_role)}</span></div>
+        <StatusBadge status="APPROVED"/>
+        <dl><div><dt>Respuesta</dt><dd>Votó por opción {option?.option_number || vote.quotation_option_id}{option?.supplier ? ` · ${option.supplier}` : ""}</dd></div><div><dt>Timestamp de respuesta</dt><dd>{approvalTimestamp(vote.updated_at || vote.created_at)}</dd></div></dl>
+      </article> }) : expense.approvals.map((approval) => <article key={approval.id} className="flow-response-card">
         <div><strong>{approval.approver_name || approval.approver_email}</strong><span>{titleName(approval.approver_role)}</span></div>
         <StatusBadge status={approval.status}/>
         <dl><div><dt>Respuesta</dt><dd>{statusName(approval.status)}</dd></div><div><dt>Asignación</dt><dd>{approvalTimestamp(approval.created_at)}</dd></div><div><dt>Timestamp de respuesta</dt><dd>{approvalTimestamp(approval.decided_at)}</dd></div></dl>
@@ -1110,7 +1126,7 @@ function ExpenseTable({
                     )}
                   </td>
                   <td className="flow-cell">
-                    {(() => { const progress=flowMetrics(x.approvals); return <button className="flow-progress-button" onClick={() => setFlowViewing(x)} aria-label={`Ver avance del flujo ${x.display_id}`}>
+                    {(() => { const progress=expenseFlowMetrics(x); return <button className="flow-progress-button" onClick={() => setFlowViewing(x)} aria-label={`Ver avance del flujo ${x.display_id}`}>
                       <span><strong>{progress.percentage}%</strong> respondido</span>
                       <div className="flow-progress-track"><span style={{width:`${progress.percentage}%`}} /></div>
                       <small>{progress.answered} respuesta(s) · {progress.pending} pendiente(s)</small>
