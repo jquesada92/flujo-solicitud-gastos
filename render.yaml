@@ -35,8 +35,8 @@ services:
         value: "6"
       - key: USER_SENSITIVE_RATE_LIMIT
         value: "10"
-      - key: APPROVAL_LINK_HOURS
-        value: "72"
+      - key: APP_TIME_ZONE
+        value: "America/Panama"
       - key: EMAIL_MODE
         sync: false
       - key: SMTP_HOST

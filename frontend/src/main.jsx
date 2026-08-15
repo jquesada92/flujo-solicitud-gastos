@@ -26,9 +26,9 @@ const userTitles = [
   ["TESORERO", "Tesorero"],
   ["VOCERO", "Vocero"],
   ["ADMINISTRADORA", "Administrador"],
-  ["MANTENIMIENTO", "Mantenimiento"],
-  ["PROPIETARIO", "Propietario"],
+  ["SIN_ASIGNAR", "Sin cargo asignado"],
 ];
+const allowedAccessTitles = new Set(["PRESIDENTE", "VICEPRESIDENTE", "TESORERO", "VOCERO", "ADMINISTRADORA"]);
 const titleName = (title) =>
   title === "ADMIN_SISTEMA"
     ? "Administrador del sistema"
@@ -45,12 +45,17 @@ const statusName = (status) => ({
   SUBMITTED: "Enviada",
   PENDING: "Pendiente",
   PENDING_APPROVAL: "Pendiente de aprobación",
+  QUOTATION_VOTING: "Votación de cotizaciones",
   APPROVED: "Aprobada",
   REJECTED: "Rechazada",
   REVISION_REQUESTED: "Corrección solicitada",
+  EXPIRED: "Ya no requerida",
   CANCELLED: "Cancelada",
   CLOSED: "Cerrada",
 })[status] || descriptor(status);
+const urgencyName = (urgency) => ({
+  LOW: "Baja", NORMAL: "Normal", HIGH: "Alta", CRITICAL: "Crítica",
+})[urgency] || descriptor(urgency);
 
 const fieldName = (field) => ({
   name: "Nombre completo", identity_document: "Identificación", email: "Correo",
@@ -376,6 +381,11 @@ function ExpenseForm({
   categoryOptions = [],
   subcategoryOptions = {},
 }) {
+  const [requestType, setRequestType] = useState("SIMPLE");
+  const [quoteOptions, setQuoteOptions] = useState([
+    { supplier: "", amount: "", item_url: "", notes: "", file: null },
+    { supplier: "", amount: "", item_url: "", notes: "", file: null },
+  ]);
   const firstType = categoryOptions[0]?.[0] || "",
     firstSub = subcategoryOptions[firstType]?.[0]?.[0] || "";
   const empty = {
@@ -383,6 +393,7 @@ function ExpenseForm({
     description: "",
     expense_type: firstType,
     expense_subcategory: firstSub,
+    urgency: "NORMAL",
     amount: "",
     supplier: "",
     item_url: "",
@@ -398,6 +409,7 @@ function ExpenseForm({
         description: draft.description,
         expense_type: draft.expense_type,
         expense_subcategory: draft.expense_subcategory,
+        urgency: draft.urgency || "NORMAL",
         amount: String(draft.amount),
         supplier: draft.supplier,
         item_url: draft.item_url || "",
@@ -420,13 +432,13 @@ function ExpenseForm({
     }
   }, [draft?.request_id, categoryOptions.length]);
   const expenseDirty = Boolean(quotation) || (draft
-    ? ["title", "description", "expense_type", "expense_subcategory", "supplier", "item_url"].some((key) => String(form[key] || "") !== String(draft[key] || "")) || String(form.amount || "") !== String(draft.amount || "")
+    ? ["title", "description", "expense_type", "expense_subcategory", "urgency", "supplier", "item_url"].some((key) => String(form[key] || "") !== String(draft[key] || "")) || String(form.amount || "") !== String(draft.amount || "")
     : ["title", "description", "amount", "supplier", "item_url"].some((key) => String(form[key] || "").trim()));
   const submit = async (e) => {
     e.preventDefault();
     setSaving(true);
     setMessage(null);
-    if (!form.item_url && !quotation) {
+    if (requestType === "SIMPLE" && !form.item_url && !quotation) {
       setMessage({
         type: "error",
         text: "Debes proporcionar una URL o adjuntar una cotización.",
@@ -434,13 +446,41 @@ function ExpenseForm({
       setSaving(false);
       return;
     }
+    if (requestType === "MULTI_QUOTE" && quoteOptions.some((option) => !option.item_url && !option.file)) {
+      setMessage({ type: "error", text: "Cada cotización debe incluir una URL o un archivo adjunto." });
+      setSaving(false);
+      return;
+    }
+    if (requestType === "MULTI_QUOTE") {
+      const urls = quoteOptions.filter((option) => option.item_url).map((option) => {
+        const parsed = new URL(option.item_url.trim()); parsed.hash = "";
+        return parsed.toString().replace(/\/$/, "");
+      });
+      if (new Set(urls).size !== urls.length) {
+        setMessage({ type: "error", text: "Cada opción debe utilizar una URL de cotización diferente." });
+        setSaving(false);
+        return;
+      }
+      const fileNames = quoteOptions.filter((option) => option.file).map((option) => option.file.name.trim().toLowerCase());
+      if (new Set(fileNames).size !== fileNames.length) {
+        setMessage({ type: "error", text: "Cada opción debe utilizar un archivo con nombre diferente." });
+        setSaving(false);
+        return;
+      }
+    }
     let item = null;
     try {
       const payload = {
         ...form,
-        amount: Number(form.amount),
+        request_type: requestType,
+        amount: requestType === "SIMPLE" ? Number(form.amount) : null,
+        supplier: requestType === "SIMPLE" ? form.supplier : null,
         item_url: form.item_url || null,
         quotation_pending: Boolean(quotation),
+        quotation_options: requestType === "MULTI_QUOTE" ? quoteOptions.map((option) => ({
+          supplier: option.supplier, amount: Number(option.amount), item_url: option.item_url || null,
+          notes: option.notes || null, attachment_pending: Boolean(option.file),
+        })) : [],
       };
       const editing = Boolean(draft);
       delete payload.revised_from_request_id;
@@ -450,7 +490,7 @@ function ExpenseForm({
           : "/api/expenses",
         { method: editing ? "PUT" : "POST", body: JSON.stringify(payload) },
       );
-      if (quotation) {
+      if (requestType === "SIMPLE" && quotation) {
         const data = new FormData();
         data.append("file", quotation);
         await api(`/api/expenses/${item.request_id}/attachments`, {
@@ -458,8 +498,16 @@ function ExpenseForm({
           body: data,
         });
       }
+      if (requestType === "MULTI_QUOTE") {
+        for (let index = 0; index < quoteOptions.length; index += 1) {
+          if (!quoteOptions[index].file) continue;
+          const data = new FormData(); data.append("file", quoteOptions[index].file);
+          await api(`/api/expenses/${item.request_id}/quotation-options/${item.quotation_options[index].id}/attachment`, { method: "POST", body: data });
+        }
+      }
       setForm(empty);
       setQuotation(null);
+      setQuoteOptions([{ supplier: "", amount: "", item_url: "", notes: "", file: null }, { supplier: "", amount: "", item_url: "", notes: "", file: null }]);
       e.target.reset();
       setMessage({
         type: "success",
@@ -504,10 +552,14 @@ function ExpenseForm({
       {draft && (
         <div className="revision-notice">
           Se actualizará la solicitud <strong>{draft.display_id}</strong> sin
-          crear otra fila. El flujo anterior expirará y se generarán enlaces de
+          crear otra fila. El flujo anterior se invalidará y se generarán enlaces de
           aprobación nuevos.
         </div>
       )}
+      {!draft && <div className="request-type-tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={requestType === "SIMPLE"} className={requestType === "SIMPLE" ? "active" : ""} onClick={() => setRequestType("SIMPLE")}>Solicitud sencilla</button>
+        <button type="button" role="tab" aria-selected={requestType === "MULTI_QUOTE"} className={requestType === "MULTI_QUOTE" ? "active" : ""} onClick={() => setRequestType("MULTI_QUOTE")}>Múltiples cotizaciones</button>
+      </div>}
       <form onSubmit={submit} className="form-grid">
         <label className="full">
           Título
@@ -553,7 +605,7 @@ function ExpenseForm({
             ))}
           </select>
         </label>
-        <label>
+        {requestType === "SIMPLE" && <label>
           Monto (USD)
           <input
             type="number"
@@ -563,8 +615,17 @@ function ExpenseForm({
             onChange={(e) => setForm({ ...form, amount: e.target.value })}
             required
           />
+        </label>}
+        <label>
+          Nivel de urgencia
+          <select value={form.urgency} onChange={(e) => setForm({ ...form, urgency: e.target.value })}>
+            <option value="LOW">Baja</option>
+            <option value="NORMAL">Normal</option>
+            <option value="HIGH">Alta</option>
+            <option value="CRITICAL">Crítica</option>
+          </select>
         </label>
-        <label className="full">
+        {requestType === "SIMPLE" && <label className="full">
           Proveedor
           <input
             value={form.supplier}
@@ -572,12 +633,12 @@ function ExpenseForm({
             required
             minLength="2"
           />
-        </label>
-        <div className="full support-requirement">
+        </label>}
+        {requestType === "SIMPLE" && <div className="full support-requirement">
           Adjunta al menos un soporte para iniciar el flujo: URL, cotización o
           ambos.
-        </div>
-        <label>
+        </div>}
+        {requestType === "SIMPLE" && <label>
           URL del producto o servicio
           <input
             type="url"
@@ -585,15 +646,27 @@ function ExpenseForm({
             onChange={(e) => setForm({ ...form, item_url: e.target.value })}
             placeholder="https://..."
           />
-        </label>
-        <label>
+        </label>}
+        {requestType === "SIMPLE" && <label>
           Cotización (PDF o imagen, máx. 10 MB)
           <input
             type="file"
             accept="application/pdf,image/jpeg,image/png,image/webp"
             onChange={(e) => setQuotation(e.target.files[0] || null)}
           />
-        </label>
+        </label>}
+        {requestType === "MULTI_QUOTE" && <div className="full quote-options-editor">
+          <div className="card-heading"><div><h3>Opciones para votación</h3><span className="muted">Agrega al menos dos proveedores. Cada opción requiere una URL o un archivo.</span></div><button type="button" className="secondary" onClick={() => setQuoteOptions([...quoteOptions, { supplier: "", amount: "", item_url: "", notes: "", file: null }])}>Agregar opción</button></div>
+          {quoteOptions.map((option, index) => <fieldset className="quote-option-card" key={index}>
+            <legend>Opción {index + 1}</legend>
+            <label>Proveedor<input required minLength="2" value={option.supplier} onChange={(e) => setQuoteOptions(quoteOptions.map((item, i) => i === index ? {...item, supplier:e.target.value} : item))}/></label>
+            <label>Monto (USD)<input required type="number" min="0.01" step="0.01" value={option.amount} onChange={(e) => setQuoteOptions(quoteOptions.map((item, i) => i === index ? {...item, amount:e.target.value} : item))}/></label>
+            <label>URL de cotización<input type="url" placeholder="https://..." value={option.item_url} onChange={(e) => setQuoteOptions(quoteOptions.map((item, i) => i === index ? {...item, item_url:e.target.value} : item))}/></label>
+            <label>Archivo (PDF, PNG, JPG o WEBP)<input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(e) => setQuoteOptions(quoteOptions.map((item, i) => i === index ? {...item, file:e.target.files[0] || null} : item))}/></label>
+            <label>Observaciones<input value={option.notes} onChange={(e) => setQuoteOptions(quoteOptions.map((item, i) => i === index ? {...item, notes:e.target.value} : item))}/></label>
+            {quoteOptions.length > 2 && <button type="button" className="danger-link" onClick={() => setQuoteOptions(quoteOptions.filter((_, i) => i !== index))}>Eliminar opción</button>}
+          </fieldset>)}
+        </div>}
         <label className="full">
           Descripción / justificación
           <textarea
@@ -689,10 +762,92 @@ function ClosurePanel({ expense, onDone, onCancel }) {
   );
 }
 
+const answeredApprovalStatuses = new Set(["APPROVED", "REJECTED", "REVISION_REQUESTED"]);
+const flowMetrics = (approvals = []) => {
+  const answered = approvals.filter((item) => answeredApprovalStatuses.has(item.status)).length;
+  const pending = approvals.filter((item) => ["PENDING", "WAITING"].includes(item.status)).length;
+  return { answered, pending, total: approvals.length, percentage: approvals.length ? Math.round(answered * 100 / approvals.length) : 0 };
+};
+const APP_TIME_ZONE = import.meta.env.VITE_TIME_ZONE || "America/Panama";
+const approvalTimestamp = (value) => value ? new Date(value).toLocaleString("es-PA", {
+  dateStyle: "medium",
+  timeStyle: "medium",
+  timeZone: APP_TIME_ZONE,
+}) : "Pendiente";
+const panamaDate = (value) => value ? new Date(value).toLocaleDateString("es-PA", {
+  timeZone: APP_TIME_ZONE,
+}) : "—";
+const pendingAge = (value) => {
+  if (!value) return "";
+  const hours = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 3600000));
+  if (hours < 1) return "Pendiente hace menos de 1 hora";
+  if (hours < 24) return `Pendiente hace ${hours} hora(s)`;
+  return `Pendiente hace ${Math.floor(hours / 24)} día(s)`;
+};
+const flowEventName = (event) => ({
+  REQUEST_CREATED: "Solicitud creada",
+  STEP_CREATED: "Paso de aprobación creado",
+  STEP_ACTIVATED: "Paso de aprobación activado",
+  STEP_APPROVED: "Aprobación recibida",
+  STEP_REJECTED: "Rechazo recibido",
+  STEP_REVISION_REQUESTED: "Corrección solicitada",
+  STEP_EXPIRED: "Aprobación ya no requerida",
+  REQUEST_CANCELLED: "Solicitud cancelada",
+  REQUEST_CLOSED: "Solicitud cerrada",
+  EXPENSE_CREATED: "Solicitud creada",
+  EXPENSE_UPDATED: "Solicitud actualizada",
+  EXPENSE_CLOSED: "Solicitud cerrada",
+  EXPENSE_CANCELLED: "Solicitud cancelada",
+})[event] || descriptor(event);
+
+function FlowProgressViewer({ expense, onClose }) {
+  const metrics = flowMetrics(expense.approvals);
+  return <div className="confirm-overlay" role="presentation" onMouseDown={onClose}>
+    <section className="confirm-dialog flow-progress-dialog" role="dialog" aria-modal="true" aria-labelledby="flow-progress-title" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="card-heading"><div><p className="eyebrow">AVANCE DEL FLUJO</p><h2 id="flow-progress-title">{expense.display_id}</h2><span className="muted">{expense.title}</span></div><button className="secondary" onClick={onClose}>Cerrar</button></div>
+      <div className="flow-summary"><strong>{metrics.percentage}% respondido</strong><span>{metrics.answered} respuesta(s) · {metrics.pending} pendiente(s) · {metrics.total} participante(s)</span><div className="flow-progress-track"><span style={{width:`${metrics.percentage}%`}} /></div></div>
+      <div className="flow-response-list">{expense.approvals.map((approval) => <article key={approval.id} className="flow-response-card">
+        <div><strong>{approval.approver_name || approval.approver_email}</strong><span>{titleName(approval.approver_role)}</span></div>
+        <StatusBadge status={approval.status}/>
+        <dl><div><dt>Respuesta</dt><dd>{statusName(approval.status)}</dd></div><div><dt>Asignación</dt><dd>{approvalTimestamp(approval.created_at)}</dd></div><div><dt>Timestamp de respuesta</dt><dd>{approvalTimestamp(approval.decided_at)}</dd></div></dl>
+        {["PENDING", "WAITING"].includes(approval.status) && <p className="flow-comment"><strong>{pendingAge(approval.created_at)}</strong></p>}
+        {approval.comment && <p className="flow-comment"><strong>Comentario:</strong> {approval.comment}</p>}
+      </article>)}</div>
+    </section>
+  </div>;
+}
+
+function ExpenseDetailViewer({ expense, categoryName, subcategoryName, canApprove, onVoted, onClose }) {
+  const vote = async (optionId) => {
+    await api(`/api/expenses/${expense.internal_request_id || expense.request_id}/quotation-vote`, { method: "POST", body: JSON.stringify({ quotation_option_id: optionId }) });
+    onVoted?.(); onClose();
+  };
+  return <div className="confirm-overlay" role="presentation" onMouseDown={onClose}>
+    <section className="confirm-dialog expense-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="expense-detail-title" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="card-heading"><div><p className="eyebrow">DETALLE DE LA SOLICITUD</p><h2 id="expense-detail-title">{expense.title}</h2><span className="muted">{expense.display_id}</span></div><button className="secondary" onClick={onClose}>Cerrar</button></div>
+      <dl className="expense-detail-grid">
+        <div><dt>Solicitante</dt><dd>{expense.requested_by}</dd></div>
+        <div><dt>Proveedor</dt><dd>{expense.supplier}</dd></div>
+        <div><dt>Categoría</dt><dd>{categoryName(expense.expense_type)}</dd></div>
+        <div><dt>Subcategoría</dt><dd>{subcategoryName(expense.expense_subcategory) || "—"}</dd></div>
+        <div><dt>Urgencia</dt><dd><span className={`urgency-badge urgency-${String(expense.urgency || "NORMAL").toLowerCase()}`}>{urgencyName(expense.urgency)}</span></dd></div>
+        <div><dt>Monto</dt><dd>${Number(expense.amount).toLocaleString(undefined,{minimumFractionDigits:2})}</dd></div>
+        <div><dt>Estado</dt><dd>{statusName(expense.status)}</dd></div>
+        <div><dt>Inicio</dt><dd>{approvalTimestamp(expense.created_at)}</dd></div>
+        <div><dt>Última actualización</dt><dd>{flowEventName(expense.last_event_type)}<span className="subtext">{approvalTimestamp(expense.last_event_at)}</span></dd></div>
+      </dl>
+      {expense.request_type === "MULTI_QUOTE" && <div className="quotation-audit-list"><h3>Cotizaciones presentadas</h3>{expense.quotation_options.map((option) => { const count = expense.quotation_votes.filter((item) => item.quotation_option_id === option.id).length; return <article className={`quote-option-card ${expense.selected_quotation_id === option.id ? "selected" : ""}`} key={option.id}><div><strong>Opción {option.option_number}: {option.supplier}</strong><span className="subtext">${Number(option.amount).toLocaleString(undefined,{minimumFractionDigits:2})} · {count} voto(s)</span>{option.notes && <span className="subtext">{option.notes}</span>}</div>{option.item_url && <a href={option.item_url} target="_blank" rel="noreferrer">Ver cotización</a>}{canApprove && expense.status === "QUOTATION_VOTING" && <button className="primary" onClick={() => vote(option.id)}>Votar por esta opción</button>}</article> })}</div>}
+      <div className="description-box"><strong>Descripción / justificación</strong><p>{expense.description}</p></div>
+      <div className="expense-detail-references"><span><strong>ID:</strong> {expense.display_id}</span><span><strong>Flujo:</strong> {expense.flow_id}</span></div>
+    </section>
+  </div>;
+}
+
 function ExpenseTable({
   refreshKey,
   canEdit,
-  isAdmin,
+  canApprove,
+  canClose,
   onEdit,
   onChanged,
   categoryOptions = [],
@@ -703,13 +858,17 @@ function ExpenseTable({
     Object.values(subcategoryOptions)
       .flat()
       .find(([code]) => code === value)?.[1] || value;
+  const categoryName = (value) => expenseTypes.find(([code]) => code === value)?.[1] || value;
   const [items, setItems] = useState([]);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [category, setCategory] = useState("");
+  const [urgency, setUrgency] = useState("");
   const [closing, setClosing] = useState(null);
   const [viewing, setViewing] = useState(null);
+  const [flowViewing, setFlowViewing] = useState(null);
+  const [detailViewing, setDetailViewing] = useState(null);
   useEffect(() => {
     const loadExpenses = () => api("/api/expenses")
       .then((data) =>
@@ -747,6 +906,7 @@ function ExpenseTable({
     (x) =>
       (!status || x.status === status) &&
       (!category || x.expense_type === category) &&
+      (!urgency || x.urgency === urgency) &&
       (!normalized ||
         [
           x.display_id,
@@ -760,10 +920,15 @@ function ExpenseTable({
             .toLowerCase()
             .includes(normalized),
         )),
-  );
+  ).sort((a, b) => {
+    const weight = { CRITICAL: 4, HIGH: 3, NORMAL: 2, LOW: 1 };
+    return (weight[b.urgency] || 2) - (weight[a.urgency] || 2) || new Date(b.created_at) - new Date(a.created_at);
+  });
   return (
     <section className="card">
       {viewing && <AttachmentViewer file={viewing} onClose={() => setViewing(null)} />}
+      {flowViewing && <FlowProgressViewer expense={flowViewing} onClose={() => setFlowViewing(null)} />}
+      {detailViewing && <ExpenseDetailViewer expense={detailViewing} categoryName={categoryName} subcategoryName={subcategoryName} canApprove={canApprove} onVoted={onChanged} onClose={() => setDetailViewing(null)} />}
       <div className="card-heading">
         <div>
           <p className="eyebrow">SEGUIMIENTO</p>
@@ -795,6 +960,7 @@ function ExpenseTable({
             <option value="">Todos</option>
             <option value="SUBMITTED">Enviada</option>
             <option value="PENDING_APPROVAL">Pendiente</option>
+            <option value="QUOTATION_VOTING">En votación</option>
             <option value="APPROVED">Aprobada</option>
             <option value="REJECTED">Rechazada</option>
             <option value="NEEDS_REVISION">Requiere revisión</option>
@@ -816,13 +982,24 @@ function ExpenseTable({
             ))}
           </select>
         </label>
-        {(search || status || category) && (
+        <label>
+          Urgencia
+          <select value={urgency} onChange={(e) => setUrgency(e.target.value)}>
+            <option value="">Todas</option>
+            <option value="CRITICAL">Crítica</option>
+            <option value="HIGH">Alta</option>
+            <option value="NORMAL">Normal</option>
+            <option value="LOW">Baja</option>
+          </select>
+        </label>
+        {(search || status || category || urgency) && (
           <button
             className="secondary"
             onClick={() => {
               setSearch("");
               setStatus("");
               setCategory("");
+              setUrgency("");
             }}
           >
             Limpiar
@@ -844,41 +1021,36 @@ function ExpenseTable({
         <div className="table-wrap">
           <table className="expenses-table">
             <colgroup>
-              <col className="col-id" /><col className="col-request" /><col className="col-category" />
-              <col className="col-support" /><col className="col-invoice" /><col className="col-requester" /><col className="col-amount" />
+              <col className="col-request" /><col className="col-start" /><col className="col-update" /><col className="col-category" />
+              <col className="col-support" /><col className="col-invoice" /><col className="col-amount" />
               <col className="col-status" /><col className="col-flow" />{canEdit && <col className="col-actions" />}
             </colgroup>
             <thead>
               <tr>
-                <th>ID único</th>
                 <th>Solicitud</th>
+                <th>Inicio</th>
+                <th>Última actualización</th>
                 <th>Categoría</th>
                 <th>Soportes</th>
                 <th>Factura de cierre</th>
-                <th>Solicitante</th>
                 <th>Monto</th>
                 <th>Estado</th>
-                <th>Flujo</th>
+                <th>Avance del flujo</th>
                 {canEdit && <th>Acción</th>}
               </tr>
             </thead>
             <tbody>
               {filtered.map((x) => (
                 <tr key={x.request_id}>
-                  <td>
-                    <span className="id-code" title={x.request_id}>
-                      {x.request_id}
-                    </span>
-                    {x.revised_from_request_id && (
-                      <span className="subtext">
-                        Corrección de {x.revised_from_request_id.slice(0, 8)}…
-                      </span>
-                    )}
-                  </td>
                   <td className="request-cell">
-                    <strong>{x.title}</strong>
+                    <button className="request-detail-button" onClick={() => setDetailViewing(x)}>{x.title}</button>
+                    <span className={`urgency-badge urgency-${String(x.urgency || "NORMAL").toLowerCase()}`}>{urgencyName(x.urgency)}</span>
                     <span className="subtext">{x.supplier}</span>
+                    <span className="subtext id-code" title={x.request_id}>{x.request_id}</span>
+                    {x.revised_from_request_id && <span className="subtext">Solicitud corregida</span>}
                   </td>
+                  <td className="timestamp-cell">{approvalTimestamp(x.created_at)}</td>
+                  <td className="timestamp-cell"><strong>{flowEventName(x.last_event_type)}</strong><span className="subtext">{approvalTimestamp(x.last_event_at)}</span></td>
                   <td>
                     {x.expense_type}
                     <span className="subtext">
@@ -920,7 +1092,6 @@ function ExpenseTable({
                     ) : <span className="muted">Disponible al cerrar</span>}
                     {x.status === "CLOSED" && !x.attachments.some((a) => a.document_type === "INVOICE") && <span className="muted">Sin factura registrada</span>}
                   </td>
-                  <td><span className="cell-ellipsis" title={x.requested_by}>{x.requested_by}</span></td>
                   <td className="amount-cell">
                     $
                     {Number(x.amount).toLocaleString(undefined, {
@@ -939,12 +1110,11 @@ function ExpenseTable({
                     )}
                   </td>
                   <td className="flow-cell">
-                    <span className="cell-ellipsis" title={x.flow_id}>Flujo: {x.flow_id}</span>
-                    {x.approvals.map((a) => (
-                      <span key={a.id}>
-                        {a.step}. {titleName(a.approver_role)} · {statusName(a.status)}
-                      </span>
-                    ))}
+                    {(() => { const progress=flowMetrics(x.approvals); return <button className="flow-progress-button" onClick={() => setFlowViewing(x)} aria-label={`Ver avance del flujo ${x.display_id}`}>
+                      <span><strong>{progress.percentage}%</strong> respondido</span>
+                      <div className="flow-progress-track"><span style={{width:`${progress.percentage}%`}} /></div>
+                      <small>{progress.answered} respuesta(s) · {progress.pending} pendiente(s)</small>
+                    </button> })()}
                   </td>
                   {canEdit && (
                     <td>
@@ -965,12 +1135,12 @@ function ExpenseTable({
                             Cancelar solicitud
                           </button>
                         )}
-                        {isAdmin && x.status === "APPROVED" && (
+                        {canClose && x.status === "APPROVED" && (
                           <button
                             className="primary nowrap"
                             onClick={() => setClosing(x)}
                           >
-                            Cerrar aprobación
+                            Registrar factura y cerrar
                           </button>
                         )}
                       </div>
@@ -1136,7 +1306,7 @@ function Invoices({ categoryOptions = [] }) {
                     <strong>{x.original_name}</strong>
                     <span className="subtext">
                       {(x.size / 1024 / 1024).toFixed(2)} MB ·{" "}
-                      {new Date(x.uploaded_at).toLocaleString()}
+                    {approvalTimestamp(x.uploaded_at)}
                     </span>
                   </td>
                   <td>
@@ -1160,7 +1330,7 @@ function Invoices({ categoryOptions = [] }) {
                   </td>
                   <td>{x.requested_by}</td>
                   <td>
-                    {x.closed_at ? new Date(x.closed_at).toLocaleString() : "—"}
+                    {x.closed_at ? approvalTimestamp(x.closed_at) : "—"}
                     <span className="subtext">{x.closed_by || ""}</span>
                   </td>
                   <td>
@@ -1196,7 +1366,7 @@ function Users({ canConfigure, canEditPeople, view }) {
     second_last_name: "",
     phone: "",
     email: "",
-    person_type: "OWNER",
+    title: "",
     active: true,
   };
   const emptyProfile = {
@@ -1228,10 +1398,6 @@ function Users({ canConfigure, canEditPeople, view }) {
   const draftFor = (u) => ({
     title: u.title,
     active: u.active,
-    apartments: (u.apartments || []).map((item) => ({
-      apartment_number: item.apartment_number,
-      ownership_role: item.ownership_role,
-    })),
   });
   const apartmentDraftFor = (apartment) => ({
     owner_identity_document: apartment.residents.find((item) => item.ownership_role === "OWNER")?.identity_document || "",
@@ -1240,16 +1406,13 @@ function Users({ canConfigure, canEditPeople, view }) {
   });
   const load = async () => {
     try {
-      const [userData, profileData, apartmentData] = await Promise.all([
+      const [userData, profileData] = await Promise.all([
         api("/api/users"),
         api("/api/users/profiles?include_inactive=true"),
-        api("/api/users/apartments"),
       ]);
       setUsers(userData);
       setDrafts(Object.fromEntries(userData.map((u) => [u.id, draftFor(u)])));
-      setProfiles(profileData);
-      setApartmentMaster(apartmentData);
-      setApartmentDrafts(Object.fromEntries(apartmentData.map((item) => [item.apartment_number, apartmentDraftFor(item)])));
+      setProfiles(profileData.filter((profile) => allowedAccessTitles.has(profile.code)));
       setBoard({
         president_id: userData.find((u) => u.title === "PRESIDENTE")?.id || "",
         vice_president_id: userData.find((u) => u.title === "VICEPRESIDENTE")?.id || "",
@@ -1289,7 +1452,6 @@ function Users({ canConfigure, canEditPeople, view }) {
     setSaving("person");
     try {
       const payload = { ...form };
-      if (!editingUserId) delete payload.active;
       await api(editingUserId ? `/api/users/${editingUserId}` : "/api/users", {
         method: editingUserId ? "PATCH" : "POST",
         body: JSON.stringify(payload),
@@ -1302,7 +1464,9 @@ function Users({ canConfigure, canEditPeople, view }) {
         type: "success",
         text: wasEditing
           ? "Los datos de la persona fueron actualizados y auditados."
-          : "Usuario registrado con sus permisos iniciales. Se envió una contraseña temporal a su correo.",
+          : form.active
+            ? "Usuario registrado con sus permisos iniciales. Se envió una contraseña temporal a su correo."
+            : "Usuario registrado como inactivo. No se envió acceso por correo.",
       });
       await load();
     } catch (err) {
@@ -1339,7 +1503,7 @@ function Users({ canConfigure, canEditPeople, view }) {
       second_last_name: user.second_last_name || "",
       phone: user.phone || "",
       email: user.email || "",
-      person_type: user.person_type || "OWNER",
+      title: user.title || "",
       active: user.active,
     });
     setPersonResults([]);
@@ -1355,10 +1519,8 @@ function Users({ canConfigure, canEditPeople, view }) {
     const draft = drafts[user.id];
     if (!draft) return {};
     return Object.fromEntries(
-      ["title", "active", "apartments"]
-        .filter((key) => key === "apartments"
-          ? JSON.stringify(draft.apartments) !== JSON.stringify((user.apartments || []).map(({ apartment_number, ownership_role }) => ({ apartment_number, ownership_role })))
-          : draft[key] !== user[key])
+      ["title", "active"]
+        .filter((key) => draft[key] !== user[key])
         .map((key) => [key, draft[key]]),
     );
   };
@@ -1506,17 +1668,18 @@ function Users({ canConfigure, canEditPeople, view }) {
     users.filter((u) => u.active && u.title === code).length;
   const profileIsFull = (profile) =>
     profile.has_user_limit && assignedCount(profile.code) >= profile.max_users;
+  const selectedRegistrationProfile = profiles.find((profile) => profile.code === form.title);
   const normalizedUserSearch = userSearch.trim().toLowerCase();
   const visibleUsers = normalizedUserSearch
     ? users.filter((u) =>
-        [u.full_name || u.name, u.first_name, u.middle_name, u.last_name, u.second_last_name, u.identity_document, u.email, ...(u.apartments || []).map((item) => item.apartment_number), u.role === "ADMIN" ? "administración" : ""]
+        [u.full_name || u.name, u.first_name, u.middle_name, u.last_name, u.second_last_name, u.identity_document, u.email, u.role === "ADMIN" ? "administración" : ""]
           .some((value) => String(value || "").toLowerCase().includes(normalizedUserSearch)),
       )
-    : users.filter((u) => u.can_approve || u.can_request);
+    : users;
   const editingPerson = editingUserId ? users.find((item) => item.id === editingUserId) : null;
   const personFormDirty = editingPerson
-    ? ["identity_document", "first_name", "middle_name", "last_name", "second_last_name", "phone", "email", "person_type", "active"].some((key) => String(form[key] ?? "") !== String(editingPerson[key] ?? ""))
-    : ["identity_document", "first_name", "middle_name", "last_name", "second_last_name", "phone", "email"].some((key) => String(form[key] || "").trim()) || form.person_type !== blank.person_type;
+    ? ["identity_document", "first_name", "middle_name", "last_name", "second_last_name", "phone", "email", "title", "active"].some((key) => String(form[key] ?? "") !== String(editingPerson[key] ?? ""))
+    : ["identity_document", "first_name", "middle_name", "last_name", "second_last_name", "phone", "email", "title"].some((key) => String(form[key] || "").trim());
   const usersHavePendingChanges = view === "people"
     ? personFormDirty
     : view === "apartments"
@@ -1533,7 +1696,7 @@ function Users({ canConfigure, canEditPeople, view }) {
             <h2>Crear o modificar usuario</h2>
           </div>
         </div>
-        <p className="muted">Para registrar una persona solo son obligatorios la cédula, el primer nombre, el primer apellido y el correo. Los demás datos son opcionales.</p>
+        <p className="muted">Los únicos datos personales obligatorios son cédula, primer nombre, primer apellido y correo. Selecciona además el cargo para aplicar sus permisos iniciales.</p>
         <form className="table-filters" onSubmit={searchPeople}>
           <label>
             Buscar persona para modificar
@@ -1541,8 +1704,8 @@ function Users({ canConfigure, canEditPeople, view }) {
           </label>
           <button className="secondary" disabled={saving === "person-search"}>{saving === "person-search" ? "Buscando..." : "Buscar"}</button>
         </form>
-        {personResults.length > 0 && <div className="table-wrap"><table><thead><tr><th>Nombre completo</th><th>Identificación</th><th>Tipo</th><th>Acción</th></tr></thead><tbody>
-          {personResults.map((user) => <tr key={user.id}><td>{user.full_name || user.name}</td><td>{user.identity_document}</td><td>{personTypeName(user.person_type)}</td><td><button type="button" className="secondary" onClick={() => editPerson(user)}>Modificar</button></td></tr>)}
+        {personResults.length > 0 && <div className="table-wrap"><table><thead><tr><th>Nombre completo</th><th>Identificación</th><th>Acción</th></tr></thead><tbody>
+          {personResults.map((user) => <tr key={user.id}><td>{user.full_name || user.name}</td><td>{user.identity_document}</td><td><button type="button" className="secondary" onClick={() => editPerson(user)}>Modificar</button></td></tr>)}
         </tbody></table></div>}
         {editingUserId && <div className="notice success">Editando una persona existente. La cédula y el correo se validarán antes de guardar.</div>}
         <form className="form-grid" onSubmit={savePerson}>
@@ -1584,27 +1747,32 @@ function Users({ canConfigure, canEditPeople, view }) {
             <input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} maxLength="30" placeholder="Opcional" />
           </label>
           <label>
-            Tipo de persona
-            <select value={form.person_type} onChange={(e) => setForm({ ...form, person_type: e.target.value })}>
-              <option value="OWNER">Propietario</option>
-              <option value="CO_OWNER">Co-propietario</option>
-              <option value="CONCIERGE">Conserje</option>
-              <option value="ADMINISTRATOR">Administrador</option>
+            Cargo y permisos iniciales
+            <select value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required>
+              <option value="">Selecciona un cargo</option>
+              {profiles.filter((profile) => profile.active || profile.code === form.title).map((profile) => (
+                <option key={profile.code} value={profile.code} disabled={!editingUserId && profileIsFull(profile)}>
+                  {profile.name}{profile.has_user_limit ? ` · ${assignedCount(profile.code)}/${profile.max_users}` : ""}
+                </option>
+              ))}
             </select>
           </label>
-          {editingUserId && <label>
+          {selectedRegistrationProfile && <div className="full permission-summary" aria-label="Permisos del cargo seleccionado">
+            {permissions.map(([key, label]) => <span key={key} className={selectedRegistrationProfile[key] ? "granted" : "denied"}>{label}</span>)}
+          </div>}
+          <label>
             Estado
             <select value={form.active ? "true" : "false"} onChange={(e) => setForm({ ...form, active: e.target.value === "true" })}>
               <option value="true">Activo</option>
               <option value="false">Inactivo</option>
             </select>
-          </label>}
+          </label>
           <div className="full form-actions">
             {message && (
               <div className={`notice ${message.type}`}>{message.text}</div>
             )}
             {editingUserId && <button type="button" className="secondary" onClick={cancelPersonEdit}>Cancelar modificación</button>}
-            <button className="primary" disabled={saving === "person"}>{saving === "person" ? "Guardando..." : editingUserId ? "Guardar modificación" : "Registrar y enviar acceso"}</button>
+            <button className="primary" disabled={saving === "person"}>{saving === "person" ? "Guardando..." : editingUserId ? "Guardar modificación" : form.active ? "Registrar y enviar acceso" : "Registrar usuario inactivo"}</button>
           </div>
         </form>
       </section>
@@ -1665,20 +1833,20 @@ function Users({ canConfigure, canEditPeople, view }) {
         <div className="card-heading">
           <div><p className="eyebrow">ESTRUCTURA ORGANIZACIONAL</p><h2>Organigrama</h2></div>
         </div>
-        <p className="muted">Los miembros activos de la junta directiva deben estar asignados al menos a un apartamento.</p>
-        <div className="table-wrap"><table><thead><tr><th>Nombre completo</th><th>Cargo</th><th>Unidad / apartamento</th><th>Estado</th></tr></thead><tbody>
+        <p className="muted">Solo se muestran las personas con acceso al sistema: Junta Directiva y Administradora.</p>
+        <div className="table-wrap"><table><thead><tr><th>Nombre completo</th><th>Cargo</th><th>Estado</th></tr></thead><tbody>
           {users.filter((u) => u.role === "ADMIN" || u.title !== "PROPIETARIO").map((u) => {
             const profile = profiles.find((p) => p.code === u.title);
-            return <tr key={u.id}><td>{u.full_name || u.name}</td><td>{profile?.name || titleName(u.title)}</td><td>{(u.apartments || []).map((item) => item.apartment_number).join(", ") || "Administración"}</td><td>{u.active ? "Activo" : "Inactivo"}</td></tr>;
+            return <tr key={u.id}><td>{u.full_name || u.name}</td><td>{profile?.name || titleName(u.title)}</td><td>{u.active ? "Activo" : "Inactivo"}</td></tr>;
           })}
         </tbody></table></div>
       </section>
       )}
       {view === "people" && !canEditPeople && (
       <section className="card">
-        <div className="card-heading"><div><p className="eyebrow">SOLO LECTURA</p><h2>Propietarios y usuarios</h2></div></div>
-        <div className="table-wrap"><table><thead><tr><th>Nombre completo</th><th>Identificación</th><th>Correo</th><th>Apartamento(s)</th><th>Tipo</th><th>Estado</th></tr></thead><tbody>
-          {users.map((u) => <tr key={u.id}><td>{u.full_name || u.name}</td><td>{u.identity_document || "—"}</td><td>{u.email}</td><td>{(u.apartments || []).map((item) => item.apartment_number).join(", ") || "—"}</td><td>{personTypeName(u.person_type || u.role)}</td><td>{u.active ? "Activo" : "Inactivo"}</td></tr>)}
+        <div className="card-heading"><div><p className="eyebrow">SOLO LECTURA</p><h2>Usuarios con acceso</h2></div></div>
+        <div className="table-wrap"><table><thead><tr><th>Nombre completo</th><th>Identificación</th><th>Correo</th><th>Cargo</th><th>Estado</th></tr></thead><tbody>
+          {users.map((u) => <tr key={u.id}><td>{u.full_name || u.name}</td><td>{u.identity_document || "—"}</td><td>{u.email}</td><td>{profiles.find((p) => p.code === u.title)?.name || titleName(u.title)}</td><td>{u.active ? "Activo" : "Inactivo"}</td></tr>)}
         </tbody></table></div>
       </section>
       )}
@@ -1719,7 +1887,7 @@ function Users({ canConfigure, canEditPeople, view }) {
           <span className="filter-count">
             {normalizedUserSearch
               ? `${visibleUsers.length} resultado(s)`
-              : `${visibleUsers.length} solicitante(s) o aprobador(es)`}
+              : `${visibleUsers.length} usuario(s) con acceso`}
           </span>
         </div>
         <div className="table-wrap">
@@ -1727,7 +1895,6 @@ function Users({ canConfigure, canEditPeople, view }) {
             <thead>
               <tr>
                 <th>Usuario</th>
-                <th>Apartamento</th>
                 <th>Cargo</th>
                 <th>Fecha de registro</th>
                 <th>Actualización</th>
@@ -1751,25 +1918,6 @@ function Users({ canConfigure, canEditPeople, view }) {
                     </td>
                     <td>
                       {isSystemAdmin ? (
-                        <strong>Administración</strong>
-                      ) : (
-                        <div>
-                          {d.apartments.map((apartment, index) => (
-                            <div className="form-actions" key={index}>
-                              <input disabled={!canConfigure} value={apartment.apartment_number} maxLength="3" pattern="(?:[6-9]|1[0-9]|2[01])[A-Ha-h]" aria-label={`Apartamento de ${u.name}`} onChange={(e) => setDrafts({ ...drafts, [u.id]: { ...d, apartments: d.apartments.map((item, itemIndex) => itemIndex === index ? { ...item, apartment_number: e.target.value.toUpperCase() } : item) } })} />
-                              <select disabled={!canConfigure} value={apartment.ownership_role} onChange={(e) => setDrafts({ ...drafts, [u.id]: { ...d, apartments: d.apartments.map((item, itemIndex) => itemIndex === index ? { ...item, ownership_role: e.target.value } : item) } })}>
-                                <option value="OWNER">Propietario</option>
-                                <option value="CO_OWNER">Co-propietario</option>
-                              </select>
-                              {canConfigure && d.apartments.length > 1 && <button type="button" className="secondary" onClick={() => setDrafts({ ...drafts, [u.id]: { ...d, apartments: d.apartments.filter((_, itemIndex) => itemIndex !== index) } })}>×</button>}
-                            </div>
-                          ))}
-                          {canConfigure && <button type="button" className="secondary" onClick={() => setDrafts({ ...drafts, [u.id]: { ...d, apartments: [...d.apartments, { apartment_number: "", ownership_role: "OWNER" }] } })}>+ Apto.</button>}
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      {isSystemAdmin ? (
                         <strong>{titleName(u.title)}</strong>
                       ) : (
                         <select
@@ -1777,6 +1925,7 @@ function Users({ canConfigure, canEditPeople, view }) {
                           value={d.title}
                           onChange={(e) => setTitle(e.target.value, u.id)}
                         >
+                          {d.title === "SIN_ASIGNAR" && <option value="SIN_ASIGNAR">Sin cargo asignado</option>}
                           {profiles
                             .filter((p) => p.active || p.code === d.title)
                             .map((p) => {
@@ -1798,8 +1947,8 @@ function Users({ canConfigure, canEditPeople, view }) {
                         </select>
                       )}
                     </td>
-                    <td>{new Date(u.created_at).toLocaleDateString()}</td>
-                    <td>{new Date(u.updated_at).toLocaleDateString()}</td>
+                    <td>{panamaDate(u.created_at)}</td>
+                    <td>{panamaDate(u.updated_at)}</td>
                     <td>
                       <button
                         className="secondary"
@@ -2084,7 +2233,7 @@ function Audit() {
     {!loading && events.length === 0 ? <p className="muted">Aún no hay cambios registrados.</p> :
       <div className="table-wrap"><table><thead><tr><th>Fecha y hora</th><th>Tipo</th><th>Elemento</th><th>Acción</th><th>Realizado por</th><th>Campos / detalle</th></tr></thead>
         <tbody>{events.map((event) => <tr key={event.event_id}>
-          <td>{new Date(event.occurred_at).toLocaleString()}</td><td><span className="change-pill">{kindNames[event.kind] || event.kind}</span></td>
+          <td>{approvalTimestamp(event.occurred_at)}</td><td><span className="change-pill">{kindNames[event.kind] || event.kind}</span></td>
           <td>{event.subject}</td><td>{actionNames[event.event_type] || descriptor(event.event_type)}</td><td>{event.actor}</td>
           <td>{(event.changed_fields || []).map((field) => <span className="change-pill" key={field}>{fieldName(field)}</span>)}
             {event.kind === "FLOW" && event.details?.paso ? <span className="subtext">Paso {event.details.paso} · {event.details.estado_anterior ? statusName(event.details.estado_anterior) : "Inicio"} → {statusName(event.details.estado_nuevo)}</span> : null}</td>
@@ -2593,7 +2742,7 @@ function RuleSettings({ categoryOptions }) {
     expense_type: "ALL",
     min_amount: "0",
     max_amount: "",
-    approval_mode: "ALL",
+    approval_mode: "MAJORITY",
     approver_profile_codes: ["PRESIDENTE", "VICEPRESIDENTE", "TESORERO", "VOCERO"],
     active: true,
   };
@@ -2668,7 +2817,7 @@ function RuleSettings({ categoryOptions }) {
   const normalizedRule = (value) => JSON.stringify({
     name: value?.name || "", expense_type: value?.expense_type || "ALL",
     min_amount: String(value?.min_amount ?? "0"), max_amount: value?.max_amount == null ? "" : String(value.max_amount),
-    approval_mode: value?.approval_mode || "ALL",
+    approval_mode: "MAJORITY",
     approver_profile_codes: [...(value?.approver_profile_codes || [])].sort(), active: value?.active ?? true,
   });
   const ruleHasPendingChanges = normalizedRule(form) !== normalizedRule(ruleBaseline);
@@ -2736,16 +2885,8 @@ function RuleSettings({ categoryOptions }) {
           </label>
           <label className="full">
             Tipo de aprobación
-            <select
-              value={form.approval_mode}
-              onChange={(e) =>
-                setForm({ ...form, approval_mode: e.target.value })
-              }
-            >
-              <option value="ANY">
-                Cualquiera — una aprobación es suficiente
-              </option>
-              <option value="ALL">Todos — aprobación completa</option>
+            <select value="MAJORITY" disabled>
+              <option value="MAJORITY">Mayoría absoluta — más del 50 %</option>
             </select>
           </label>
           <fieldset className="full rule-profiles">
@@ -2829,7 +2970,7 @@ function RuleSettings({ categoryOptions }) {
                         : `$${Number(x.max_amount).toFixed(2)}`}
                     </td>
                     <td>
-                      {x.approval_mode === "ANY" ? "Cualquiera" : "Todos"}
+                      Mayoría absoluta (&gt; 50 %)
                     </td>
                     <td>
                       {x.approver_profile_codes
@@ -2860,10 +3001,49 @@ function RuleSettings({ categoryOptions }) {
   );
 }
 
+function EmailActionPage({ kind, token }) {
+  const endpoint = kind === "approval" ? `/api/approvals/email/${token}` : `/api/expenses/quotation-vote-email/${token}`;
+  const [data,setData]=useState(null), [error,setError]=useState(""), [done,setDone]=useState(null), [comment,setComment]=useState("");
+  const query = new URLSearchParams(window.location.search);
+  const suggested = query.get("action");
+  const suggestedOption = Number(query.get("option")) || null;
+  useEffect(()=>{ api(endpoint).then(setData).catch((e)=>setError(e.message)); },[endpoint]);
+  const submit = async (payload) => { setError(""); try { const result=await api(endpoint,{method:"POST",body:JSON.stringify(payload)}); setDone(result); } catch(e){setError(e.message);} };
+  if(done) return <main className="single"><section className="card email-action-card"><p className="eyebrow">RESPUESTA REGISTRADA</p><h1>Gracias por responder</h1><div className="notice success">Tu decisión quedó registrada para {done.display_id}.</div></section></main>;
+  if(error) return <main className="single"><section className="card email-action-card"><h1>No se pudo procesar</h1><div className="notice error">{error}</div></section></main>;
+  if(!data) return <main className="single">Cargando detalle...</main>;
+  const expense=data.expense;
+  return <main className="single"><section className="card email-action-card"><p className="eyebrow">CONFIRMACIÓN SEGURA</p><h1>{expense.title}</h1><div className="email-expense-summary"><div><span>Solicitud</span><strong>{expense.display_id}</strong></div><div><span>Urgencia</span><strong>{urgencyName(expense.urgency)}</strong></div>{expense.amount && <div><span>Monto</span><strong>${Number(expense.amount).toLocaleString(undefined,{minimumFractionDigits:2})}</strong></div>}{expense.supplier && <div><span>Proveedor</span><strong>{expense.supplier}</strong></div>}</div><p>{expense.description}</p>
+    {kind === "approval" ? <><div className="email-supports"><h2>Cotización y soportes</h2>{expense.item_url && <a className="secondary" href={expense.item_url} target="_blank" rel="noreferrer">Ver cotización en línea</a>}{expense.attachments.map((file)=><a className="secondary" key={file.id} href={apiUrl(`/api/approvals/email/${token}/attachments/${file.id}`)} target="_blank" rel="noreferrer">Ver {file.original_name}</a>)}{!expense.item_url && !expense.attachments.length && <span className="muted">No hay archivos adjuntos.</span>}</div><div className="email-action-buttons"><textarea placeholder="Comentario opcional" value={comment} onChange={(e)=>setComment(e.target.value)}/><button className="primary" onClick={()=>submit({decision:suggested || "APPROVED",comment:comment||null})}>{suggested === "REJECTED" ? "Confirmar rechazo" : suggested === "REVISION_REQUESTED" ? "Confirmar solicitud de corrección" : "Confirmar aprobación"}</button><button className="danger" onClick={()=>submit({decision:"REJECTED",comment:comment||null})}>Rechazar</button></div></>
+    : <div className="quotation-audit-list">{expense.options.map((option)=><article className={`quote-option-card ${suggestedOption===option.id?"selected":""}`} key={option.id}><div><strong>Opción {option.option_number}: {option.supplier}</strong><span className="subtext">${Number(option.amount).toLocaleString(undefined,{minimumFractionDigits:2})}</span>{option.notes&&<span className="subtext">{option.notes}</span>}{option.item_url&&<a href={option.item_url} target="_blank" rel="noreferrer">Ver cotización en línea</a>}{option.attachments.map((file)=><a key={file.id} href={apiUrl(`/api/expenses/quotation-vote-email/${token}/attachments/${file.id}`)} target="_blank" rel="noreferrer">📎 Ver {file.original_name}</a>)}</div><button className="primary" onClick={()=>submit({quotation_option_id:option.id})}>{suggestedOption===option.id?"Confirmar este voto":"Votar por esta opción"}</button></article>)}</div>}
+  </section></main>;
+}
+
+function HomeDashboard({ refreshKey, onOpenRequests }) {
+  const [data, setData] = useState(null), [error, setError] = useState("");
+  useEffect(() => { api("/api/expenses/dashboard").then(setData).catch((e) => setError(e.message)); }, [refreshKey]);
+  if (error) return <section className="card"><div className="notice error">{error}</div></section>;
+  if (!data) return <section className="card"><p className="muted">Cargando resumen...</p></section>;
+  const month = data.last_31_days;
+  return <div className="dashboard-layout">
+    <section className="dashboard-kpis">
+      <button className="dashboard-kpi attention" onClick={onOpenRequests}><span>Acciones que requieren mi atención</span><strong>{data.pending_my_action}</strong><small>Votos o aprobaciones que esperan tu respuesta</small></button>
+      <button className="dashboard-kpi" onClick={onOpenRequests}><span>Solicitudes en proceso</span><strong>{data.in_process}</strong><small>Abiertas actualmente</small></button>
+      <article className="dashboard-kpi success"><span>Cerradas en 24 horas</span><strong>{data.closed_last_24h}</strong></article>
+    </section>
+    <section className="card dashboard-month"><div className="card-heading"><div><p className="eyebrow">ÚLTIMOS 31 DÍAS</p><h2>Resumen de solicitudes</h2></div></div>
+      <div className="month-stat-grid"><div><span>Creadas</span><strong>{month.created}</strong></div><div><span>Aprobadas</span><strong>{month.approved}</strong></div><div><span>Cerradas</span><strong>{month.closed}</strong></div><div><span>Rechazadas</span><strong>{month.rejected}</strong></div><div><span>Canceladas</span><strong>{month.cancelled}</strong></div><div><span>Monto aprobado</span><strong>${Number(month.approved_amount).toLocaleString(undefined,{minimumFractionDigits:2})}</strong></div></div>
+    </section>
+    <section className="card dashboard-pending"><div className="card-heading"><div><p className="eyebrow">REQUIERE TU ATENCIÓN</p><h2>Acciones pendientes</h2></div><button className="secondary" onClick={onOpenRequests}>Ver todas</button></div>
+      {data.pending_items.length ? <div className="dashboard-request-list">{data.pending_items.map((item) => <button key={item.request_id} onClick={onOpenRequests}><span><strong>{item.title}</strong><small>{item.display_id} · {statusName(item.status)}</small></span><span className={`urgency-badge urgency-${String(item.urgency).toLowerCase()}`}>{urgencyName(item.urgency)}</span><time>{pendingAge(item.created_at)}</time></button>)}</div> : <p className="muted">No tienes votos ni aprobaciones pendientes.</p>}
+    </section>
+  </div>;
+}
+
 function App() {
   const [user, setUser] = useState(null),
     [loading, setLoading] = useState(true),
-    [tab, setTab] = useState("expenses"),
+    [tab, setTab] = useState("home"),
     [configOpen, setConfigOpen] = useState(false),
     [refresh, setRefresh] = useState(0),
     [revision, setRevision] = useState(null),
@@ -2934,6 +3114,8 @@ function App() {
     window.addEventListener("beforeunload", warnBeforeUnload);
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
   }, []);
+  const emailActionMatch = window.location.pathname.match(/^\/email-action\/(approval|vote)\/([^/]+)$/);
+  if (emailActionMatch) return <EmailActionPage kind={emailActionMatch[1]} token={emailActionMatch[2]} />;
   if (loading) return <main className="single">Cargando...</main>;
   if (!user) return <Login onLogin={setUser} />;
   if (user.must_change_password)
@@ -2965,6 +3147,7 @@ function App() {
     setRefresh((x) => x + 1);
   };
   const canCreate = user.role === "ADMIN" || user.can_request,
+    canApprove = user.role === "ADMIN" || user.can_approve,
     canView = user.role === "ADMIN" || user.can_view,
     canConfigure = user.role === "ADMIN" || user.can_configure,
     isBoardMember = ["PRESIDENTE", "VICEPRESIDENTE", "TESORERO", "VOCERO"].includes(user.title),
@@ -2979,10 +3162,10 @@ function App() {
     ]),
   );
   const titles = {
+    home: "Inicio",
     expenses: "Solicitudes de gasto del PH",
     invoices: "Consulta de facturas",
-    people: "Configuración · Propietarios y usuarios",
-    apartments: "Configuración · Apartamentos",
+    people: "Configuración · Usuarios con acceso",
     organization: "Configuración · Organigrama",
     categories: "Categorías y subcategorías",
     rules: "Reglas de aprobación",
@@ -3001,6 +3184,7 @@ function App() {
           </div>
         </div>
         <div className="header-actions">
+          <button onClick={() => navigateTo("home")}>Inicio</button>
           <button onClick={() => navigateTo("expenses")}>Solicitudes</button>
           {canView && (
             <button onClick={() => navigateTo("invoices")}>Facturas</button>
@@ -3013,7 +3197,6 @@ function App() {
               <button onClick={() => setConfigOpen((open) => !open)}>Configuración {configOpen ? "▴" : "▾"}</button>
               {configOpen && <div className="config-menu-items">
                 <button onClick={() => navigateTo("people")}>Personas</button>
-                <button onClick={() => navigateTo("apartments")}>Apartamentos</button>
                 {canAccessOrganization && <button onClick={() => navigateTo("organization")}>Organigrama</button>}
                 {canConfigure && <button onClick={() => navigateTo("categories")}>Categorías</button>}
                 {canConfigure && <button onClick={() => navigateTo("rules")}>Reglas</button>}
@@ -3028,9 +3211,11 @@ function App() {
           <p className="eyebrow">CONTROL · TRAZABILIDAD · APROBACIÓN</p>
           <h1>{titles[tab]}</h1>
         </section>
-        {tab === "invoices" && canView ? (
+        {tab === "home" ? (
+          <HomeDashboard refreshKey={refresh} onOpenRequests={() => navigateTo("expenses")} />
+        ) : tab === "invoices" && canView ? (
           <Invoices categoryOptions={categoryOptions} />
-        ) : ["people", "apartments", "organization"].includes(tab) && canManagePeople && (tab !== "organization" || canAccessOrganization) ? (
+        ) : ["people", "organization"].includes(tab) && canManagePeople && (tab !== "organization" || canAccessOrganization) ? (
           <Users canConfigure={canConfigure} canEditPeople={canEditPeople} view={tab} />
         ) : tab === "categories" && canConfigure ? (
           <CategorySettings onChanged={() => setRefresh((x) => x + 1)} />
@@ -3052,7 +3237,8 @@ function App() {
             <ExpenseTable
               refreshKey={refresh}
               canEdit={canCreate}
-              isAdmin={user.role === "ADMIN"}
+              canApprove={canApprove}
+              canClose={user.role === "ADMIN" || user.title === "ADMINISTRADORA"}
               onEdit={startRevision}
               onChanged={() => setRefresh((x) => x + 1)}
               categoryOptions={categoryOptions}

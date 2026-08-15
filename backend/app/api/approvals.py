@@ -1,19 +1,20 @@
 import os
-from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.database import get_db
 from app.core.privacy import can_view_personal_data, mask_email
 from app.core.security import current_user, require_permission
-from app.models.entities import Approval, ApprovalStatus, Expense, ExpenseStatus, User, UserRole
+from app.models.entities import Approval, ApprovalStatus, Expense, ExpenseAttachment, ExpenseStatus, User, UserRole
 from app.schemas.approval import ApprovalDecision
 from app.schemas.expense import ExpenseOut
 from app.services.approval_engine import apply_decision
 
 router = APIRouter()
-APPROVAL_LINK_HOURS = int(os.getenv('APPROVAL_LINK_HOURS', '72'))
+UPLOAD_DIR = Path(os.getenv('UPLOAD_DIR', '/app/uploads'))
 
 
 def _approval_by_token(db: Session, token: str) -> Approval:
@@ -25,15 +26,58 @@ def _approval_by_token(db: Session, token: str) -> Approval:
 
 
 def _ensure_link_is_current(approval: Approval) -> None:
-    created_at = approval.created_at
-    if created_at and created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
-    if created_at and datetime.now(timezone.utc) > created_at + timedelta(hours=APPROVAL_LINK_HOURS):
-        raise HTTPException(status_code=410, detail='Este enlace de aprobación venció')
     if approval.status == ApprovalStatus.EXPIRED:
-        raise HTTPException(status_code=410, detail='Este enlace expiró porque el flujo fue cancelado, rechazado o reemplazado por una corrección')
+        raise HTTPException(status_code=410, detail='Esta aprobación ya no está vigente porque el flujo terminó o fue reemplazado')
     if approval.expense.status in (ExpenseStatus.CANCELLED, ExpenseStatus.CLOSED):
-        raise HTTPException(status_code=410, detail='Este enlace expiró porque la solicitud ya no tiene un flujo activo')
+        raise HTTPException(status_code=410, detail='Esta aprobación ya no está vigente porque la solicitud no tiene un flujo activo')
+
+
+@router.get('/email/{token}')
+def get_email_approval(token: str, db: Session = Depends(get_db)):
+    approval = _approval_by_token(db, token)
+    _ensure_link_is_current(approval)
+    expense = approval.expense
+    return {'kind': 'APPROVAL', 'token': token, 'status': approval.status.value,
+            'approver_role': approval.approver_role,
+            'expense': {'display_id': expense.display_id, 'title': expense.title,
+                        'description': expense.description, 'supplier': expense.supplier,
+                        'amount': str(expense.amount), 'urgency': expense.urgency,
+                        'expense_type': expense.expense_type,
+                        'expense_subcategory': expense.expense_subcategory,
+                        'item_url': expense.item_url,
+                        'attachments': [{'id': item.id, 'original_name': item.original_name,
+                                         'content_type': item.content_type, 'size': item.size}
+                                        for item in expense.attachments]}}
+
+
+@router.get('/email/{token}/attachments/{attachment_id}')
+def view_email_approval_attachment(token: str, attachment_id: int, db: Session = Depends(get_db)):
+    approval = _approval_by_token(db, token)
+    _ensure_link_is_current(approval)
+    attachment = db.scalar(select(ExpenseAttachment).where(
+        ExpenseAttachment.id == attachment_id,
+        ExpenseAttachment.expense_id == approval.expense_id))
+    if not attachment:
+        raise HTTPException(status_code=404, detail='Cotización no encontrada')
+    path = UPLOAD_DIR / attachment.stored_name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail='El archivo ya no está disponible')
+    return FileResponse(path, media_type=attachment.content_type,
+                        filename=attachment.original_name, content_disposition_type='inline')
+
+
+@router.post('/email/{token}')
+def decide_email_approval(token: str, payload: ApprovalDecision, db: Session = Depends(get_db)):
+    approval = db.scalar(select(Approval).where(Approval.token == token).options(selectinload(Approval.expense)))
+    if not approval:
+        raise HTTPException(status_code=404, detail='Enlace de aprobación no encontrado')
+    db.scalar(select(Expense).where(Expense.id == approval.expense_id).with_for_update())
+    db.refresh(approval); _ensure_link_is_current(approval)
+    try:
+        expense = apply_decision(db, approval, ApprovalStatus(payload.decision), payload.comment, approval.approver_email)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {'status': expense.status.value, 'decision': payload.decision, 'display_id': expense.display_id}
 
 
 @router.get('/{token}')
@@ -57,6 +101,7 @@ def get_approval(token: str, db: Session = Depends(get_db), user: User = Depends
             'description': expense.description,
             'expense_type': expense.expense_type,
             'expense_subcategory': expense.expense_subcategory,
+            'urgency': expense.urgency,
             'amount': str(expense.amount),
             'supplier': expense.supplier,
             'item_url': expense.item_url,

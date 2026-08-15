@@ -56,8 +56,8 @@ class UserCreate(BaseModel):
     second_last_name: str | None = Field(default=None, max_length=70)
     email: EmailStr
     phone: str | None = Field(default=None, min_length=7, max_length=30)
-    person_type: PersonType = PersonType.OWNER
-
+    title: str = Field(min_length=2, max_length=70)
+    active: bool = True
     @field_validator('middle_name', 'second_last_name', 'phone', mode='before')
     @classmethod
     def empty_optional_fields(cls, value):

@@ -26,8 +26,9 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       EMAIL_FROM: ${EMAIL_FROM:-}
       BREVO_API_KEY: ${BREVO_API_KEY:-}
-      BREVO_SENDER_NAME: ${BREVO_SENDER_NAME:-PH · Gestión de Gastos}
+      BREVO_SENDER_NAME: ${BREVO_SENDER_NAME:-PH - Gestion de Gastos}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+      APP_TIME_ZONE: ${APP_TIME_ZONE:-America/Panama}
       SECRET_KEY: ${SECRET_KEY:-development-only-change-me}
       TOKEN_EXPIRE_MINUTES: ${TOKEN_EXPIRE_MINUTES:-480}
       SESSION_IDLE_MINUTES: ${SESSION_IDLE_MINUTES:-30}
@@ -48,7 +49,10 @@ services:
       - "8000"
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_TIME_ZONE: ${VITE_TIME_ZONE:-America/Panama}
     ports:
       # Local-only by default. Public MVP access is provided by the optional
       # Cloudflare tunnel, never by exposing this port on every interface.

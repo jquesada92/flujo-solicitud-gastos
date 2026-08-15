@@ -124,8 +124,8 @@ def migrate_schema() -> None:
         if 'last_activity_at' not in user_columns:
             connection.execute(text('ALTER TABLE users ADD COLUMN last_activity_at TIMESTAMPTZ'))
         if 'title' not in user_columns:
-            connection.execute(text("ALTER TABLE users ADD COLUMN title VARCHAR(40) NOT NULL DEFAULT 'PROPIETARIO'"))
-            connection.execute(text("UPDATE users SET title = CASE WHEN role='ADMIN' THEN 'ADMIN_SISTEMA' WHEN role='APPROVER' THEN 'VOCERO' WHEN role='REQUESTER' THEN 'ADMINISTRADORA' ELSE 'PROPIETARIO' END"))
+            connection.execute(text("ALTER TABLE users ADD COLUMN title VARCHAR(40) NOT NULL DEFAULT 'SIN_ASIGNAR'"))
+            connection.execute(text("UPDATE users SET title = CASE WHEN role='ADMIN' THEN 'ADMIN_SISTEMA' WHEN role='APPROVER' THEN 'VOCERO' WHEN role='REQUESTER' THEN 'ADMINISTRADORA' ELSE 'SIN_ASIGNAR' END"))
         if 'apartment_number' not in user_columns:
             connection.execute(text('ALTER TABLE users ADD COLUMN apartment_number VARCHAR(30)'))
             connection.execute(text('CREATE INDEX IF NOT EXISTS ix_users_apartment_number ON users (apartment_number)'))
@@ -156,6 +156,12 @@ def migrate_schema() -> None:
         connection.execute(text('DROP INDEX IF EXISTS uq_users_single_active_officer'))
         connection.execute(text("UPDATE access_profiles SET name='Administrador' WHERE code='ADMINISTRADORA' AND name='Administradora'"))
         connection.execute(text("UPDATE access_profiles SET name='Vocal' WHERE code='VOCERO' AND name='Vocero'"))
+        connection.execute(text("UPDATE access_profiles SET active=FALSE WHERE code IN ('PROPIETARIO','CONSERJE','MANTENIMIENTO')"))
+        connection.execute(text("""
+            UPDATE users SET title='SIN_ASIGNAR', role='VIEWER',
+                can_request=FALSE, can_approve=FALSE, can_view=FALSE, can_configure=FALSE
+            WHERE role <> 'ADMIN' AND title IN ('PROPIETARIO','CONSERJE','MANTENIMIENTO')
+        """))
         if 'has_user_limit' not in profile_columns:
             connection.execute(text('ALTER TABLE access_profiles ADD COLUMN has_user_limit BOOLEAN NOT NULL DEFAULT FALSE'))
         if 'max_users' not in profile_columns:
@@ -193,6 +199,7 @@ def migrate_schema() -> None:
         connection.execute(text("ALTER TYPE expensestatus ADD VALUE IF NOT EXISTS 'CANCELLED'"))
         connection.execute(text("ALTER TYPE expensestatus ADD VALUE IF NOT EXISTS 'CLOSED'"))
         connection.execute(text("ALTER TYPE expensestatus ADD VALUE IF NOT EXISTS 'NEEDS_REVISION'"))
+        connection.execute(text("ALTER TYPE expensestatus ADD VALUE IF NOT EXISTS 'QUOTATION_VOTING'"))
         connection.execute(text("ALTER TYPE approvalstatus ADD VALUE IF NOT EXISTS 'REVISION_REQUESTED'"))
         connection.execute(text("ALTER TYPE approvalstatus ADD VALUE IF NOT EXISTS 'EXPIRED'"))
         if 'flow_id' not in approval_columns:
@@ -204,6 +211,9 @@ def migrate_schema() -> None:
             connection.execute(text('CREATE INDEX IF NOT EXISTS ix_approvals_flow_id ON approvals (flow_id)'))
         if 'expense_subcategory' not in columns:
             connection.execute(text('ALTER TABLE expenses ADD COLUMN expense_subcategory VARCHAR(80)'))
+        if 'urgency' not in columns:
+            connection.execute(text("ALTER TABLE expenses ADD COLUMN urgency VARCHAR(20) NOT NULL DEFAULT 'NORMAL'"))
+            connection.execute(text('CREATE INDEX IF NOT EXISTS ix_expenses_urgency ON expenses (urgency)'))
         if 'requester_analytics_id' not in columns:
             connection.execute(text('ALTER TABLE expenses ADD COLUMN requester_analytics_id VARCHAR(64)'))
             connection.execute(text('CREATE INDEX IF NOT EXISTS ix_expenses_requester_analytics_id ON expenses (requester_analytics_id)'))
@@ -217,6 +227,13 @@ def migrate_schema() -> None:
             connection.execute(text('ALTER TABLE expenses ADD COLUMN item_url VARCHAR(2048)'))
         if 'revised_from_request_id' not in columns:
             connection.execute(text('ALTER TABLE expenses ADD COLUMN revised_from_request_id VARCHAR(36)'))
+        if 'request_type' not in columns:
+            connection.execute(text("ALTER TABLE expenses ADD COLUMN request_type VARCHAR(20) NOT NULL DEFAULT 'SIMPLE'"))
+            connection.execute(text('CREATE INDEX IF NOT EXISTS ix_expenses_request_type ON expenses (request_type)'))
+        if 'selected_quotation_id' not in columns:
+            connection.execute(text('ALTER TABLE expenses ADD COLUMN selected_quotation_id INTEGER'))
+        connection.execute(text('ALTER TABLE expenses ALTER COLUMN amount DROP NOT NULL'))
+        connection.execute(text('ALTER TABLE expenses ALTER COLUMN supplier DROP NOT NULL'))
         for name, definition in (
             ('cancelled_at', 'TIMESTAMP'), ('cancelled_by', 'VARCHAR(255)'),
             ('cancellation_reason', 'TEXT'), ('closed_at', 'TIMESTAMP'),
@@ -258,6 +275,9 @@ def migrate_schema() -> None:
         attachment_columns = {column['name'] for column in inspect(engine).get_columns('expense_attachments')}
         if 'document_type' not in attachment_columns:
             connection.execute(text("ALTER TABLE expense_attachments ADD COLUMN document_type VARCHAR(40) NOT NULL DEFAULT 'QUOTATION'"))
+        if 'quotation_option_id' not in attachment_columns:
+            connection.execute(text('ALTER TABLE expense_attachments ADD COLUMN quotation_option_id INTEGER REFERENCES quotation_options(id) ON DELETE CASCADE'))
+            connection.execute(text('CREATE INDEX IF NOT EXISTS ix_expense_attachments_quotation_option_id ON expense_attachments (quotation_option_id)'))
         if 'approval_mode' not in approval_columns:
             connection.execute(text("ALTER TABLE approvals ADD COLUMN approval_mode VARCHAR(20) NOT NULL DEFAULT 'SEQUENTIAL'"))
         # Persist schema/backfill work before installing the immutable audit
@@ -343,9 +363,7 @@ def seed_access_profiles() -> None:
         ('TESORERO', 'Tesorero', True, True, True, False),
         ('VOCERO', 'Vocal', True, True, True, False),
         ('ADMINISTRADORA', 'Administrador', True, False, True, False),
-        ('MANTENIMIENTO', 'Mantenimiento', True, False, True, False),
         ('CONSERJE', 'Conserje', True, False, True, False),
-        ('PROPIETARIO', 'Propietario', False, False, True, False),
     ]
     with SessionLocal() as db:
         existing = set(db.scalars(select(AccessProfile.code)).all())

@@ -61,10 +61,10 @@ Usa estados coherentes como borrador, pendiente, aprobado, rechazado y cancelado
 Implementa políticas configurables por perfil, con uno o varios pasos.
 
 - Permite decidir desde una sesión autorizada o un enlace firmado.
-- Los enlaces expiran según `APPROVAL_LINK_HOURS`, recomendado en 72 horas.
+- Las aprobaciones pendientes no expiran por tiempo. Solo se invalidan al responderse o cuando el flujo es cancelado, rechazado, cerrado o reemplazado.
 - Los eventos de aprobación son de solo anexado.
 - Protégelos en PostgreSQL contra actualización y eliminación.
-- Invalida enlaces consumidos, vencidos o incompatibles con el estado actual.
+- Invalida enlaces consumidos o incompatibles con el estado actual.
 
 ## 7. Sesiones
 
@@ -153,7 +153,6 @@ SECRET_KEY=< SECRETO ALEATORIO LARGO >
 
 TOKEN_EXPIRE_MINUTES=480
 SESSION_IDLE_MINUTES=30
-APPROVAL_LINK_HOURS=72
 USER_READ_RATE_LIMIT=120
 USER_WRITE_RATE_LIMIT=30
 USER_UPLOAD_RATE_LIMIT=6

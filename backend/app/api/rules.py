@@ -23,7 +23,7 @@ class PolicyInput(BaseModel):
     def validate_policy(self):
         if self.max_amount is not None and self.max_amount < self.min_amount:
             raise ValueError('El monto máximo no puede ser menor que el mínimo')
-        if self.approval_mode not in ('ANY', 'ALL'):
+        if self.approval_mode not in ('ANY', 'ALL', 'MAJORITY'):
             raise ValueError('Modalidad de aprobación inválida')
         return self
 

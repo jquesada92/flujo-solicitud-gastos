@@ -18,7 +18,7 @@ EMAIL_FROM = os.getenv('EMAIL_FROM', SMTP_USER or 'noreply@ph.local')
 EMAIL_MODE = os.getenv('EMAIL_MODE', 'console').lower()
 PUBLIC_URL = os.getenv('PUBLIC_URL', 'http://localhost:3000').rstrip('/')
 BREVO_API_KEY = os.getenv('BREVO_API_KEY', '')
-BREVO_SENDER_NAME = os.getenv('BREVO_SENDER_NAME', 'PH · Gestión de Gastos')
+BREVO_SENDER_NAME = os.getenv('BREVO_SENDER_NAME', 'PH - Gestion de Gastos')
 BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email'
 
 
@@ -110,10 +110,10 @@ No compartas estas credenciales.
 
 def send_approval_request(approval) -> None:
     expense = approval.expense
-    detail_link = f'{PUBLIC_URL}/approve/{approval.token}'
-    review_link = f'{detail_link}?action=revision'
-    approve_link = f'{detail_link}?action=approve'
-    reject_link = f'{detail_link}?action=reject'
+    detail_link = f'{PUBLIC_URL}/email-action/approval/{approval.token}'
+    review_link = f'{detail_link}?action=REVISION_REQUESTED'
+    approve_link = f'{detail_link}?action=APPROVED'
+    reject_link = f'{detail_link}?action=REJECTED'
     support_text = []
     support_html = []
     if expense.item_url:
@@ -153,6 +153,40 @@ Por seguridad, deberá iniciar sesión y confirmar la decisión.
 <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="{approve_link}" style="background:#17653a;color:white;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">Aprobar</a><a href="{reject_link}" style="background:#b42318;color:white;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">Rechazar</a><a href="{review_link}" style="background:#b7791f;color:white;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">Enviar a revisión</a><a href="{detail_link}" style="background:#e9edf3;color:#172033;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">Ver detalle</a></div>
 <p style="font-size:11px;color:#7a8494;margin-top:20px">El enlace requiere iniciar sesión. Aprobar o rechazar siempre exige confirmación para evitar decisiones accidentales.</p></div></div></body></html>'''
     _send(approval.approver_email, f'Aprobación requerida · {expense.display_id}', text_body, html_body)
+
+
+def send_quotation_vote_request(expense, user, invitation) -> None:
+    options = '\n'.join(
+        f'Opción {item.option_number}: {item.supplier} · ${item.amount}'
+        for item in expense.quotation_options
+    )
+    vote_base = f'{PUBLIC_URL}/email-action/vote/{invitation.token}'
+    options_html = ''.join(
+        f'<div style="padding:12px;border:1px solid #e3e7ee;border-radius:9px;margin:8px 0">'
+        f'<b>Opción {item.option_number}: {html.escape(item.supplier)}</b><div style="font-size:22px;margin:5px 0">${item.amount}</div>'
+        f'<a href="{vote_base}?option={item.id}" style="display:inline-block;background:#172033;color:white;text-decoration:none;padding:9px 14px;border-radius:7px">Votar por esta opción</a></div>'
+        for item in expense.quotation_options
+    )
+    text_body = f'''PH - Votación de cotizaciones pendiente
+
+Solicitud: {expense.display_id}
+Título: {expense.title}
+Descripción: {expense.description}
+
+{options}
+
+ABRIR VOTACIÓN: {vote_base}
+
+La votación permanecerá abierta hasta que todos participen y exista un ganador único.
+'''
+    html_body = f'''<!doctype html><html><body style="margin:0;background:#f4f6fa;font-family:Arial,sans-serif;color:#172033">
+<div style="max-width:640px;margin:24px auto;background:white;border:1px solid #e3e7ee;border-radius:16px;overflow:hidden">
+<div style="background:#111827;color:white;padding:20px 26px"><b>PH · Gestión de Gastos</b><div style="font-size:12px;color:#b8c0cf;margin-top:4px">VOTACIÓN DE COTIZACIONES</div></div>
+<div style="padding:26px"><div style="font-size:12px;color:#697386">Solicitud {html.escape(expense.display_id)}</div><h2>{html.escape(expense.title)}</h2>
+<p>{html.escape(expense.description)}</p>{options_html}
+<a href="{html.escape(vote_base)}" style="display:inline-block;margin-top:16px;background:#e9edf3;color:#172033;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">Ver todas las opciones</a>
+<p style="font-size:11px;color:#7a8494;margin-top:20px">Debes iniciar sesión. Puedes cambiar tu voto mientras exista un empate.</p></div></div></body></html>'''
+    _send(user.email, f'Votación pendiente · {expense.display_id}', text_body, html_body)
 
 
 def send_final_notification(expense) -> None:

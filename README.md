@@ -26,7 +26,7 @@ La presidencia y tesorería no se configuran con correos fijos en variables de e
 - Los miembros activos de junta directiva deben estar vinculados al menos a un apartamento.
 - Las aprobaciones se asignan por perfiles y políticas configurables, no por direcciones de correo codificadas.
 - Los eventos de aprobación son de solo anexado para preservar la auditoría.
-- Los enlaces de aprobación expiran según `APPROVAL_LINK_HOURS`.
+- Las aprobaciones pendientes no expiran por tiempo; permanecen vigentes hasta recibir respuesta o hasta que el flujo sea invalidado.
 
 ## Seguridad
 
@@ -48,7 +48,6 @@ USER_READ_RATE_LIMIT=120
 USER_WRITE_RATE_LIMIT=30
 USER_UPLOAD_RATE_LIMIT=6
 USER_SENSITIVE_RATE_LIMIT=10
-APPROVAL_LINK_HOURS=72
 ```
 
 Los límites se expresan por usuario y por minuto. Deben ajustarse usando métricas reales antes de aumentarlos.
@@ -105,7 +104,6 @@ CORS_ALLOWED_ORIGINS=< URL PUBLICA DEL FRONTEND EN VERCEL >
 SECRET_KEY=< SECRETO ALEATORIO LARGO >
 TOKEN_EXPIRE_MINUTES=480
 SESSION_IDLE_MINUTES=30
-APPROVAL_LINK_HOURS=72
 
 USER_READ_RATE_LIMIT=120
 USER_WRITE_RATE_LIMIT=30
@@ -193,4 +191,3 @@ Antes de producción prueba también:
 - rechazo de un miembro activo de junta sin apartamento;
 - envío mediante Brevo;
 - carga y descarga autorizada de adjuntos.
-

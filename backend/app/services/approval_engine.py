@@ -30,7 +30,7 @@ def record_step_event(db: Session, approval: Approval, event_type: str,
         'request': {
             'expense_id': expense.id, 'request_id': expense.request_id,
             'display_id': expense.display_id, 'flow_id': approval.flow_id,
-            'title': expense.title, 'expense_type': expense.expense_type,
+            'title': expense.title, 'expense_type': expense.expense_type, 'urgency': expense.urgency,
             'expense_subcategory': expense.expense_subcategory, 'amount': str(expense.amount),
             'supplier': expense.supplier, 'requested_by': expense.requested_by,
             'requester_analytics_id': expense.requester_analytics_id,
@@ -108,7 +108,7 @@ def start_approval_flow(db: Session, expense: Expense) -> None:
                 'La regla aplicable no tiene otro usuario activo que pueda aprobar esta solicitud'
             )
         approvals = [Approval(expense_id=expense.id, flow_id=expense.flow_id, approver_email=user.email,
-            approver_role=user.title, step=index, approval_mode=policy.approval_mode,
+            approver_role=user.title, step=index, approval_mode='MAJORITY',
             token=secrets.token_urlsafe(32), status=ApprovalStatus.PENDING)
             for index, user in enumerate(users, 1)]
         expense.status = ExpenseStatus.PENDING_APPROVAL
@@ -164,34 +164,38 @@ def apply_decision(
     from datetime import datetime
 
     if approval.status == ApprovalStatus.EXPIRED:
-        raise ValueError('Este enlace expiró porque el flujo fue cancelado, rechazado o reemplazado por una corrección')
-    if approval.status != ApprovalStatus.PENDING:
+        raise ValueError('Esta aprobación ya no está vigente porque el flujo terminó o fue reemplazado')
+    if approval.status not in (ApprovalStatus.PENDING, ApprovalStatus.APPROVED,
+                               ApprovalStatus.REJECTED, ApprovalStatus.REVISION_REQUESTED):
         raise ValueError('Esta acción ya fue procesada y no puede ejecutarse nuevamente')
     if approval.expense.status in (ExpenseStatus.CANCELLED, ExpenseStatus.CLOSED, ExpenseStatus.REJECTED, ExpenseStatus.NEEDS_REVISION):
         expire_open_approvals(db, approval.expense)
         db.commit()
-        raise ValueError('Este enlace expiró porque la solicitud ya no tiene un flujo activo')
+        raise ValueError('Esta aprobación ya no está vigente porque la solicitud no tiene un flujo activo')
 
+    if decision == ApprovalStatus.REVISION_REQUESTED and (not comment or len(comment.strip()) < 3):
+        raise ValueError('Debes indicar qué debe corregir el solicitante')
     previous_status = approval.status
     approval.status = decision
     approval.comment = comment
     approval.decided_at = datetime.utcnow()
     expense = approval.expense
 
-    if approval.approval_mode in ('ANY', 'ALL'):
+    if approval.approval_mode in ('ANY', 'ALL', 'MAJORITY'):
         peers = [a for a in expense.approvals if a.flow_id == approval.flow_id]
         record_step_event(db, approval, f'STEP_{decision.value}', previous_status, actor_email=actor_email, comment=comment)
-        if decision == ApprovalStatus.REVISION_REQUESTED:
-            if not comment or len(comment.strip()) < 3:
-                raise ValueError('Debes indicar qué debe corregir el solicitante')
-            expense.status = ExpenseStatus.NEEDS_REVISION
-            expire_open_approvals(db, expense, approval.id, actor_email)
-        elif decision == ApprovalStatus.REJECTED:
-            if approval.approval_mode == 'ALL' or not any(a.status == ApprovalStatus.PENDING for a in peers):
-                expense.status = ExpenseStatus.REJECTED
-                expire_open_approvals(db, expense, approval.id, actor_email)
-        elif approval.approval_mode == 'ANY' or all(a.status == ApprovalStatus.APPROVED for a in peers):
+        threshold = len(peers) // 2 + 1
+        approved_count = sum(a.status == ApprovalStatus.APPROVED for a in peers)
+        rejected_count = sum(a.status == ApprovalStatus.REJECTED for a in peers)
+        revision_count = sum(a.status == ApprovalStatus.REVISION_REQUESTED for a in peers)
+        if approved_count >= threshold:
             expense.status = ExpenseStatus.APPROVED
+            expire_open_approvals(db, expense, approval.id, actor_email)
+        elif rejected_count >= threshold:
+            expense.status = ExpenseStatus.REJECTED
+            expire_open_approvals(db, expense, approval.id, actor_email)
+        elif revision_count >= threshold:
+            expense.status = ExpenseStatus.NEEDS_REVISION
             expire_open_approvals(db, expense, approval.id, actor_email)
         db.commit(); db.refresh(expense)
         if expense.status != ExpenseStatus.PENDING_APPROVAL: _safe_email(send_final_notification, expense)

@@ -1,4 +1,5 @@
 import enum
+import secrets
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -8,6 +9,7 @@ from app.core.database import Base
 
 
 class ExpenseStatus(str, enum.Enum):
+    QUOTATION_VOTING = 'QUOTATION_VOTING'
     SUBMITTED = 'SUBMITTED'
     PENDING_APPROVAL = 'PENDING_APPROVAL'
     APPROVED = 'APPROVED'
@@ -63,7 +65,7 @@ class User(Base):
     apartment_number: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
-    title: Mapped[str] = mapped_column(String(40), nullable=False, default='PROPIETARIO')
+    title: Mapped[str] = mapped_column(String(40), nullable=False, default='SIN_ASIGNAR')
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     can_request: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_approve: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -179,12 +181,14 @@ class Expense(Base):
     flow_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     display_id: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
     revised_from_request_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    request_type: Mapped[str] = mapped_column(String(20), nullable=False, default='SIMPLE', index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     expense_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     expense_subcategory: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    supplier: Mapped[str] = mapped_column(String(200), nullable=False)
+    urgency: Mapped[str] = mapped_column(String(20), nullable=False, default='NORMAL', index=True)
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    supplier: Mapped[str | None] = mapped_column(String(200), nullable=True)
     item_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     requested_by: Mapped[str] = mapped_column(String(255), nullable=False)
     requester_analytics_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
@@ -196,9 +200,65 @@ class Expense(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     closed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     closure_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    selected_quotation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     approvals = relationship('Approval', back_populates='expense', cascade='all, delete-orphan', order_by='Approval.step')
     attachments = relationship('ExpenseAttachment', back_populates='expense', cascade='all, delete-orphan')
+    quotation_options = relationship('QuotationOption', back_populates='expense', cascade='all, delete-orphan', order_by='QuotationOption.option_number')
+    quotation_votes = relationship('QuotationVote', back_populates='expense', cascade='all, delete-orphan')
+
+
+class QuotationOption(Base):
+    __tablename__ = 'quotation_options'
+    __table_args__ = (UniqueConstraint('expense_id', 'option_number', name='uq_quotation_option_number'),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    expense_id: Mapped[int] = mapped_column(ForeignKey('expenses.id', ondelete='CASCADE'), nullable=False, index=True)
+    option_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    supplier: Mapped[str] = mapped_column(String(200), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    item_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    expense = relationship('Expense', back_populates='quotation_options')
+
+
+class QuotationVote(Base):
+    __tablename__ = 'quotation_votes'
+    __table_args__ = (UniqueConstraint('expense_id', 'voter_user_id', name='uq_quotation_vote_voter'),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    expense_id: Mapped[int] = mapped_column(ForeignKey('expenses.id', ondelete='CASCADE'), nullable=False, index=True)
+    quotation_option_id: Mapped[int] = mapped_column(ForeignKey('quotation_options.id'), nullable=False)
+    voter_user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), nullable=False)
+    voter_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    voter_role: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    expense = relationship('Expense', back_populates='quotation_votes')
+
+
+class QuotationVoteEvent(Base):
+    __tablename__ = 'quotation_vote_events'
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    expense_id: Mapped[int] = mapped_column(ForeignKey('expenses.id', ondelete='CASCADE'), nullable=False, index=True)
+    flow_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    voter_user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), nullable=False)
+    voter_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    voter_role: Mapped[str] = mapped_column(String(100), nullable=False)
+    previous_option_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    selected_option_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class QuotationVotingInvitation(Base):
+    __tablename__ = 'quotation_voting_invitations'
+    __table_args__ = (UniqueConstraint('expense_id', 'voter_user_id', name='uq_quotation_invitation_voter'),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    expense_id: Mapped[int] = mapped_column(ForeignKey('expenses.id', ondelete='CASCADE'), nullable=False, index=True)
+    voter_user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), nullable=False)
+    token: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True, default=lambda: secrets.token_urlsafe(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class CategoryCounter(Base):
@@ -235,6 +295,7 @@ class ExpenseAttachment(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     expense_id: Mapped[int] = mapped_column(ForeignKey('expenses.id', ondelete='CASCADE'), nullable=False, index=True)
+    quotation_option_id: Mapped[int | None] = mapped_column(ForeignKey('quotation_options.id', ondelete='CASCADE'), nullable=True, index=True)
     original_name: Mapped[str] = mapped_column(String(255), nullable=False)
     stored_name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     content_type: Mapped[str] = mapped_column(String(100), nullable=False)
