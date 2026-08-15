@@ -755,7 +755,7 @@ function ClosurePanel({ expense, onDone, onCancel }) {
           Cancelar
         </button>
         <button className="primary" disabled={saving}>
-          {saving ? "Cerrando..." : "Cerrar aprobación"}
+          {saving ? "Cerrando..." : "Cerrar solicitud"}
         </button>
       </div>
     </form>
@@ -3255,7 +3255,7 @@ function App() {
               refreshKey={refresh}
               canEdit={canCreate}
               canApprove={canApprove}
-              canClose={user.role === "ADMIN" || user.title === "ADMINISTRADORA"}
+              canClose={true}
               onEdit={startRevision}
               onChanged={() => setRefresh((x) => x + 1)}
               categoryOptions={categoryOptions}

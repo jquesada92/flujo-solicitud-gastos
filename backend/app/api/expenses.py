@@ -232,9 +232,8 @@ def expense_dashboard(db: Session = Depends(get_db), user: User = Depends(curren
         pending_ids.update(db.scalars(select(Expense.id).where(
             Expense.status == ExpenseStatus.QUOTATION_VOTING,
             Expense.id.not_in(voted))).all())
-    if user.title == 'ADMINISTRADORA':
-        pending_ids.update(db.scalars(select(Expense.id).where(
-            Expense.status == ExpenseStatus.APPROVED)).all())
+    pending_ids.update(db.scalars(select(Expense.id).where(
+        Expense.status == ExpenseStatus.APPROVED)).all())
     pending_items = list(db.scalars(select(Expense).where(Expense.id.in_(pending_ids)).order_by(
         Expense.created_at.asc()).limit(8)).all()) if pending_ids else []
     month_rows = db.execute(select(Expense.status, func.count(Expense.id)).where(
@@ -666,9 +665,13 @@ async def close_expense(
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
 ):
-    if user.role != UserRole.ADMIN and user.title != 'ADMINISTRADORA':
-        raise HTTPException(status_code=403, detail='Solo la Administradora puede registrar la factura y cerrar la solicitud')
-    expense = _expense_for_user(db, request_id, user)
+    expense = db.scalar(select(Expense).where(or_(
+        Expense.request_id == request_id,
+        Expense.display_id == request_id,
+    )).with_for_update())
+    if not expense:
+        raise HTTPException(status_code=404, detail='Solicitud no encontrada')
+    db.refresh(expense)
     if expense.status != ExpenseStatus.APPROVED:
         raise HTTPException(status_code=409, detail='Solo se pueden cerrar solicitudes aprobadas')
     documents = [('INVOICE', invoice)]
