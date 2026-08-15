@@ -165,8 +165,7 @@ def apply_decision(
 
     if approval.status == ApprovalStatus.EXPIRED:
         raise ValueError('Esta aprobación ya no está vigente porque el flujo terminó o fue reemplazado')
-    if approval.status not in (ApprovalStatus.PENDING, ApprovalStatus.APPROVED,
-                               ApprovalStatus.REJECTED, ApprovalStatus.REVISION_REQUESTED):
+    if approval.status != ApprovalStatus.PENDING:
         raise ValueError('Esta acción ya fue procesada y no puede ejecutarse nuevamente')
     if approval.expense.status in (ExpenseStatus.CANCELLED, ExpenseStatus.CLOSED, ExpenseStatus.REJECTED, ExpenseStatus.NEEDS_REVISION):
         expire_open_approvals(db, approval.expense)

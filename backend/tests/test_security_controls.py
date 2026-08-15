@@ -15,6 +15,7 @@ from app.api.approvals import _ensure_link_is_current
 from app.api.expenses import _validate_file_content
 from app.models.entities import ApprovalStatus, ExpenseStatus
 from app.services import email_service
+from app.services.approval_engine import apply_decision
 from app.core.rate_limit import (
     READ_POLICY,
     SENSITIVE_POLICY,
@@ -61,6 +62,11 @@ class SecurityControlTests(unittest.TestCase):
             expense=SimpleNamespace(status=ExpenseStatus.PENDING_APPROVAL),
         )
         _ensure_link_is_current(approval)
+
+    def test_answered_approval_cannot_be_submitted_again(self):
+        approval = SimpleNamespace(status=ApprovalStatus.APPROVED)
+        with self.assertRaises(ValueError):
+            apply_decision(unittest.mock.MagicMock(), approval, ApprovalStatus.APPROVED, None)
 
     def test_session_expires_after_thirty_idle_minutes(self):
         now = datetime.now(timezone.utc)
