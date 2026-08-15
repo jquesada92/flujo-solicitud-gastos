@@ -1,29 +1,70 @@
-# Flujo de Solicitud de Gastos
+# Flujo de Control de Gastos
 
-Aplicación web para registrar, revisar y aprobar solicitudes de gastos de una propiedad horizontal. Incluye control de usuarios y perfiles, organigrama de junta directiva, trazabilidad, adjuntos, notificaciones por correo y controles de seguridad para producción.
+Aplicación web para solicitar, evaluar, aprobar y documentar gastos con evidencia verificable de cada decisión.
 
-## Arquitectura
+## Contexto y propósito
 
-- Frontend: React + Vite, desplegado en Vercel.
-- Backend: FastAPI + SQLAlchemy, desplegado en Render.
-- Base de datos: PostgreSQL en Neon.
-- Correo en producción: API HTTPS de Brevo.
-- Archivos adjuntos: disco persistente de Render mediante `UPLOAD_DIR`.
+El control de gastos es un punto sensible tanto en organizaciones empresariales —por ejemplo, operaciones logísticas 3PL— como en la administración de una propiedad horizontal. Cuando las solicitudes, evaluaciones y aprobaciones dependen de conversaciones informales o documentos físicos, resulta difícil demostrar quién tomó una decisión, cuándo la tomó y qué alternativas tenía disponibles.
+
+Este proyecto busca convertir el proceso completo en un expediente digital, trazable y auditable. Cada gasto debe conservar la solicitud original, las opciones de productos y proveedores, las cotizaciones evaluadas, las decisiones de la junta directiva y la documentación final.
+
+La aplicación permite reducir problemas como:
+
+- dificultad para confirmar quién aprobó o rechazó una solicitud;
+- falta de fecha, hora, comentarios o justificación de las decisiones;
+- poca visibilidad sobre los proveedores y productos evaluados;
+- riesgo de conflictos de interés o análisis insuficiente;
+- documentación dispersa entre correos, mensajes y archivos físicos;
+- demoras para localizar facturas, cotizaciones o actas de años anteriores;
+- controversias que no pueden resolverse objetivamente por falta de evidencia.
+
+El propósito no es únicamente agilizar aprobaciones. El sistema debe funcionar como una fuente confiable de evidencia que permita reconstruir qué ocurrió, quién participó, qué información estaba disponible y cómo se llegó al resultado final.
+
+## Objetivos
+
+- Registrar la fecha, hora y responsable de cada solicitud y decisión.
+- Evidenciar aprobaciones, rechazos y solicitudes de corrección.
+- Documentar la evaluación de múltiples opciones cuando corresponda.
+- Centralizar cotizaciones, facturas, actas y documentos relacionados.
+- Facilitar auditorías y consultas históricas sin depender de archivos físicos.
+- Mantener un historial íntegro que no pueda modificarse silenciosamente.
+- Aplicar permisos y políticas de aprobación de manera consistente.
+
+## Arquitectura actual
+
+```mermaid
+flowchart LR
+    U[Usuario] --> V[Frontend React + Vite<br/>Vercel]
+    V -->|HTTPS / API JSON| R[Backend FastAPI<br/>Render]
+    R --> N[(PostgreSQL<br/>Neon)]
+    R --> D[(Disco persistente<br/>Render)]
+    R -->|API HTTPS| B[Brevo<br/>Correo]
+```
+
+| Componente | Implementación actual | Responsabilidad |
+| --- | --- | --- |
+| Frontend | React con Vite en Vercel | Interfaz, navegación, formularios y comunicación con la API. |
+| Backend | FastAPI con SQLAlchemy en un contenedor Docker de Render | Reglas de negocio, autenticación, autorización, auditoría y acceso a datos. |
+| Base de datos | PostgreSQL en Neon | Usuarios, solicitudes, decisiones, políticas y eventos históricos. |
+| Documentos | Disco persistente privado de Render | Cotizaciones, facturas y demás archivos adjuntos. |
+| Correo | API HTTPS de Brevo | Invitaciones, solicitudes de aprobación, votaciones y notificaciones. |
+| Autenticación | JWT firmado por el backend | Sesiones con vencimiento absoluto, inactividad y revocación por usuario. |
+
+Vercel entrega únicamente el frontend. El navegador llama directamente a la URL pública del backend indicada por `VITE_API_URL`. Render procesa la solicitud, valida la sesión y los permisos, consulta Neon y accede al disco privado cuando se requiere un documento. Los archivos no se publican como contenido estático: el backend autoriza cada descarga.
 
 ## Tipos de usuario
 
 - **Administrador del sistema:** cuenta técnica inicial creada con las variables `ADMIN_*`. Administra el sistema, pero no representa al administrador operativo de la propiedad horizontal.
 - **Administrador de la PH:** usuario operativo creado desde el portal y asignado al perfil correspondiente.
-- **Miembros de junta directiva:** presidente, vicepresidente, tesorero, vocal u otros perfiles configurados. Todo miembro activo debe estar asociado al menos a un apartamento.
+- **Miembros de junta directiva:** presidente, vicepresidente, tesorero, vocal u otros perfiles configurados.
 - **Solicitantes y demás usuarios:** sus permisos dependen de los perfiles asignados desde el portal.
 
-La presidencia y tesorería no se configuran con correos fijos en variables de entorno. Los miembros, cargos, unidades y políticas de aprobación se administran desde el portal web.
+La presidencia y tesorería no se configuran con correos fijos en variables de entorno. Los miembros, cargos y políticas de aprobación se administran desde el portal web. El flujo no requiere construir apartamentos, asignar unidades ni clasificar usuarios como propietarios.
 
 ## Reglas principales
 
 - La cédula se normaliza y debe ser única entre los usuarios.
 - Las personas se pueden buscar por cédula, nombre, apellido o correo electrónico.
-- Los miembros activos de junta directiva deben estar vinculados al menos a un apartamento.
 - Las aprobaciones se asignan por perfiles y políticas configurables, no por direcciones de correo codificadas.
 - Los eventos de aprobación son de solo anexado para preservar la auditoría.
 - Las aprobaciones pendientes no expiran por tiempo; permanecen vigentes hasta recibir respuesta o hasta que el flujo sea invalidado.
@@ -95,6 +136,8 @@ Copia los archivos `.env.example` correspondientes y reemplaza únicamente los m
 
 ## Variables de Render
 
+Estas variables pertenecen al backend. Las credenciales deben configurarse únicamente en Render y nunca copiarse al frontend ni guardarse en el repositorio.
+
 ```env
 ENVIRONMENT=production
 DATABASE_URL=< URL DE CONEXION DE NEON >
@@ -102,13 +145,17 @@ PUBLIC_URL=< URL PUBLICA DEL FRONTEND EN VERCEL >
 CORS_ALLOWED_ORIGINS=< URL PUBLICA DEL FRONTEND EN VERCEL >
 
 SECRET_KEY=< SECRETO ALEATORIO LARGO >
+ANALYTICS_HASH_KEY=< OTRA CLAVE ALEATORIA LARGA >
 TOKEN_EXPIRE_MINUTES=480
 SESSION_IDLE_MINUTES=30
+# Variable heredada observada en Render; el backend actual no la consume.
+APPROVAL_LINK_HOURS=< NO APLICA EN EL FLUJO ACTUAL >
 
 USER_READ_RATE_LIMIT=120
 USER_WRITE_RATE_LIMIT=30
 USER_UPLOAD_RATE_LIMIT=6
 USER_SENSITIVE_RATE_LIMIT=10
+APP_TIME_ZONE=America/Panama
 
 EMAIL_MODE=brevo
 BREVO_API_KEY=< CLAVE API DE BREVO >
@@ -123,17 +170,54 @@ UPLOAD_DIR=/app/uploads
 MAX_UPLOAD_STORAGE_MB=450
 ```
 
-`MAX_UPLOAD_STORAGE_MB` es el máximo total que la aplicación permite ocupar dentro de `UPLOAD_DIR`; no es el tamaño máximo de un archivo individual.
+| Variable | Propósito | ¿Es secreta? |
+| --- | --- | --- |
+| `ENVIRONMENT` | Activa las validaciones y medidas correspondientes a producción. | No |
+| `DATABASE_URL` | Cadena privada de conexión de SQLAlchemy a PostgreSQL en Neon. | Sí |
+| `PUBLIC_URL` | URL pública del frontend usada para construir enlaces enviados por correo. | No |
+| `CORS_ALLOWED_ORIGINS` | Lista de orígenes web autorizados para llamar a la API; en producción debe contener la URL HTTPS de Vercel. | No |
+| `SECRET_KEY` | Firma y valida los JWT. Debe ser larga, aleatoria y diferente en cada entorno. | Sí |
+| `ANALYTICS_HASH_KEY` | Genera identificadores seudónimos sin exponer directamente la identidad de los usuarios. Debe ser distinta de `SECRET_KEY`. | Sí |
+| `TOKEN_EXPIRE_MINUTES` | Duración absoluta máxima del JWT. El valor actual recomendado es 480 minutos. | No |
+| `SESSION_IDLE_MINUTES` | Tiempo máximo sin actividad humana antes de cerrar la sesión. El valor actual es 30 minutos. | No |
+| `APPROVAL_LINK_HOURS` | Variable heredada visible en Render, pero no es consumida por el backend actual. Las aprobaciones pendientes no vencen por horas; se invalidan al decidirse o cuando el flujo deja de ser vigente. Puede eliminarse de Render. | No |
+| `USER_READ_RATE_LIMIT` | Máximo de lecturas por usuario y minuto. | No |
+| `USER_WRITE_RATE_LIMIT` | Máximo de escrituras por usuario y minuto. | No |
+| `USER_UPLOAD_RATE_LIMIT` | Máximo de cargas de archivos por usuario y minuto. | No |
+| `USER_SENSITIVE_RATE_LIMIT` | Máximo de acciones sensibles por usuario y minuto. | No |
+| `APP_TIME_ZONE` | Zona horaria utilizada por el backend para presentar información temporal. | No |
+| `EMAIL_MODE` | Selecciona el adaptador de correo: `brevo` en producción, `console` en desarrollo o `smtp` como alternativa. | No |
+| `BREVO_API_KEY` | Credencial para consumir la API de Brevo. | Sí |
+| `BREVO_SENDER_NAME` | Nombre visible del remitente. | No |
+| `EMAIL_FROM` | Dirección remitente verificada en Brevo. | Normalmente no, aunque debe controlarse su modificación |
+| `ADMIN_NAME` | Nombre de la cuenta técnica inicial. | No |
+| `ADMIN_EMAIL` | Correo de inicio de sesión del administrador técnico. | Dato sensible |
+| `ADMIN_PASSWORD` | Contraseña inicial del administrador técnico. | Sí |
+| `UPLOAD_DIR` | Ruta privada del disco persistente donde se almacenan documentos. | No |
+| `MAX_UPLOAD_STORAGE_MB` | Cuota total que la aplicación puede ocupar dentro de `UPLOAD_DIR`; no es el límite individual de cada archivo. | No |
 
 No configures `TREASURER_EMAIL`, `PRESIDENT_EMAIL` ni variables SMTP si `EMAIL_MODE=brevo`.
 
-## Variable de Vercel
+La lista observada en Render coincide con las variables anteriores, con dos consideraciones:
+
+- `APPROVAL_LINK_HOURS` está configurada, pero actualmente no tiene efecto y puede eliminarse.
+- `ENVIRONMENT` no aparece en la captura. En Render, el backend también reconoce la variable de plataforma `RENDER=true` para aplicar las validaciones de producción; por eso `ENVIRONMENT=production` es recomendable para expresar la intención, pero no es imprescindible en ese proveedor.
+
+## Variables de Vercel
+
+Según la configuración actual mostrada en Vercel, ambas variables aplican a los entornos **Production** y **Preview**:
 
 ```env
 VITE_API_URL=< URL PUBLICA DEL BACKEND EN RENDER >
+VITE_TIME_ZONE=America/Panama
 ```
 
-Después de cambiar variables en Render o Vercel, realiza un nuevo despliegue.
+| Variable | Valor esperado | Explicación |
+| --- | --- | --- |
+| `VITE_API_URL` | La URL HTTPS pública de Render, sin una ruta privada ni credenciales. | Indica al navegador dónde está la API. Aunque Vercel la muestre como `Sensitive`, Vite incorpora las variables `VITE_*` al paquete del frontend y su valor puede ser inspeccionado por cualquier usuario. No es un secreto. |
+| `VITE_TIME_ZONE` | `America/Panama` | Controla la zona horaria utilizada para mostrar fechas y horas en la interfaz. |
+
+Las variables de Vite se leen durante la compilación. Después de modificar cualquiera de estas variables en Vercel es necesario volver a desplegar el frontend. Cambiar una variable de Render también requiere reiniciar o desplegar nuevamente el servicio para que el backend lea el valor nuevo.
 
 ## Orden recomendado de despliegue
 
@@ -154,8 +238,8 @@ El reinicio elimina datos y debe hacerse solamente de forma explícita:
 3. Confirma que Render ya contiene la versión nueva del código.
 4. Vacía el esquema de la rama de producción y ejecuta las migraciones o la inicialización.
 5. Verifica que se creó solamente el administrador técnico definido por `ADMIN_*`.
-6. Crea desde el portal el administrador de la PH, apartamentos, perfiles y miembros de junta.
-7. Comprueba las restricciones de cédula única y asignación de apartamentos.
+6. Crea desde el portal el administrador de la PH, los perfiles y los miembros de junta.
+7. Comprueba la cédula única, los permisos y las políticas de aprobación.
 
 Vaciar Neon no elimina los archivos del disco persistente de Render. Para reiniciar completamente el entorno también debe vaciarse por separado el contenido de `/app/uploads`, conservando el directorio montado.
 
@@ -164,7 +248,7 @@ Vaciar Neon no elimina los archivos del disco persistente de Render. Para reinic
 - `POST /api/auth/login`: inicio de sesión.
 - `POST /api/auth/activity`: registra actividad humana y renueva la sesión activa.
 - `GET /api/users`: listado y búsqueda por cédula, nombre o correo.
-- Rutas de organigrama: cargos, junta y unidades.
+- Rutas de organigrama: perfiles, cargos y miembros de junta.
 - Rutas de solicitudes: creación, consulta, adjuntos y seguimiento.
 - Rutas de aprobación: decisiones mediante sesión o enlace seguro.
 
@@ -188,6 +272,6 @@ Antes de producción prueba también:
 - renovación con actividad humana;
 - límites de solicitudes;
 - rechazo de una cédula duplicada;
-- rechazo de un miembro activo de junta sin apartamento;
+- creación de miembros de junta sin apartamentos ni roles de propiedad;
 - envío mediante Brevo;
 - carga y descarga autorizada de adjuntos.
