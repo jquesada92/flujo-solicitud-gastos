@@ -207,6 +207,43 @@ npm ci
 npm run dev
 ```
 
+### Docker Compose local
+
+El entorno local completo se inicia con:
+
+```bash
+docker compose up --build
+```
+
+El frontend depende del `healthcheck` de `/api/health`, por lo que Nginx no debe arrancar hasta que FastAPI esté disponible.
+
+Los scripts `.sh` que se ejecutan dentro de contenedores Linux deben conservar finales de línea LF. El repositorio fuerza `*.sh text eol=lf` mediante `.gitattributes` y el `backend/Dockerfile` vuelve a normalizarlos durante el build para proteger también checkouts de Windows con CRLF.
+
+Si Docker muestra:
+
+```text
+exec /app/scripts/start.sh: no such file or directory
+```
+
+pero el Dockerfile sí copió el script, reconstruir primero con el código actualizado:
+
+```bash
+git pull
+docker compose down
+docker compose build --no-cache backend
+docker compose up
+```
+
+Para diagnosticar únicamente el backend:
+
+```bash
+docker compose ps -a
+docker compose logs backend --tail=200
+docker compose up db backend --build
+```
+
+No usar `docker compose down -v` salvo que se acepte eliminar los datos PostgreSQL locales.
+
 ## Variables principales
 
 Backend:
