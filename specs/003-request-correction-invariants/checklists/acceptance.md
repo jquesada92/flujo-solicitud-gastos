@@ -57,7 +57,7 @@
 - [x] Spec funcional creada.
 - [x] Plan técnico creado.
 - [x] Criterios de aceptación actualizados.
-- [x] README actualizado.
+- [x] README actualizado y restaurado/verificado tras la pasada documental final.
 - [x] Prompt maestro actualizado.
 - [x] `docs/REQUEST_CORRECTIONS.md` agregado.
 - [x] Arquitectura FastAPI actualizada con la ruta canónica y el transform temporal.
