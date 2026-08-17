@@ -23,6 +23,13 @@ function legacyRevisionSafetyPlugin() {
 
       let next = code;
 
+      next = replaceRequired(
+        next,
+        `  const [requestType, setRequestType] = useState("SIMPLE");`,
+        `  const inferredDraftType = draft?.request_type === "MULTI_QUOTE" || (draft?.quotation_options || []).length >= 2 || draft?.status === "QUOTATION_VOTING" ? "MULTI_QUOTE" : "SIMPLE";\n  const [requestType, setRequestType] = useState(inferredDraftType);`,
+        "request type initial state derived from draft",
+      );
+
       const oldDraftState = `    if (draft) {
       setForm({
         title: draft.title,
@@ -41,7 +48,7 @@ function legacyRevisionSafetyPlugin() {
       const expense_type = categoryOptions[0][0];`;
 
       const newDraftState = `    if (draft) {
-      const draftType = draft.request_type === "MULTI_QUOTE" ? "MULTI_QUOTE" : "SIMPLE";
+      const draftType = draft.request_type === "MULTI_QUOTE" || (draft.quotation_options || []).length >= 2 || draft.status === "QUOTATION_VOTING" ? "MULTI_QUOTE" : "SIMPLE";
       setRequestType(draftType);
       setForm({
         title: draft.title,
@@ -81,6 +88,13 @@ function legacyRevisionSafetyPlugin() {
       const expense_type = categoryOptions[0][0];`;
 
       next = replaceRequired(next, oldDraftState, newDraftState, "draft state restoration");
+
+      next = replaceRequired(
+        next,
+        `              <ExpenseForm\n                onCreated={created}`,
+        `              <ExpenseForm\n                key={revision ? \`${'${revision.request_id}:${revision.flow_id || revision.status || "draft"}'}\` : "new-request"}\n                onCreated={created}`,
+        "force correction form remount",
+      );
 
       next = replaceRequired(
         next,
