@@ -48,18 +48,21 @@
 - [x] El test verifica limpieza de votos.
 - [x] El test verifica reemplazo de invitación.
 - [x] El test verifica 409 al intentar MULTI_QUOTE → SIMPLE.
-- [ ] Todos los jobs del commit final deben quedar verdes antes de cerrar esta corrección.
+- [x] Backend tests y frontend build del commit funcional pasaron antes del cierre documental final.
+- [ ] Todos los jobs del commit documental final deben quedar verdes antes de considerar esta corrección terminada.
 
 ## Documentación
 
+- [x] Constitución actualizada a 2.3.1.
 - [x] Spec funcional creada.
 - [x] Plan técnico creado.
-- [x] Criterios de aceptación creados.
-- [ ] Constitución actualizada.
-- [ ] README actualizado.
-- [ ] Prompt maestro actualizado.
-- [ ] Documentación funcional de correcciones agregada.
-- [ ] HISTORY actualizado.
-- [ ] CHANGELOG actualizado.
-- [ ] Índice documental actualizado.
-- [ ] PR actualizado.
+- [x] Criterios de aceptación actualizados.
+- [x] README actualizado.
+- [x] Prompt maestro actualizado.
+- [x] `docs/REQUEST_CORRECTIONS.md` agregado.
+- [x] Arquitectura FastAPI actualizada con la ruta canónica y el transform temporal.
+- [x] HISTORY actualizado.
+- [x] CHANGELOG actualizado.
+- [x] Índice documental actualizado.
+- [x] Terminología revisada; no se introdujo un término nuevo.
+- [ ] Descripción final del PR debe incluir la corrección y la Constitución 2.3.1.
