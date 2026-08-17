@@ -6,7 +6,7 @@
 
 ## Objetivo
 
-Eliminar la autorización basada en roles/cargos hardcodeados y convertir la administración de acceso en una capacidad configurable desde la interfaz gráfica, manteniendo el backend FastAPI alineado con prácticas recomendadas de modularidad, configuración, seguridad, testing y ciclo de vida.
+Eliminar la autorización basada en roles/cargos hardcodeados y convertir la administración de acceso en una capacidad configurable desde la interfaz gráfica, manteniendo el backend FastAPI alineado con prácticas recomendadas de modularidad, configuración, seguridad, testing, ciclo de vida y portabilidad de despliegue.
 
 ## Problema
 
@@ -59,6 +59,10 @@ Como administrador quiero que una asignación o retiro de permisos cambie la aut
 ### US-010 — Backend mantenible
 
 Como equipo de desarrollo quiero configuración centralizada, migraciones versionadas fuera del lifespan, tests HTTP reales y separación de routers/modelos/schemas/servicios para reducir errores al escalar el producto.
+
+### US-011 — Ejecución local portable
+
+Como desarrollador en Windows quiero poder construir y ejecutar los contenedores Linux sin que los finales de línea CRLF rompan los scripts de entrada ni oculten el error real del backend detrás de un fallo de Nginx.
 
 ## Permisos atómicos iniciales
 
@@ -135,6 +139,14 @@ La pantalla **Configuración → Accesos** debe permitir:
 - endpoints con I/O SQLAlchemy/filesystem síncrono declarados como `def`;
 - response models explícitos cuando el contrato sea sensible;
 - tests `TestClient` para matriz de autorización.
+
+## Requisitos de despliegue y portabilidad
+
+- Los scripts `.sh` que se ejecutan dentro de imágenes Linux deben materializarse con finales de línea LF.
+- `.gitattributes` debe forzar `*.sh text eol=lf`.
+- El backend Docker debe normalizar defensivamente cualquier CRLF antes de ejecutar el entrypoint.
+- El frontend local debe esperar a que el backend supere `/api/health` antes de iniciar Nginx.
+- Si el backend falla en Alembic/bootstrap/Uvicorn, el error debe quedar visible como fallo del backend y no quedar oculto por un error secundario de resolución DNS de Nginx.
 
 ## Compatibilidad temporal
 
