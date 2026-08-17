@@ -1,6 +1,6 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.3.1**.
+> Constitución vigente: **2.3.2**.
 
 Aplicación web para solicitar, evaluar, aprobar, ejecutar y documentar gastos con trazabilidad y evidencia verificable.
 
@@ -15,6 +15,7 @@ El producto es **neutral respecto al tipo de organización**. Un PH, empresa, co
 - La cuenta técnica tiene política explícita por ambiente.
 - Área y Categoría son dimensiones independientes.
 - Una corrección nunca cambia silenciosamente el tipo de solicitud.
+- La pestaña seleccionada antes de corregir nunca determina el tipo del editor.
 - Documentos e historial forman parte del expediente auditable.
 - Migraciones son versionadas con Alembic y no se ejecutan dentro del lifespan de FastAPI.
 
@@ -206,8 +207,11 @@ Alembic es la herramienta canónica. La cadena actual es lineal:
 backend/alembic/versions/
 ├── 20260817_0000_application_baseline.py
 ├── 20260817_0001_iam_foundation.py
-└── 20260817_0002_system_accounts.py
+├── 20260817_0002_system_accounts.py
+└── 20260817_0003_backfill_multi_quote_request_type.py
 ```
+
+`0003` repara solicitudes históricas que tengan evidencia durable de múltiples cotizaciones pero conserven accidentalmente `request_type=SIMPLE`.
 
 El contenedor ejecuta antes de FastAPI:
 
@@ -363,14 +367,26 @@ Las invitaciones guardadas representan el snapshot de participantes de esa ronda
 
 ### Corrección y reenvío
 
-`Corregir / reenviar` **preserva siempre el tipo original**:
+`Corregir / reenviar` **preserva siempre el tipo original/canónico**:
 
 ```text
 SIMPLE      -> SIMPLE
 MULTI_QUOTE -> MULTI_QUOTE
 ```
 
-El backend rechaza con `409` un payload que intente cambiar el `request_type` durante una corrección.
+La pestaña que estaba seleccionada antes de pulsar **Corregir / reenviar** no participa en esa decisión. Si la pantalla estaba en **Solicitud sencilla** y se corrige una MULTI_QUOTE, el editor debe abrir directamente como MULTI_QUOTE.
+
+El frontend fuerza un remount del formulario al entrar en corrección y deriva el tipo desde la solicitud/evidencia durable. El backend valida de nuevo el tipo canónico.
+
+Para compatibilidad histórica se considera MULTI_QUOTE cuando:
+
+```text
+request_type == MULTI_QUOTE
+OR status == QUOTATION_VOTING
+OR quotation_options >= 2
+```
+
+Alembic `0003` persiste la reparación de esas filas legacy.
 
 Cuando se corrige una MULTI_QUOTE:
 
@@ -389,7 +405,7 @@ Mientras `ExpenseForm` siga dentro del monolito legacy, `frontend/vite.config.js
 
 La población canónica de aprobadores se obtiene desde `requests:approve`, no desde cargos como Presidente/Tesorero ni flags `can_approve`.
 
-> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.3.1.
+> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.3.2.
 
 ### Cierre
 
@@ -413,7 +429,15 @@ La suite IAM verifica específicamente:
 - 403 de cierre en producción incluso con permiso financiero accidental;
 - exclusión de población de aprobación en producción.
 
-La suite de correcciones verifica además que una MULTI_QUOTE no pueda degradarse a SIMPLE, que conserve evidencia y que reinicie votos/invitaciones de la ronda.
+La suite de correcciones verifica además que una MULTI_QUOTE no pueda degradarse a SIMPLE, que un registro legacy con flag SIMPLE pero evidencia múltiple sea reparado, que conserve evidencia y que reinicie votos/invitaciones de la ronda.
+
+Prueba manual específica:
+
+```text
+1. dejar seleccionada Solicitud sencilla;
+2. pulsar Corregir / reenviar en una MULTI_QUOTE;
+3. verificar que el editor abre como Múltiples cotizaciones sin seleccionar esa pestaña antes.
+```
 
 CI ejecuta además frontend build y construcción/smoke tests de imágenes Docker.
 
