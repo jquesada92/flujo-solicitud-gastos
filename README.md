@@ -167,9 +167,11 @@ El contenedor ejecuta antes de FastAPI:
 
 ```text
 alembic upgrade head
-python scripts/bootstrap_admin.py
+python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
+
+El bootstrap se ejecuta como módulo Python desde la raíz `backend/`/`/app`, no como `python scripts/bootstrap_admin.py`. De esta forma `app` y `scripts` se resuelven de manera determinista en `sys.path` tanto localmente como dentro del contenedor.
 
 Esto evita DDL dentro del lifespan y no depende de una función `preDeployCommand` de pago en Render.
 
@@ -193,7 +195,7 @@ python -m venv .venv
 # activar .venv
 pip install -r requirements.txt
 alembic upgrade head
-python scripts/bootstrap_admin.py
+python -m scripts.bootstrap_admin
 uvicorn app.application:app --reload
 ```
 
@@ -233,6 +235,8 @@ docker compose down
 docker compose build --no-cache backend
 docker compose up
 ```
+
+Si el bootstrap muestra `ModuleNotFoundError: No module named 'app'`, asegúrate de tener la versión que usa `python -m scripts.bootstrap_admin`; el comando antiguo ejecutado por ruta de archivo no es canónico.
 
 Para diagnosticar únicamente el backend:
 
@@ -311,7 +315,7 @@ La población de votación se obtiene desde usuarios con `requests:approve`, exc
 
 La población canónica de aprobadores se obtiene desde `requests:approve`, no desde cargos como Presidente/Tesorero ni flags `can_approve`.
 
-> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.2.1.
+> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.2.2.
 
 ### Cierre
 
@@ -338,6 +342,7 @@ CI ejecuta:
 - frontend production build;
 - backend Docker build;
 - smoke test del entrypoint backend dentro de la imagen Linux;
+- smoke test de import de `scripts.bootstrap_admin` dentro de la imagen;
 - frontend Docker build.
 
 ## Documentación
