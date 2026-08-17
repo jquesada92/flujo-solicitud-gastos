@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.2.1  
+**Versión:** 2.2.2  
 **Vigente desde:** 2026-08-17
 
 ## 1. Evolucionar, no reconstruir sin necesidad
@@ -194,9 +194,11 @@ Orden de despliegue:
 
 1. construir artefacto;
 2. ejecutar `alembic upgrade head`;
-3. ejecutar bootstrap idempotente cuando aplique;
+3. ejecutar el bootstrap idempotente como módulo desde la raíz del backend: `python -m scripts.bootstrap_admin`;
 4. iniciar `uvicorn`;
 5. ejecutar health checks.
+
+El bootstrap no debe depender de ejecutar un archivo por ruta si ese modo altera `sys.path` e impide importar `app`. Los scripts operativos Python deben ejecutarse como módulos o mediante un entrypoint equivalente con raíz de imports explícita.
 
 En Render económico, estos pasos pueden ejecutarse en el entrypoint Docker antes de `uvicorn`; en plataformas con pre-deploy separado, se prefiere ese mecanismo para múltiples réplicas.
 
@@ -233,9 +235,9 @@ Los cambios incluyen pruebas proporcionales al riesgo. Para IAM son obligatorias
 - operaciones financieras negadas a la cuenta técnica;
 - cambios de permisos efectivos sin reiniciar la app.
 
-Para portabilidad de contenedores deben existir controles de regresión que verifiquen la política LF de scripts y el mecanismo defensivo de normalización cuando corresponda.
+Para portabilidad de contenedores deben existir controles de regresión que verifiquen la política LF de scripts, el mecanismo defensivo de normalización y que el módulo de bootstrap sea importable desde la imagen construida.
 
-CI debe ejecutar backend tests, compilación frontend y construcción de imágenes Docker.
+CI debe ejecutar backend tests, compilación frontend, construcción de imágenes Docker y smoke tests del entrypoint/bootstrap backend.
 
 ## 18. Documentación es parte del código
 
