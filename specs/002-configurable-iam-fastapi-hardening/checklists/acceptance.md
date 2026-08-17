@@ -80,9 +80,10 @@
 ## Migraciones / despliegue
 
 - [x] Existe baseline Alembic property-free para una base PostgreSQL limpia.
-- [x] La cadena Alembic es lineal: `0000 → 0001 → 0002`.
+- [x] La cadena Alembic es lineal: `0000 → 0001 → 0002 → 0003`.
+- [x] `0003` repara filas MULTI_QUOTE históricas con default `SIMPLE` incorrecto.
 - [x] Existe un test que exige un único head y la cadena esperada.
-- [x] Existen migraciones Alembic versionadas para IAM.
+- [x] Existen migraciones Alembic versionadas para IAM y reparaciones posteriores.
 - [x] Bootstrap del administrador técnico es idempotente y externo al lifespan.
 - [x] Docker ejecuta migraciones y bootstrap antes de iniciar Uvicorn.
 - [x] El bootstrap se ejecuta canónicamente como `python -m scripts.bootstrap_admin` desde la raíz del backend.
@@ -105,7 +106,8 @@
 - [x] Cerrar/reemplazar factura requiere `requests:close`.
 - [x] Uploads canónicos requieren permisos explícitos.
 - [x] Motor de aprobación obtiene participantes desde IAM para políticas canónicas.
-- [ ] **Feature futura:** refactorizar fórmula funcional de quorum/mayoría de aprobación para cumplir exactamente la Constitución 2.3.1.
+- [x] Feature 003 protege correcciones SIMPLE/MULTI_QUOTE y aísla el editor del estado previo de pestañas.
+- [ ] **Feature futura:** refactorizar fórmula funcional de quorum/mayoría de aprobación para cumplir exactamente la Constitución 2.3.2.
 - [ ] **Feature futura:** especificar/refactorizar quorum y empate de cotizaciones.
 
 ## Compatibilidad / deuda
@@ -116,7 +118,7 @@
 - [x] `UserRole` queda documentado como compatibilidad temporal.
 - [ ] **Deuda:** retirar `/api/users` legacy cuando el frontend operativo deje de consumirlo.
 - [ ] **Deuda:** retirar ramas por `UserRole` del router monolítico de gastos una vez extraídas todas sus rutas.
-- [ ] **Deuda:** modularizar `frontend/src/main.jsx` y retirar `domain-normalization.js`.
+- [ ] **Deuda:** modularizar `frontend/src/main.jsx` y retirar `domain-normalization.js`/transform Vite temporal.
 
 ## Testing de política ambiental
 
@@ -137,19 +139,19 @@
 - [x] Backend compile/tests forman parte de CI.
 - [x] Imágenes Docker se construyen en CI.
 - [x] El entrypoint backend se valida dentro de la imagen construida por CI.
-- [x] Todos los jobs del commit funcional/documental de la política ambiental quedaron verdes antes del cierre del checklist.
+- [x] Tests de Feature 003 cubren dato legacy SIMPLE con evidencia MULTI_QUOTE.
 
 ## Documentación
 
-- [x] Constitución vigente revisada; actualmente 2.3.1 por el invariant posterior de correcciones.
+- [x] Constitución vigente revisada; actualmente 2.3.2.
 - [x] Spec funcional actualizada.
-- [x] Plan técnico actualizado.
+- [x] Plan técnico actualizado a la cadena Alembic `0000 → 0001 → 0002 → 0003`.
 - [x] Criterios de aceptación actualizados.
-- [x] README refleja la política ambiental.
-- [x] Prompt maestro refleja la política ambiental.
-- [x] Documentación IAM/FastAPI refleja la política ambiental.
-- [x] HISTORY registra la decisión.
-- [x] CHANGELOG registra el cambio.
+- [x] README refleja la política ambiental y Feature 003.
+- [x] Prompt maestro refleja la política ambiental y aislamiento de correcciones.
+- [x] Documentación IAM/FastAPI refleja la política ambiental y la topología vigente.
+- [x] HISTORY registra las decisiones.
+- [x] CHANGELOG registra los cambios.
 - [x] Índice documental sincronizado.
-- [x] Terminología actualizada para Cuenta técnica / Administrador del sistema.
-- [x] Descripción del PR sincronizada con la política ambiental; cambios funcionales posteriores se documentan en sus propias specs.
+- [x] Terminología distingue selector de nueva solicitud y corrección.
+- [ ] Descripción final del PR debe reflejar Constitución 2.3.2, estado aislado de correcciones y migración 0003.
