@@ -72,7 +72,7 @@ Permisos iniciales:
 
 Los permisos atómicos son capacidades del producto. La organización configura desde la UI grupos, roles, cargos, membresías y asignaciones.
 
-Default: DENY si una capacidad no está permitida explícitamente.
+Para usuarios operativos, default DENY si una capacidad no está permitida explícitamente.
 
 ### Prohibiciones
 
@@ -87,18 +87,28 @@ No autorices por:
 
 Los campos legacy pueden existir solo como puente de compatibilidad y deben derivarse de IAM, no al revés.
 
-## 4. Cuenta técnica
+## 4. Cuenta técnica y política por ambiente
 
-La cuenta creada con `ADMIN_*` es una cuenta técnica protegida.
+La cuenta creada con `ADMIN_*` debe quedar identificada como `TECHNICAL_ADMIN` en `system_accounts`.
 
-Permisos máximos efectivos:
+La política se decide por `SystemAccount + ENVIRONMENT`, nunca por email/nombre/cargo/rol legacy.
+
+### Producción
+
+Solo cuando:
+
+```env
+ENVIRONMENT=production
+```
+
+la cuenta técnica queda restringida a:
 
 ```text
 config:manage
 requests:read
 ```
 
-Debe ser imposible que obtenga:
+En producción debe ser imposible que ejerza:
 
 ```text
 requests:create
@@ -106,9 +116,24 @@ requests:approve
 requests:close
 ```
 
-incluso si alguien intenta asignarlos accidentalmente mediante un grupo, rol o permiso directo.
+incluso si alguien intenta asignarlos accidentalmente mediante un grupo, rol o permiso directo. Tampoco debe participar en poblaciones financieras de aprobación o votación.
 
-No la conviertas en superusuario financiero.
+### No producción
+
+Para cualquier `ENVIRONMENT` distinto de `production`, incluidos local, development/dev, test, staging y preview, la cuenta técnica debe recibir **todos los permisos atómicos activos del producto** para probar el sistema end-to-end.
+
+Debe poder:
+
+- crear/corregir solicitudes;
+- consultar;
+- aprobar y votar;
+- entrar en poblaciones de aprobación/votación cuando corresponda;
+- subir/reemplazar factura y cerrar;
+- administrar configuración.
+
+No persistas físicamente todos esos permisos solo para testing si puede resolverse como política ambiental; el mismo dataset debe volverse restrictivo al ejecutar con `ENVIRONMENT=production`.
+
+`RENDER=true` puede activar validaciones fuertes de secretos y CORS, pero no debe activar por sí mismo la política funcional de producción. Separa `is_production_environment` de validaciones de runtime alojado.
 
 ## 5. Interfaz de Accesos
 
@@ -126,15 +151,37 @@ Dentro de Configuración debe existir una consola gráfica para:
 - cargos de usuario;
 - permisos efectivos y su origen.
 
-La cuenta técnica debe aparecer protegida.
+La cuenta técnica debe aparecer identificada y la UI IAM debe poder explicar si un permiso proviene de política productiva o de acceso de prueba no-productivo.
 
 No requieras editar archivos o variables para crear una estructura empresarial nueva.
 
-## 6. Clasificación Área + Categoría
+## 6. Contrato del usuario autenticado
+
+Expón los permisos efectivos actuales en:
+
+```text
+permission_codes
+```
+
+Durante la transición del frontend legacy deriva también:
+
+```text
+can_request   <- requests:create
+can_approve   <- requests:approve
+can_view      <- requests:read
+can_configure <- config:manage
+can_close     <- requests:close
+```
+
+Estos aliases nunca autorizan el backend.
+
+El login debe calcular y serializar los permisos efectivos antes del primer render. `current_user()` debe volver a calcularlos por request para reflejar cambios inmediatos.
+
+Migra progresivamente el frontend a `permission_codes`; retira bypasses visuales como `user.role === "ADMIN"` y `canClose={true}`.
+
+## 7. Clasificación Área + Categoría
 
 Área y Categoría son catálogos independientes con relación N:M configurable.
-
-Ejemplos:
 
 ```text
 Área: Administración, Operaciones, IT, Marketing
@@ -143,7 +190,7 @@ Categoría: Equipos, Servicios/Consultoría, Insumos, Licencias
 
 Una categoría `Equipos` puede habilitarse para múltiples áreas sin duplicarse.
 
-## 7. Solicitudes
+## 8. Solicitudes
 
 Cada solicitud conserva como mínimo:
 
@@ -165,95 +212,83 @@ Cada solicitud conserva como mínimo:
 
 Crear/corregir/cargar soporte requiere `requests:create`.
 
-## 8. Cotizaciones
+## 9. Cotizaciones
 
 SIMPLE exige proveedor, monto y soporte.
 
-MULTI_QUOTE mantiene varias opciones. La población de votación se obtiene desde usuarios efectivos con `requests:approve`, excluyendo al solicitante y cuentas técnicas.
+MULTI_QUOTE mantiene varias opciones. La población de votación se obtiene desde usuarios efectivos con `requests:approve`, excluyendo al solicitante.
 
-Congela/versiona los participantes de cada ronda. Mientras no exista entidad explícita `QuotationVotingRound`, las invitaciones persistidas son el snapshot de la ronda.
+- Producción: cuenta técnica excluida de permisos financieros.
+- No producción: cuenta técnica puede participar para pruebas si no queda excluida por otra regla del flujo.
 
-No inventes reglas de quorum/empate no especificadas. La feature 002 mantiene explícitamente la semántica legacy hasta que exista una spec dedicada.
+Congela/versiona los participantes de cada ronda. No inventes reglas de quorum/empate no especificadas.
 
-## 9. Aprobaciones
+## 10. Aprobaciones
 
 Los participantes se seleccionan por permisos/políticas persistidas, nunca por cargo hardcodeado.
 
 La Constitución vigente define la regla funcional objetivo de quorum y mayoría. Si el motor legacy todavía difiere, documenta la deuda y no afirmes que está resuelta por cambios IAM.
 
-## 10. Cierre y factura
+## 11. Cierre y factura
 
 `APPROVED` no significa `CLOSED`.
 
 Subir/reemplazar factura y cerrar requiere `requests:close`.
 
-La cuenta técnica jamás puede ejecutar estas acciones.
+- Producción: cuenta técnica debe recibir 403.
+- No producción: cuenta técnica puede cerrar para pruebas end-to-end.
 
 Conserva versiones anteriores de facturas y registra motivo/actor/timestamp al sustituir.
 
-## 11. Arquitectura FastAPI
+## 12. Arquitectura FastAPI
 
 Usa:
 
 ```text
 app/
-├── api/          # APIRouter y capa HTTP
-├── core/         # Settings, DB, security, rate limit
-├── models/       # SQLAlchemy
-├── schemas/      # Pydantic
-├── services/     # negocio reutilizable
+├── api/
+├── core/
+├── models/
+├── schemas/
+├── services/
 ├── application.py
-└── main.py       # alias mínimo si se requiere compatibilidad
+└── main.py
 ```
 
 Reglas:
 
-- Pydantic Settings centralizado; no repartir `os.getenv()` por la aplicación.
+- Pydantic Settings centralizado.
 - `get_db()` entrega una sesión por request y siempre la cierra.
 - modelos SQLAlchemy fuera de routers.
 - schemas reutilizables fuera de routers.
 - response models explícitos para respuestas sensibles.
 - dependencias FastAPI para autorización.
-- `lifespan` solo para recursos de ciclo de vida; nunca DDL/backfills/seeds de negocio.
+- `lifespan` nunca ejecuta DDL/backfills/seeds de negocio.
 - Alembic para migraciones versionadas.
-- SQLAlchemy actual es síncrono: rutas con DB/filesystem bloqueante deben ser `def` para ejecutarse en threadpool. No conviertas funciones en `async def` si internamente hacen I/O síncrono sin offloading.
+- SQLAlchemy síncrono: rutas con DB/filesystem bloqueante deben ser `def` o hacer offload explícito.
 
-## 12. Passwords y JWT
+## 13. Passwords y JWT
 
 - Argon2 mediante `pwdlib.PasswordHash.recommended()` para hashes nuevos.
 - Compatibilidad temporal con PBKDF2 legacy.
-- Login PBKDF2 exitoso debe migrar el hash a Argon2.
+- Login PBKDF2 exitoso migra el hash a Argon2.
 - JWT con `sub`, versión de sesión, `iat`, `exp`.
 - timeout de inactividad.
-- regeneración/cambio que corresponda debe poder revocar sesiones.
+- cambios sensibles pueden revocar sesiones.
 
-## 13. Documentos
+## 14. Documentos
 
-Admite PDF/JPEG/PNG/WEBP.
+Admite PDF/JPEG/PNG/WEBP. Valida MIME, firma real, tamaño, cuota total y nombre interno impredecible. El disco es privado y la descarga pasa por autorización backend.
 
-Valida:
+## 15. Correo
 
-- MIME;
-- firma real del contenido;
-- tamaño;
-- cuota total;
-- nombre interno impredecible.
+Centraliza configuración en Settings. Producción usa preferiblemente API HTTPS de Brevo. Mantén console/SMTP para desarrollo si existe. Branding base neutral.
 
-El disco es privado y una descarga pasa por autorización backend.
+## 16. Migraciones, Docker y despliegue
 
-## 14. Correo
+No uses `Base.metadata.create_all()` ni `migrate_schema()` en lifespan productivo.
 
-Centraliza configuración en Settings.
-
-Producción usa preferiblemente API HTTPS de Brevo. Mantén soporte console/SMTP para desarrollo si existe.
-
-Mensajes y branding base deben ser neutrales respecto al tipo de organización.
-
-## 15. Migraciones, Docker y despliegue
-
-No uses `Base.metadata.create_all()` ni `migrate_schema()` en el lifespan productivo.
-
-Secuencia canónica desde la raíz del backend:
+Secuencia canónica:
 
 ```text
 alembic upgrade head
@@ -261,81 +296,68 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
-No ejecutes el bootstrap canónico como `python scripts/bootstrap_admin.py`: al ejecutar un archivo por ruta Python puede usar `scripts/` como raíz de imports y romper `from app...`. Mantén `scripts` importable como módulo y valida ese import dentro de la imagen Docker.
+No ejecutes el bootstrap como `python scripts/bootstrap_admin.py`.
 
-En Docker/Render económico puede ocurrir en el entrypoint antes de iniciar Uvicorn. En despliegues de múltiples réplicas usa una etapa única de release/pre-deploy.
+Portabilidad:
 
-Los scripts shell ejecutados dentro de imágenes Linux deben ser portables desde checkouts Windows:
+- `*.sh text eol=lf` en `.gitattributes`;
+- normalización defensiva CRLF dentro de imagen;
+- healthcheck real antes de Nginx;
+- CI valida entrypoint e import de `scripts.bootstrap_admin`.
 
-- fuerza `*.sh text eol=lf` en `.gitattributes`;
-- normaliza defensivamente CRLF dentro de la imagen antes de ejecutar el entrypoint;
-- no asumas que `depends_on` simple significa que el backend está listo: usa healthcheck cuando Nginx u otro consumidor depende de FastAPI;
-- si el backend falla durante Alembic/bootstrap/Uvicorn, deja visible ese error primario y evita que el frontend falle primero con `host not found in upstream`.
+Producción debe declarar explícitamente:
 
-Antes de migraciones destructivas crea snapshot/backup real.
+```env
+ENVIRONMENT=production
+```
 
-## 16. Testing
+No uses ese valor en un entorno donde se pretenda probar todas las funciones con la cuenta técnica.
+
+## 17. Testing
 
 Usa tests unitarios y `FastAPI TestClient`.
 
 Matriz IAM mínima:
 
-- admin técnico obtiene config/read;
-- admin técnico no obtiene create/approve/close;
-- asignarle close accidentalmente sigue resultando DENY;
-- usuario sin config obtiene 403 en administración IAM;
+- no-producción: admin técnico obtiene todos los permisos activos;
+- no-producción: login expone `permission_codes` completos y `can_close=true` si el permiso está activo;
+- no-producción: admin técnico puede entrar en población `requests:approve`;
+- producción: admin técnico obtiene solo config/read;
+- producción: asignarle close accidentalmente sigue resultando DENY;
+- producción: endpoint de cierre devuelve 403;
+- producción: admin técnico queda fuera de población de aprobación;
+- usuario sin config obtiene 403 en IAM;
 - Grupo→Rol→Permiso cambia acceso inmediatamente;
 - permiso directo es aditivo;
 - rol técnico no se edita desde UI.
 
-Incluye una prueba de regresión de portabilidad de contenedores que verifique la política LF, la normalización defensiva de scripts y la dependencia por healthcheck del frontend local.
+CI ejecuta Python compile, backend tests, frontend build y builds/smoke tests Docker.
 
-CI debe ejecutar:
-
-- Python compile;
-- backend tests;
-- frontend build;
-- Docker backend;
-- smoke test del entrypoint Linux;
-- smoke test de import de `scripts.bootstrap_admin` dentro de la imagen backend;
-- Docker frontend.
-
-## 17. Seguridad
+## 18. Seguridad
 
 - backend authoritative;
 - secretos fuera del frontend/logs/repositorio;
-- CORS explícito en producción;
+- CORS explícito;
 - rate limiting diferenciado;
 - ORM/consultas parametrizadas;
 - archivos privados;
-- default deny;
-- no bypass por ADMIN;
-- no autorización por cargo.
+- default deny para usuarios operativos;
+- no bypass por `UserRole.ADMIN`;
+- no autorización por cargo;
+- política ampliada de cuenta técnica únicamente fuera de producción y basada en ambiente.
 
-## 18. Auditoría
+## 19. Auditoría
 
 Eventos significativos deben conservar actor, tiempo, entidad, cambios y motivo. La evolución del IAM debe incorporarse a auditoría para que cambios de roles/grupos/permisos no sean silenciosos.
 
-## 19. Documentación obligatoria
+## 20. Documentación obligatoria
 
-Un cambio no está terminado hasta revisar y actualizar cuando aplique:
+Un cambio no está terminado hasta revisar y actualizar cuando aplique Constitución, spec, plan, criterios de aceptación, README, este prompt, documentación técnica/funcional, terminología, HISTORY, CHANGELOG y PR.
 
-- Constitución;
-- spec;
-- plan;
-- criterios de aceptación;
-- README;
-- este prompt;
-- documentación técnica/funcional;
-- terminología;
-- HISTORY;
-- CHANGELOG;
-- PR.
-
-## 20. Deuda permitida solo si está explícita
+## 21. Deuda permitida solo si está explícita
 
 Durante la transición pueden existir `UserRole`, `can_*`, router legacy `/api/users`, `main.jsx` monolítico y `domain-normalization.js`.
 
-No los presentes como arquitectura objetivo. No deben ser fuente de autorización. Documenta dónde siguen activos y cuál es la ruta de retiro.
+No los presentes como arquitectura objetivo. No deben ser fuente de autorización.
 
 No reconstruyas funcionalidad inmobiliaria ni vuelvas a introducir roles/cargos organizacionales hardcodeados.
