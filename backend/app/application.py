@@ -9,6 +9,7 @@ from app.api import (
     areas,
     audit,
     auth,
+    document_actions,
     expenses,
     financial_actions,
     iam,
@@ -91,9 +92,11 @@ def create_app() -> FastAPI:
         return response
 
     # Canonical action routes are registered before the legacy expense router.
-    # The old router remains only for endpoints not yet extracted from the MVP.
+    # Blocking SQLAlchemy/filesystem work lives in normal def routes so FastAPI
+    # executes it in its threadpool instead of blocking the event loop.
     app.include_router(request_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(quotation_actions.router, prefix='/api/expenses', tags=['Expenses'])
+    app.include_router(document_actions.router, prefix='/api/expenses', tags=['Documents'])
     app.include_router(financial_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(expenses.router, prefix='/api/expenses', tags=['Expenses (legacy compatibility)'])
     app.include_router(approvals.router, prefix='/api/approvals', tags=['Approvals'])
