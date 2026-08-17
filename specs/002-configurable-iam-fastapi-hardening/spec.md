@@ -44,9 +44,9 @@ Como administrador de configuración quiero crear y asignar cargos/posiciones co
 
 Como administrador de configuración quiero ver los permisos efectivos de un usuario y de dónde provienen para auditar y explicar su acceso.
 
-### US-007 — Cuenta técnica segregada
+### US-007 — Cuenta técnica segregada en producción
 
-Como propietario técnico del sistema quiero administrar configuración y consultar, pero no quiero poder crear, aprobar ni cerrar solicitudes para mantener segregación de funciones.
+Como propietario técnico del sistema quiero que mi cuenta técnica en producción pueda administrar configuración y consultar, pero no crear, aprobar ni cerrar solicitudes, para mantener segregación de funciones.
 
 ### US-008 — Estructura empresarial variable
 
@@ -68,6 +68,10 @@ Como desarrollador en Windows quiero poder construir y ejecutar los contenedores
 
 Como desarrollador u operador quiero que el bootstrap técnico se ejecute con una raíz de imports estable para que pueda importar `app` tanto en desarrollo local como dentro de Docker sin depender de cómo Python calcule `sys.path` para un archivo ejecutado por ruta.
 
+### US-013 — Cuenta técnica de pruebas con acceso completo
+
+Como propietario técnico del producto quiero usar la cuenta **Administrador del sistema** para probar cualquier funcionalidad en local, dev, test, staging o preview, sin tener que crear usuarios auxiliares solo para validar crear, aprobar, votar, cargar factura o cerrar solicitudes.
+
 ## Permisos atómicos iniciales
 
 | Código | Capacidad |
@@ -80,7 +84,7 @@ Como desarrollador u operador quiero que el bootstrap técnico se ejecute con un
 
 Los permisos atómicos son capacidades implementadas por el producto. La interfaz no inventa códigos arbitrarios; permite combinar las capacidades existentes.
 
-## Resolución de acceso
+## Resolución de acceso de usuarios operativos
 
 ```text
 effective_permissions(user) =
@@ -89,19 +93,44 @@ effective_permissions(user) =
   ∪ group_role_permissions
 ```
 
-La ausencia de permiso significa DENY.
+La ausencia de permiso significa DENY. Los cargos/posiciones no participan en esta fórmula.
 
-Los cargos/posiciones no participan en esta fórmula.
+## Política de cuenta técnica por ambiente
 
-## Cuenta técnica
+Una cuenta marcada en `system_accounts` como `TECHNICAL_ADMIN` utiliza una política ambiental explícita.
 
-Una cuenta marcada en `system_accounts` como `TECHNICAL_ADMIN` tiene un límite defensivo adicional:
+### `ENVIRONMENT=production`
+
+Permisos efectivos máximos:
 
 ```text
-permitidos = {config:manage, requests:read}
+config:manage
+requests:read
 ```
 
-Aunque alguien intente asignarle un rol o permiso financiero, su conjunto efectivo no puede incluir `requests:create`, `requests:approve` o `requests:close`.
+La cuenta técnica:
+
+- no puede crear solicitudes;
+- no puede aprobar ni votar;
+- no puede subir/reemplazar factura ni cerrar;
+- no entra en poblaciones financieras aunque reciba por error un rol/grupo/permiso financiero.
+
+### Cualquier `ENVIRONMENT` distinto de `production`
+
+La cuenta técnica recibe todos los permisos atómicos **activos** del catálogo del producto.
+
+Por tanto puede:
+
+- crear/corregir solicitudes;
+- consultar;
+- aprobar y votar;
+- participar en poblaciones de aprobación/votación;
+- subir/reemplazar factura y cerrar;
+- administrar configuración.
+
+Esta elevación se determina por `SystemAccount + ENVIRONMENT`, no por email, cargo, rol legacy ni nombre visible.
+
+`RENDER=true` puede activar validaciones estrictas de secretos/CORS, pero no activa por sí solo la política de autorización de producción. Solo `ENVIRONMENT=production` restringe financieramente la cuenta técnica.
 
 ## Configuración inicial sugerida del PH
 
@@ -109,7 +138,7 @@ Esta configuración es **dato**, no código:
 
 - Grupo `Administración PH` → rol con `requests:create`, `requests:close`, `requests:read`.
 - Grupo `Junta Directiva` → rol con `requests:approve`, `requests:read`.
-- Cuenta técnica → rol administrado por sistema con `config:manage`, `requests:read`.
+- Cuenta técnica → identificada como `TECHNICAL_ADMIN`; su política efectiva depende del ambiente.
 
 Ningún nombre anterior es obligatorio para futuras organizaciones.
 
@@ -126,8 +155,22 @@ La pantalla **Configuración → Accesos** debe permitir:
 - asignar grupos, roles directos, permisos directos y cargos;
 - crear/editar/activar cargos;
 - mostrar permisos atómicos disponibles;
-- mostrar permisos efectivos del usuario;
-- proteger visualmente y por API las cuentas técnicas.
+- mostrar permisos efectivos del usuario y su origen;
+- identificar la cuenta técnica y explicar si su acceso proviene de política de producción o de acceso de prueba no-productivo.
+
+## Contrato de sesión/UI
+
+Las respuestas autenticadas del usuario actual deben exponer `permission_codes` con los permisos efectivos calculados por backend.
+
+Durante la compatibilidad con el frontend legacy también se derivan temporalmente:
+
+- `can_request` desde `requests:create`;
+- `can_approve` desde `requests:approve`;
+- `can_view` desde `requests:read`;
+- `can_configure` desde `config:manage`;
+- `can_close` desde `requests:close`.
+
+Estos campos son una vista de compatibilidad; nunca autorizan el backend.
 
 ## Requisitos FastAPI
 
@@ -153,6 +196,7 @@ La pantalla **Configuración → Accesos** debe permitir:
 - `scripts` debe ser importable como paquete/módulo y el CI debe comprobar que `scripts.bootstrap_admin` puede importarse dentro de la imagen backend.
 - El frontend local debe esperar a que el backend supere `/api/health` antes de iniciar Nginx.
 - Si el backend falla en Alembic/bootstrap/Uvicorn, el error debe quedar visible como fallo del backend y no quedar oculto por un error secundario de resolución DNS de Nginx.
+- Producción debe declarar explícitamente `ENVIRONMENT=production`; local/dev/test/preview no deben usar ese valor si se pretende probar con acceso técnico completo.
 
 ## Compatibilidad temporal
 
@@ -171,6 +215,14 @@ Condiciones:
 2. los `can_*` que vea código legacy se derivan del IAM efectivo;
 3. las rutas canónicas se registran antes que las rutas legacy equivalentes;
 4. la deuda se documenta y retira gradualmente.
+
+## Criterios funcionales clave de la política ambiental
+
+- En `test`, la cuenta técnica devuelve todos los permisos activos en `/api/iam/me/permissions`.
+- En `test`, el login devuelve `can_request`, `can_approve`, `can_view`, `can_configure` y `can_close` habilitados para la cuenta técnica mientras esos permisos estén activos.
+- En no producción, la cuenta técnica puede aparecer en `users_with_permission('requests:approve')`.
+- En producción, aunque se asigne directamente `requests:close`, el permiso efectivo no aparece y el endpoint de cierre devuelve 403.
+- En producción, la cuenta técnica no aparece como aprobador/votante financiero.
 
 ## Fuera de alcance de este PR
 
