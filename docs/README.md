@@ -24,6 +24,7 @@
 
 - [README principal](../README.md)
 - [Prompt maestro de reconstrucción](../PROMPT_RECONSTRUCCION.md)
+- `render.yaml` — declara explícitamente `ENVIRONMENT=production` para el servicio productivo.
 
 Contrato operativo backend:
 
@@ -43,7 +44,7 @@ ENVIRONMENT!=production
 → TECHNICAL_ADMIN: todos los permisos activos para testing
 ```
 
-Esto permite usar el Administrador del sistema para probar crear/aprobar/votar/cerrar en local/dev/test/preview, manteniendo segregación financiera en producción.
+Esto permite usar el Administrador del sistema para probar crear/aprobar/votar/cerrar en local/dev/test/staging/preview, manteniendo segregación financiera en producción.
 
 `RENDER=true` no sustituye a `ENVIRONMENT=production` para esta política; solo `ENVIRONMENT` decide la autorización funcional productiva.
 
@@ -71,6 +72,7 @@ Clasificación de solicitudes:
 - Rol para conjuntos de permisos.
 - Permiso para capacidades de autorización.
 - Cargo/Posición para metadato organizacional.
+- Cuenta técnica / Administrador del sistema para la identidad técnica gobernada por ambiente.
 - Área para unidad/contexto organizacional del gasto.
 - Categoría para naturaleza del gasto.
 
