@@ -130,9 +130,11 @@ Docker ejecuta:
 
 ```text
 alembic upgrade head
-python scripts/bootstrap_admin.py
+python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
+
+`scripts` es un paquete Python explícito y el bootstrap se ejecuta como módulo desde `/app`. No se usa `python scripts/bootstrap_admin.py` porque ese modo puede fijar `sys.path[0]` en `/app/scripts` y romper imports de `app`.
 
 Esto mantiene la migración fuera del ciclo de vida FastAPI y funciona en planes de Render sin pre-deploy separado. Para despliegues con múltiples réplicas se debe mover la migración a una etapa única de release/pre-deploy para evitar carreras.
 
@@ -153,6 +155,8 @@ exec /app/scripts/start.sh: no such file or directory
 que puede ocurrir aunque el archivo exista cuando el shebang termina materializado como `/bin/sh\r`.
 
 El frontend local debe esperar a que el backend pase `/api/health` antes de arrancar Nginx. Así, un error de migración/startup se presenta como fallo del backend y no como un secundario `host not found in upstream "backend"`.
+
+El CI debe cargar la imagen backend y validar tanto el entrypoint shell como `import scripts.bootstrap_admin` con una `DATABASE_URL` de prueba. Esto cubre el error de import que no detecta un simple Docker build.
 
 ## Sync / async
 
@@ -206,12 +210,14 @@ Matriz mínima:
 
 `tests/test_migrations.py` valida la topología Alembic sin afirmar que reemplaza un smoke test de PostgreSQL real.
 
+`tests/test_container_portability.py` protege la política LF/healthcheck, mientras el job Docker de CI valida el entrypoint y la importabilidad real del bootstrap dentro de la imagen.
+
 ## Despliegue
 
 1. Crear backup/snapshot/branch de Neon.
 2. Construir backend actualizado.
 3. En preview, ejecutar `alembic upgrade head` y comprobar `0000 → 0001 → 0002`.
-4. Ejecutar bootstrap técnico idempotente.
+4. Ejecutar `python -m scripts.bootstrap_admin` desde la raíz del backend.
 5. Iniciar FastAPI.
 6. Verificar `/api/health`.
 7. Login administrador técnico.
