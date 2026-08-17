@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.2.0  
+**Versión:** 2.2.1  
 **Vigente desde:** 2026-08-17
 
 ## 1. Evolucionar, no reconstruir sin necesidad
@@ -186,7 +186,7 @@ Las reglas de selección de cotización no se presumen iguales a las reglas de a
 
 Una solicitud aprobada permanece en proceso hasta cumplir el cierre. El cierre requiere factura y `requests:close`. Una cuenta de sistema no puede cerrar solicitudes.
 
-## 15. Migraciones y protección de datos
+## 15. Migraciones, despliegue y portabilidad de contenedores
 
 Los cambios estructurales utilizan migraciones versionadas. No se permiten nuevas migraciones destructivas ad-hoc en FastAPI startup.
 
@@ -199,6 +199,10 @@ Orden de despliegue:
 5. ejecutar health checks.
 
 En Render económico, estos pasos pueden ejecutarse en el entrypoint Docker antes de `uvicorn`; en plataformas con pre-deploy separado, se prefiere ese mecanismo para múltiples réplicas.
+
+Los scripts shell ejecutados dentro de contenedores Linux deben conservar finales de línea LF independientemente del sistema operativo del desarrollador. El repositorio debe forzar `*.sh` a LF y la imagen puede normalizar defensivamente CRLF durante el build.
+
+La dependencia entre servicios locales debe basarse en health checks cuando el consumidor requiere que el servicio proveedor esté realmente disponible; un simple orden de creación de contenedores no sustituye disponibilidad.
 
 Antes de retirar datos: respaldo, inventario, migración versionada, validación y recuperación real.
 
@@ -228,6 +232,8 @@ Los cambios incluyen pruebas proporcionales al riesgo. Para IAM son obligatorias
 - endpoints `config:manage`;
 - operaciones financieras negadas a la cuenta técnica;
 - cambios de permisos efectivos sin reiniciar la app.
+
+Para portabilidad de contenedores deben existir controles de regresión que verifiquen la política LF de scripts y el mecanismo defensivo de normalización cuando corresponda.
 
 CI debe ejecutar backend tests, compilación frontend y construcción de imágenes Docker.
 
