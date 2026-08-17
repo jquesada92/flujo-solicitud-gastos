@@ -68,6 +68,22 @@ def _load_expense(db: Session, request_id: str) -> Expense:
     return expense
 
 
+def _canonical_request_type(expense: Expense) -> str:
+    """Derive the workflow type from durable business evidence.
+
+    Legacy rows may still carry the historical SIMPLE default even though they
+    have multiple quotation options or are/were in quotation voting. Corrections
+    must follow the request itself, never whichever frontend tab was selected.
+    """
+    if expense.request_type == 'MULTI_QUOTE':
+        return 'MULTI_QUOTE'
+    if expense.status == ExpenseStatus.QUOTATION_VOTING:
+        return 'MULTI_QUOTE'
+    if len(expense.quotation_options or []) >= 2:
+        return 'MULTI_QUOTE'
+    return 'SIMPLE'
+
+
 def _present(db: Session, expense_id: int) -> Expense:
     return db.scalars(
         select(Expense)
@@ -165,8 +181,8 @@ def resubmit_expense(
     """Correct and restart a request without changing its workflow type.
 
     A MULTI_QUOTE correction remains MULTI_QUOTE and restarts its voting round.
-    A SIMPLE correction remains SIMPLE. This prevents the legacy form default from
-    silently changing the business semantics of an existing request.
+    A SIMPLE correction remains SIMPLE. The canonical type is also inferred from
+    durable quotation evidence for legacy rows with an incorrect SIMPLE default.
     """
     _validate_classification(db, payload.expense_type, payload.expense_subcategory)
     expense = _load_expense(db, request_id)
@@ -175,17 +191,21 @@ def resubmit_expense(
 
     if expense.status == ExpenseStatus.CLOSED:
         raise HTTPException(status_code=409, detail='Una solicitud cerrada no puede corregirse')
-    if payload.request_type != expense.request_type:
+
+    stored_type = _canonical_request_type(expense)
+    if payload.request_type != stored_type:
         raise HTTPException(
             status_code=409,
             detail='Una corrección no puede cambiar el tipo original de la solicitud',
         )
+    # Repair an inconsistent legacy row even before the Alembic backfill has run.
+    expense.request_type = stored_type
 
     expire_open_approvals(db, expense, actor_email=user.email)
     _apply_common_fields(expense, payload)
 
     invitations: list[tuple[User, QuotationVotingInvitation]] = []
-    if expense.request_type == 'MULTI_QUOTE':
+    if stored_type == 'MULTI_QUOTE':
         invitations = _reset_multi_quote_round(db, expense, payload, user)
     else:
         expense.request_type = 'SIMPLE'
@@ -197,7 +217,7 @@ def resubmit_expense(
 
     db.commit()
 
-    if expense.request_type == 'MULTI_QUOTE':
+    if stored_type == 'MULTI_QUOTE':
         refreshed = _present(db, expense.id)
         for voter, invitation in invitations:
             try:
