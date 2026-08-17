@@ -77,6 +77,7 @@
 - [x] Prompt maestro actualizado.
 - [x] `docs/REQUEST_CORRECTIONS.md` actualizado.
 - [x] Arquitectura FastAPI actualizada con migración 0003 y aislamiento de estado.
+- [x] Política documental clasifica fugas de estado UI con impacto de negocio como cambios funcionales.
 - [x] HISTORY actualizado.
 - [x] CHANGELOG actualizado.
 - [x] Índice documental actualizado.
