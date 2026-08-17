@@ -72,7 +72,19 @@ No ejecuta:
 
 ## Alembic
 
-Alembic es la autoridad para cambios de esquema.
+Alembic es la autoridad para cambios de esquema. La topología actual es deliberadamente lineal:
+
+```text
+20260817_0000 application baseline
+        ↓
+20260817_0001 configurable IAM
+        ↓
+20260817_0002 protected system accounts
+```
+
+`0000` permite que una base PostgreSQL limpia reciba el esquema base property-free y, al mismo tiempo, conserva tablas que ya existen al aplicarse sobre la base productiva actual. Su downgrade es deliberadamente no destructivo porque no puede asumir que Alembic creó las tablas preexistentes.
+
+`tests/test_migrations.py` exige un único head y la cadena anterior. Esto detecta errores de topología, pero no reemplaza un smoke test real de `alembic upgrade head` contra PostgreSQL/Neon de preview.
 
 El entrypoint Docker ejecuta `alembic upgrade head` y el bootstrap técnico antes de Uvicorn.
 
@@ -103,6 +115,8 @@ Al crear endpoints nuevos se debe declarar `response_model` salvo que la respues
 `tests/test_iam_api.py` usa `FastAPI TestClient` con override de `get_db()` y SQLite aislada.
 
 Los tests de autorización deben comprobar tanto ALLOW como DENY. Un test directo de una función auxiliar no sustituye un test HTTP para rutas críticas.
+
+`tests/test_migrations.py` verifica la topología de las revisiones Alembic sin conectarse a producción.
 
 ## Router legacy
 
