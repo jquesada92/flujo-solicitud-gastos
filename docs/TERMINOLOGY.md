@@ -57,12 +57,13 @@ Los permisos son la autoridad de acceso.
 
 ## Permiso efectivo
 
-Permiso que un Usuario posee después de combinar:
+Permiso que un Usuario posee después de combinar las fuentes IAM aplicables y, cuando corresponde, políticas explícitas de cuenta técnica por ambiente.
+
+Para usuarios operativos puede provenir de:
 
 - permisos directos;
 - permisos de roles directos;
-- permisos de roles heredados por grupos;
-- restricciones especiales de seguridad aplicables a cuentas técnicas.
+- permisos de roles heredados por grupos.
 
 ## Cargo / Posición
 
@@ -80,14 +81,26 @@ Ejemplos:
 
 ## Cuenta técnica / Administrador del sistema
 
-Cuenta de sistema creada mediante bootstrap para administrar la plataforma.
+Cuenta de sistema creada mediante bootstrap y registrada en `system_accounts` para administrar/probar la plataforma.
 
-No significa superusuario financiero. Su acceso máximo efectivo es:
+**Administrador del sistema no es un Cargo ni un Rol organizacional.** Tampoco significa un bypass basado en `UserRole.ADMIN`.
+
+Su política depende del ambiente:
+
+### Producción
+
+Con `ENVIRONMENT=production` sus permisos efectivos máximos son:
 
 - `config:manage`;
 - `requests:read`.
 
-No puede crear, aprobar ni cerrar solicitudes.
+No puede crear, aprobar/votar ni cerrar solicitudes.
+
+### No producción
+
+Con cualquier `ENVIRONMENT` distinto de `production`, la cuenta técnica obtiene todos los permisos atómicos activos para permitir pruebas end-to-end del producto.
+
+Puede crear, consultar, aprobar/votar, cerrar y configurar.
 
 ## Área
 
@@ -121,13 +134,15 @@ Ejemplos:
 Los siguientes términos pueden aparecer temporalmente en código de compatibilidad, pero no representan la arquitectura objetivo:
 
 - `UserRole.ADMIN`, `REQUESTER`, `APPROVER`, `VIEWER`;
-- `can_request`, `can_approve`, `can_view`, `can_configure`;
+- `can_request`, `can_approve`, `can_view`, `can_configure` como columnas persistidas;
 - `title` usado como cargo/perfil;
 - `AccessProfile` como mezcla de cargo/permisos;
 - Persona/Personas;
 - Subárea para representar Categoría.
 
-No introducir nuevas dependencias funcionales sobre estos conceptos.
+`can_close` y los `can_*` expuestos en `UserOut` son aliases temporales derivados de `permission_codes`; no son permisos independientes.
+
+No introducir nuevas dependencias funcionales sobre conceptos legacy.
 
 ## Regla de consistencia
 
@@ -138,5 +153,6 @@ Nuevos componentes, APIs, specs y documentación deben usar:
 - **Rol** para conjuntos de permisos;
 - **Permiso** para autorización;
 - **Cargo/Posición** para metadato organizacional;
+- **Cuenta técnica / Administrador del sistema** para la identidad técnica gobernada por ambiente;
 - **Área** para contexto organizacional del gasto;
 - **Categoría** para naturaleza del gasto.
