@@ -140,6 +140,20 @@ Esto mantiene la migración fuera del ciclo de vida FastAPI y funciona en planes
 
 La topología del script no sustituye una ejecución real: antes de producción se requiere snapshot y smoke test contra PostgreSQL/Neon de preview.
 
+### Portabilidad Windows → Linux de scripts de arranque
+
+Los entrypoints del contenedor son shell scripts Linux. El repositorio debe forzar `*.sh` a LF mediante `.gitattributes` y la imagen backend debe normalizar de forma defensiva cualquier `\r` antes de ejecutar `start.sh`.
+
+Esto evita el fallo típico de checkouts Windows:
+
+```text
+exec /app/scripts/start.sh: no such file or directory
+```
+
+que puede ocurrir aunque el archivo exista cuando el shebang termina materializado como `/bin/sh\r`.
+
+El frontend local debe esperar a que el backend pase `/api/health` antes de arrancar Nginx. Así, un error de migración/startup se presenta como fallo del backend y no como un secundario `host not found in upstream "backend"`.
+
 ## Sync / async
 
 SQLAlchemy actual es síncrono. Las nuevas rutas que ejecutan SQLAlchemy y filesystem bloqueante se declaran con `def`, permitiendo que FastAPI las ejecute en threadpool.
