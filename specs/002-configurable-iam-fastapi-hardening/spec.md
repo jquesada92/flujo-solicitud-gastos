@@ -1,0 +1,171 @@
+# Especificación funcional — IAM configurable y hardening FastAPI
+
+**Feature:** 002-configurable-iam-fastapi-hardening  
+**Estado:** Implementación en PR #6  
+**Fecha:** 2026-08-17
+
+## Objetivo
+
+Eliminar la autorización basada en roles/cargos hardcodeados y convertir la administración de acceso en una capacidad configurable desde la interfaz gráfica, manteniendo el backend FastAPI alineado con prácticas recomendadas de modularidad, configuración, seguridad, testing y ciclo de vida.
+
+## Problema
+
+El MVP mezclaba tres conceptos distintos:
+
+- rol técnico (`ADMIN`, `REQUESTER`, `APPROVER`, `VIEWER`);
+- cargo organizacional (`PRESIDENTE`, `TESORERO`, etc.);
+- permiso (`can_request`, `can_approve`, etc.).
+
+Esto impedía reutilizar el producto en organizaciones con estructuras diferentes y otorgaba privilegios implícitos al administrador técnico.
+
+## Historias de usuario
+
+### US-001 — Administrar grupos
+
+Como administrador de configuración quiero crear, renombrar, activar/inactivar grupos y administrar sus miembros para representar la estructura de mi organización sin solicitar cambios de código.
+
+### US-002 — Administrar roles
+
+Como administrador de configuración quiero crear roles y seleccionar sus permisos para reutilizar combinaciones de acceso entre grupos y usuarios.
+
+### US-003 — Heredar permisos por grupo
+
+Como administrador de configuración quiero asignar uno o más roles a un grupo para que sus miembros reciban automáticamente los permisos correspondientes.
+
+### US-004 — Excepciones individuales
+
+Como administrador de configuración quiero asignar roles o permisos adicionales directamente a un usuario para cubrir excepciones que no justifican crear un grupo nuevo.
+
+### US-005 — Administrar cargos
+
+Como administrador de configuración quiero crear y asignar cargos/posiciones como metadatos organizacionales sin que esos cargos otorguen permisos automáticamente.
+
+### US-006 — Ver acceso efectivo
+
+Como administrador de configuración quiero ver los permisos efectivos de un usuario y de dónde provienen para auditar y explicar su acceso.
+
+### US-007 — Cuenta técnica segregada
+
+Como propietario técnico del sistema quiero administrar configuración y consultar, pero no quiero poder crear, aprobar ni cerrar solicitudes para mantener segregación de funciones.
+
+### US-008 — Estructura empresarial variable
+
+Como cliente empresarial quiero crear grupos, roles y cargos con nombres y combinaciones distintas a las del PH sin modificar ni desplegar backend/frontend.
+
+### US-009 — Seguridad inmediata
+
+Como administrador quiero que una asignación o retiro de permisos cambie la autorización efectiva sin reiniciar la aplicación ni volver a generar código.
+
+### US-010 — Backend mantenible
+
+Como equipo de desarrollo quiero configuración centralizada, migraciones versionadas fuera del lifespan, tests HTTP reales y separación de routers/modelos/schemas/servicios para reducir errores al escalar el producto.
+
+## Permisos atómicos iniciales
+
+| Código | Capacidad |
+| --- | --- |
+| `requests:read` | Consultar solicitudes y documentos autorizados |
+| `requests:create` | Crear/corregir solicitudes y cargar sus soportes |
+| `requests:approve` | Participar en votaciones y decisiones de aprobación |
+| `requests:close` | Subir/reemplazar factura y cerrar una solicitud aprobada |
+| `config:manage` | Administrar configuración organizacional y accesos |
+
+Los permisos atómicos son capacidades implementadas por el producto. La interfaz no inventa códigos arbitrarios; permite combinar las capacidades existentes.
+
+## Resolución de acceso
+
+```text
+effective_permissions(user) =
+    direct_user_permissions
+  ∪ direct_role_permissions
+  ∪ group_role_permissions
+```
+
+La ausencia de permiso significa DENY.
+
+Los cargos/posiciones no participan en esta fórmula.
+
+## Cuenta técnica
+
+Una cuenta marcada en `system_accounts` como `TECHNICAL_ADMIN` tiene un límite defensivo adicional:
+
+```text
+permitidos = {config:manage, requests:read}
+```
+
+Aunque alguien intente asignarle un rol o permiso financiero, su conjunto efectivo no puede incluir `requests:create`, `requests:approve` o `requests:close`.
+
+## Configuración inicial sugerida del PH
+
+Esta configuración es **dato**, no código:
+
+- Grupo `Administración PH` → rol con `requests:create`, `requests:close`, `requests:read`.
+- Grupo `Junta Directiva` → rol con `requests:approve`, `requests:read`.
+- Cuenta técnica → rol administrado por sistema con `config:manage`, `requests:read`.
+
+Ningún nombre anterior es obligatorio para futuras organizaciones.
+
+## Consola gráfica
+
+La pantalla **Configuración → Accesos** debe permitir:
+
+- crear/editar/activar roles;
+- seleccionar permisos de un rol;
+- crear/editar/activar grupos;
+- asignar roles a grupos;
+- administrar miembros;
+- crear usuarios;
+- asignar grupos, roles directos, permisos directos y cargos;
+- crear/editar/activar cargos;
+- mostrar permisos atómicos disponibles;
+- mostrar permisos efectivos del usuario;
+- proteger visualmente y por API las cuentas técnicas.
+
+## Requisitos FastAPI
+
+- configuración con `pydantic-settings`;
+- `get_db()` como dependencia con `yield`/context manager;
+- aplicación compuesta con `APIRouter`;
+- modelos SQLAlchemy en `models/`;
+- contratos Pydantic reutilizables en `schemas/`;
+- lógica reutilizable en `services/`;
+- Argon2 para nuevos hashes con upgrade transparente de PBKDF2 legacy;
+- migraciones Alembic antes de iniciar ASGI;
+- `lifespan` sin DDL/backfills;
+- endpoints con I/O SQLAlchemy/filesystem síncrono declarados como `def`;
+- response models explícitos cuando el contrato sea sensible;
+- tests `TestClient` para matriz de autorización.
+
+## Compatibilidad temporal
+
+Pueden permanecer temporalmente:
+
+- enum `UserRole`;
+- columnas `can_*`;
+- `title`;
+- router legacy `/api/users`;
+- partes del router monolítico de gastos;
+- capa frontend `domain-normalization.js`.
+
+Condiciones:
+
+1. no son fuente de autorización;
+2. los `can_*` que vea código legacy se derivan del IAM efectivo;
+3. las rutas canónicas se registran antes que las rutas legacy equivalentes;
+4. la deuda se documenta y retira gradualmente.
+
+## Fuera de alcance de este PR
+
+- motor de DENY explícito;
+- scopes por organización/Área/recurso;
+- SSO/OIDC empresarial;
+- SCIM;
+- corrección completa de la fórmula funcional de quorum/aprobación;
+- rediseño completo del `main.jsx` monolítico;
+- motor genérico de workflow para módulos distintos de solicitudes de gasto.
+
+## Deuda funcional explícita
+
+La votación `MULTI_QUOTE` mantiene en este PR la regla legacy de resolución al participar toda la población invitada y existir un ganador único. La semántica de quorum/empates de cotizaciones requiere una especificación funcional independiente.
+
+Asimismo, la regla de mayoría del motor de aprobación existente no se declara corregida por este PR; la constitución vigente sigue siendo la fuente de verdad funcional para la futura refactorización del motor de decisiones.
