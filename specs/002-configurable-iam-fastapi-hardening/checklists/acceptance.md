@@ -8,20 +8,36 @@
 - [x] Usuarios pueden pertenecer a múltiples grupos.
 - [x] Usuarios pueden recibir roles directos opcionales.
 - [x] Usuarios pueden recibir permisos directos opcionales.
-- [x] Permisos efectivos se calculan como unión de las fuentes anteriores.
+- [x] Permisos efectivos de usuarios operativos se calculan como unión de las fuentes anteriores.
 - [x] La ausencia de permiso produce 403 en operaciones protegidas.
-- [x] `UserRole.ADMIN` no produce acceso automático.
+- [x] `UserRole.ADMIN` no produce acceso automático por sí mismo.
 - [x] Nombres de cargos/grupos/roles no son condiciones de autorización canónica.
 - [x] Cargos/posiciones no conceden permisos.
 
-## Cuenta técnica
+## Cuenta técnica por ambiente
 
 - [x] La cuenta técnica está identificada explícitamente en `system_accounts`.
-- [x] Sus permisos efectivos máximos son `config:manage` y `requests:read`.
-- [x] No puede crear solicitudes.
-- [x] No puede aprobar/votar.
-- [x] No puede cerrar solicitudes ni subir/reemplazar factura.
-- [x] Una asignación accidental de `requests:close` no cambia lo anterior.
+- [x] La política ampliada/restringida depende de `SystemAccount + ENVIRONMENT`, no de email/nombre/cargo/rol legacy.
+- [x] `ENVIRONMENT=production` limita sus permisos efectivos a `config:manage` y `requests:read`.
+- [x] En producción no puede crear solicitudes.
+- [x] En producción no puede aprobar/votar.
+- [x] En producción no puede cerrar solicitudes ni subir/reemplazar factura.
+- [x] En producción una asignación accidental de `requests:close` no cambia lo anterior.
+- [x] En producción no aparece en poblaciones financieras de `requests:approve`.
+- [x] En cualquier ambiente distinto de `production` recibe todos los permisos atómicos activos.
+- [x] En no-producción puede crear, consultar, aprobar/votar, cerrar y configurar.
+- [x] En no-producción puede aparecer en poblaciones de aprobación/votación cuando el permiso está activo.
+- [x] `RENDER=true` por sí solo no activa la segregación funcional de producción.
+- [x] Los runtimes alojados siguen pudiendo exigir secretos/CORS fuertes independientemente de la política funcional.
+
+## Contrato de usuario autenticado
+
+- [x] `UserOut` expone `permission_codes` efectivos.
+- [x] `UserOut` expone `can_close` como alias temporal de `requests:close`.
+- [x] Login calcula permisos efectivos antes de serializar al usuario.
+- [x] `current_user()` vuelve a derivar aliases legacy desde IAM en cada request autenticado.
+- [x] En no-producción el login de la cuenta técnica refleja permisos completos.
+- [x] En producción el backend sigue siendo autoridad aunque UI legacy muestre accidentalmente una acción no permitida.
 
 ## Interfaz gráfica
 
@@ -35,15 +51,17 @@
 - [x] Se pueden crear usuarios desde la consola IAM.
 - [x] Se pueden asignar grupos, roles directos, permisos directos y cargos a usuarios.
 - [x] Se pueden crear/renombrar/activar cargos.
-- [x] La UI muestra los permisos efectivos del usuario.
+- [x] La UI IAM muestra los permisos efectivos del usuario.
 - [x] Los permisos atómicos se muestran como catálogo de producto, no como códigos inventables por el cliente.
-- [x] La cuenta técnica se muestra protegida y no es editable como usuario operativo.
+- [x] La cuenta técnica se muestra identificada/protegida en administración IAM.
+- [ ] **Deuda frontend:** retirar el bypass visual `user.role === "ADMIN"` y `canClose={true}` del monolito; migrar visibilidad de acciones a `permission_codes`.
 
 ## FastAPI
 
 - [x] La app usa `APIRouter` por dominios/capacidades.
 - [x] `get_db()` entrega/cierra una sesión por request.
 - [x] Configuración está centralizada con `pydantic-settings`.
+- [x] Settings distinguen `is_production_environment` de validaciones de runtime alojado.
 - [x] `lifespan` no ejecuta DDL, create_all, seed de negocio ni backfill.
 - [x] `app/main.py` es un alias mínimo al application factory.
 - [x] Modelos nuevos no se declaran dentro de routers.
@@ -73,8 +91,8 @@
 - [x] Los scripts `.sh` se fuerzan a LF mediante `.gitattributes`.
 - [x] El Dockerfile normaliza CRLF defensivamente antes de ejecutar `start.sh`.
 - [x] Docker Compose espera el healthcheck del backend antes de iniciar Nginx.
-- [x] CI carga la imagen backend y valida que `/app/scripts/start.sh` exista, sea ejecutable y tenga un shebang Linux válido.
-- [x] CI intenta importar `scripts.bootstrap_admin` dentro de la imagen backend con una configuración de DB de prueba.
+- [x] CI carga la imagen backend y valida entrypoint + bootstrap importable.
+- [x] `render.yaml` productivo declara `ENVIRONMENT=production` explícitamente.
 - [ ] Antes del despliegue productivo se crea snapshot/backup de Neon.
 - [ ] Se ejecuta smoke test real de `alembic upgrade head` contra PostgreSQL/Neon de preview antes de producción.
 
@@ -87,17 +105,28 @@
 - [x] Cerrar/reemplazar factura requiere `requests:close`.
 - [x] Uploads canónicos requieren permisos explícitos.
 - [x] Motor de aprobación obtiene participantes desde IAM para políticas canónicas.
-- [ ] **Feature futura:** refactorizar fórmula funcional de quorum/mayoría de aprobación para cumplir exactamente la Constitución 2.2.2.
+- [ ] **Feature futura:** refactorizar fórmula funcional de quorum/mayoría de aprobación para cumplir exactamente la Constitución 2.3.0.
 - [ ] **Feature futura:** especificar/refactorizar quorum y empate de cotizaciones.
 
 ## Compatibilidad / deuda
 
 - [x] `can_*` legacy no son fuente de autorización; se derivan de IAM cuando código viejo los necesita.
+- [x] `can_close` es solo alias de compatibilidad; backend usa `requests:close`.
 - [x] Rutas canónicas se registran antes de rutas legacy equivalentes.
 - [x] `UserRole` queda documentado como compatibilidad temporal.
 - [ ] **Deuda:** retirar `/api/users` legacy cuando el frontend operativo deje de consumirlo.
 - [ ] **Deuda:** retirar ramas por `UserRole` del router monolítico de gastos una vez extraídas todas sus rutas.
 - [ ] **Deuda:** modularizar `frontend/src/main.jsx` y retirar `domain-normalization.js`.
+
+## Testing de política ambiental
+
+- [x] Test no-producción verifica todos los permisos activos para cuenta técnica.
+- [x] Test no-producción verifica `permission_codes` y aliases en login.
+- [x] Test no-producción verifica inclusión de cuenta técnica en `users_with_permission('requests:approve')`.
+- [x] Test producción verifica solo config/read.
+- [x] Test producción verifica que un `requests:close` directo accidental es filtrado.
+- [x] Test producción verifica 403 en endpoint de cierre.
+- [x] Test producción verifica exclusión de población de aprobación.
 
 ## Calidad
 
@@ -110,15 +139,13 @@
 
 ## Documentación
 
-- [x] Constitución actualizada.
-- [x] Spec funcional creada/actualizada.
-- [x] Plan técnico creado/actualizado.
+- [x] Constitución actualizada a 2.3.0.
+- [x] Spec funcional actualizada.
+- [x] Plan técnico actualizado.
 - [x] Criterios de aceptación actualizados.
-- [x] README actualizado.
-- [x] Prompt maestro actualizado.
-- [x] Documentación IAM/FastAPI actualizada.
-- [x] Índice de documentación actualizado.
-- [x] Terminología revisada; este cambio no altera términos funcionales.
-- [x] HISTORY actualizado.
-- [x] CHANGELOG actualizado.
-- [ ] Descripción final del PR debe reflejar el bootstrap por módulo y el nuevo smoke test.
+- [ ] README debe reflejar la nueva política ambiental.
+- [ ] Prompt maestro debe reflejar la nueva política ambiental.
+- [ ] Documentación IAM/FastAPI debe reflejar la nueva política ambiental.
+- [ ] HISTORY debe registrar la decisión.
+- [ ] CHANGELOG debe registrar el cambio.
+- [ ] Índice documental/PR deben quedar sincronizados.
