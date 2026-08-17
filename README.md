@@ -1,311 +1,333 @@
 # Flujo de Control de Gastos
 
-Aplicación web para solicitar, evaluar, aprobar, ejecutar y documentar gastos con evidencia verificable de cada decisión.
+Aplicación web para solicitar, evaluar, aprobar, ejecutar y documentar gastos con trazabilidad y evidencia verificable.
 
-El producto está diseñado para ser neutral respecto al tipo de organización: puede utilizarse en empresas, PH u otras organizaciones sin que el núcleo dependa de conceptos inmobiliarios.
+El producto es **neutral respecto al tipo de organización**. Un PH, empresa, comité o área de negocio puede configurar su estructura sin modificar el código.
 
-## Propósito
+## Principios del producto
 
-Cada solicitud debe convertirse en un expediente digital trazable que permita reconstruir:
+- Backend FastAPI es la autoridad final.
+- La estructura organizacional es **dato configurable**, no código.
+- `Usuario`, `Grupo`, `Rol`, `Permiso` y `Cargo` son conceptos separados.
+- Un cargo no concede permisos.
+- No existe un superusuario financiero implícito.
+- Área y Categoría son dimensiones independientes.
+- Documentos e historial forman parte del expediente auditable.
+- Migraciones son versionadas con Alembic y no se ejecutan dentro del lifespan de FastAPI.
 
-- quién creó la solicitud y cuándo;
-- qué Área y Categoría se asociaron al gasto;
-- qué proveedores, opciones y cotizaciones fueron evaluados;
-- quién votó, aprobó, rechazó o solicitó corrección;
-- qué documentos estaban disponibles en cada etapa;
-- cuál fue la opción seleccionada;
-- qué factura corresponde al gasto ejecutado;
-- cómo evolucionó el flujo sin alterar silenciosamente su historia.
+## Terminología
 
-## Terminología canónica
+- **Usuario**: cuenta que interactúa con el sistema.
+- **Grupo**: conjunto configurable de usuarios.
+- **Rol**: conjunto configurable de permisos.
+- **Permiso**: capacidad atómica del producto.
+- **Cargo / Posición**: metadato organizacional descriptivo; no autoriza.
+- **Área**: unidad/departamento/función asociada al gasto.
+- **Categoría**: naturaleza del bien o servicio.
 
-La aplicación utiliza los siguientes términos funcionales:
-
-- **Usuario**: cuenta que interactúa con el sistema. La UI usa Usuario/Usuarios, no Persona/Personas como nombre del dominio de cuentas.
-- **Área**: unidad, departamento o función organizacional asociada al gasto.
-- **Categoría**: naturaleza del bien o servicio adquirido.
-
-Ejemplo:
+Ejemplo de clasificación:
 
 ```text
 Área: IT
 Categoría: Equipos
 ```
 
-Área y Categoría son catálogos independientes. Una misma Categoría puede habilitarse para varias Áreas.
+## IAM configurable
 
-Documentación detallada:
+La autorización se calcula desde PostgreSQL:
 
-- `docs/TERMINOLOGY.md`
-- `docs/CLASSIFICATION_MODEL.md`
+```text
+Usuario
+  ├─ Grupos ──> Roles ──> Permisos
+  ├─ Roles directos ──> Permisos
+  └─ Permisos directos
+```
 
-## Dominio excluido
+Los permisos efectivos son la unión de esas fuentes. Si una capacidad no está permitida explícitamente, el resultado es DENY.
 
-El modelo canónico no debe depender de:
+### Permisos atómicos iniciales
 
-- apartamentos;
-- propietarios/copropietarios;
-- residentes/arrendatarios;
-- `PersonType`;
-- `OwnershipRole`;
-- relaciones usuario-apartamento.
+| Código | Capacidad |
+| --- | --- |
+| `requests:read` | Consultar solicitudes/documentos autorizados |
+| `requests:create` | Crear/corregir solicitudes y cargar soportes |
+| `requests:approve` | Participar en votaciones y decisiones |
+| `requests:close` | Subir/reemplazar factura y cerrar |
+| `config:manage` | Administrar configuración e IAM |
 
-La limpieza física de datos legacy es una migración separada y requiere respaldo previo.
+Los clientes pueden crear grupos, roles, cargos y asignaciones desde la interfaz; no pueden inventar permisos que el backend no implemente.
+
+### Cuenta técnica
+
+La cuenta creada por `ADMIN_*` es una cuenta de sistema protegida. Sus permisos efectivos máximos son:
+
+```text
+config:manage
+requests:read
+```
+
+No puede crear, aprobar ni cerrar solicitudes, incluso si una asignación posterior intenta concederle esos permisos.
+
+## Consola gráfica de Accesos
+
+En **Configuración → Accesos** se administran:
+
+- usuarios;
+- grupos;
+- roles;
+- permisos;
+- cargos;
+- miembros de grupos;
+- roles de grupos;
+- roles directos;
+- permisos directos;
+- cargos de cada usuario;
+- permisos efectivos.
+
+Ejemplo PH, configurado como datos:
+
+```text
+Grupo: Administración PH
+  Rol: Gestión de solicitudes
+    requests:create
+    requests:close
+    requests:read
+
+Grupo: Junta Directiva
+  Rol: Aprobador
+    requests:approve
+    requests:read
+```
+
+Una empresa puede reemplazar estos grupos por Procurement, Finance, IT, Executive Committee o cualquier estructura propia sin cambiar el código.
 
 ## Arquitectura
 
 ```mermaid
 flowchart LR
-    U[Usuario] --> V[Frontend React + Vite<br/>Vercel]
-    V -->|HTTPS / JSON| R[Backend FastAPI<br/>Render]
-    R --> N[(PostgreSQL<br/>Neon)]
-    R --> D[(Documentos privados<br/>Render Disk)]
-    R -->|HTTPS API| B[Brevo]
+    U[Usuario] --> F[React + Vite / Vercel]
+    F -->|HTTPS JSON| A[FastAPI / Render]
+    A --> D[(PostgreSQL / Neon)]
+    A --> S[(Disco privado Render)]
+    A --> E[Brevo API]
 ```
 
-| Componente | Implementación | Responsabilidad |
-| --- | --- | --- |
-| Frontend | React + Vite / Vercel | UX, formularios, navegación y consumo de API. |
-| Backend | FastAPI + SQLAlchemy / Docker / Render | Negocio, autorización, auditoría y acceso a datos. |
-| Base de datos | PostgreSQL / Neon | Usuarios, solicitudes, catálogos, políticas y eventos. |
-| Documentos | Render persistent disk | Cotizaciones, facturas y evidencia privada. |
-| Correo | Brevo HTTPS API | Invitaciones, votaciones, aprobaciones y notificaciones. |
-| Autenticación | JWT | Expiración absoluta, inactividad y revocación. |
-
-El frontend nunca accede directamente a PostgreSQL o al almacenamiento privado. El backend es la autoridad final.
-
-## Clasificación Área + Categoría
-
-### Área
-
-Ejemplos:
-
-- Administración
-- Operaciones
-- IT
-- Mantenimiento
-- Marketing
-- Recursos Humanos
-
-### Categoría
-
-Ejemplos:
-
-- Equipos
-- Servicios / Consultoría
-- Insumos
-- Software / Licencias
-- Mobiliario
-- Capacitación
-
-### Relación
-
-Una Categoría puede habilitarse para múltiples Áreas mediante una relación configurable Área ↔ Categoría.
-
-API canónica:
+Backend:
 
 ```text
-GET    /api/areas
-POST   /api/areas
-PATCH  /api/areas/{area_id}
-GET    /api/areas/categories
-POST   /api/areas/categories
-PATCH  /api/areas/categories/{category_id}
-POST   /api/areas/{area_id}/categories
-POST   /api/areas/{area_id}/categories/{category_id}
-DELETE /api/areas/{area_id}/categories/{category_id}
+backend/app/
+├── api/          # HTTP / APIRouter
+├── core/         # Settings, DB, security, rate limit
+├── models/       # SQLAlchemy
+├── schemas/      # Pydantic
+├── services/     # lógica reutilizable
+├── application.py
+└── main.py       # alias de compatibilidad
 ```
 
-## Compatibilidad legacy de clasificación
+### FastAPI
 
-Durante la migración se mantienen temporalmente nombres físicos anteriores para no romper expedientes históricos:
-
-```text
-expenses.expense_type        -> Área
-expenses.expense_subcategory -> Categoría
-expense_categories           -> almacenamiento legacy de Áreas
-expense_subcategories        -> puente temporal Área-Categoría
-```
-
-Las estructuras canónicas nuevas incluyen:
-
-```text
-expense_category_catalog
-expense_area_categories
-```
-
-La compatibilidad física no cambia el lenguaje funcional: el producto usa **Área + Categoría**.
-
-## Usuarios, perfiles y permisos
-
-El backend utiliza la entidad `User` y rutas `/api/users`.
-
-Los usuarios pueden incluir identidad, nombres, apellidos, correo, teléfono, cargo/perfil y estado. Las capacidades deben evolucionar hacia autorización completamente persistida en PostgreSQL; no deben depender de correos, IDs mágicos o conceptos inmobiliarios.
-
-El administrador técnico inicial se crea mediante `ADMIN_*`, pero no debe utilizarse su nombre o correo como regla de autorización.
-
-## Solicitudes
-
-Tipos principales:
-
-- `SIMPLE`: una opción/cotización.
-- `MULTI_QUOTE`: múltiples opciones y una ronda de selección antes de aprobación.
-
-Estados vigentes incluyen:
-
-```text
-QUOTATION_VOTING
-SUBMITTED
-PENDING_APPROVAL
-APPROVED
-REJECTED
-CANCELLED
-CLOSED
-NEEDS_REVISION
-```
-
-Aprobar no equivale a cerrar. Una solicitud aprobada permanece en proceso hasta completar los requisitos de ejecución/cierre.
-
-## Documentos y auditoría
-
-Los documentos son privados y deben validarse por contenido real. Las sustituciones deben preservar versiones anteriores.
-
-Las acciones relevantes deben ser trazables con actor, fecha/hora, entidad, cambio de estado y motivo/comentario cuando aplique. Los eventos históricos críticos son append-only.
+- `APIRouter` separa dominios/capacidades.
+- `get_db()` entrega una sesión SQLAlchemy por request y la cierra siempre.
+- configuración centralizada con `pydantic-settings`.
+- `lifespan` no ejecuta DDL/backfills/seeds de negocio.
+- rutas nuevas con SQLAlchemy/filesystem síncrono se implementan con `def` para usar el threadpool de FastAPI.
+- contratos sensibles usan response models explícitos.
+- tests HTTP usan `FastAPI TestClient`.
 
 ## Seguridad
 
-Configuración base:
+- JWT firmado con expiración absoluta.
+- inactividad de sesión configurable.
+- revocación mediante `session_version`.
+- Argon2 para hashes nuevos mediante `pwdlib`.
+- hashes PBKDF2 legacy se migran automáticamente a Argon2 tras login exitoso.
+- rate limiting separado para read/write/upload/sensitive.
+- CORS explícito en producción.
+- documentos privados y validación de firma real de archivo.
+- autorización por permisos persistidos; no por emails/nombres de cargos/IDs mágicos.
+- cuenta técnica segregada del flujo financiero.
 
-```env
-TOKEN_EXPIRE_MINUTES=480
-SESSION_IDLE_MINUTES=30
-USER_READ_RATE_LIMIT=120
-USER_WRITE_RATE_LIMIT=30
-USER_UPLOAD_RATE_LIMIT=6
-USER_SENSITIVE_RATE_LIMIT=10
-DEFAULT_PAGE_SIZE=25
-MAX_PAGE_SIZE=100
-QUERY_TIMEOUT_MS=5000
-APP_TIME_ZONE=America/Panama
+## Base de datos y migraciones
+
+Alembic es la herramienta canónica.
+
+Migraciones IAM actuales:
+
+```text
+backend/alembic/versions/
+├── 20260817_0001_iam_foundation.py
+└── 20260817_0002_system_accounts.py
 ```
 
-Principios:
+El contenedor ejecuta antes de FastAPI:
 
-- JWT con expiración absoluta;
-- timeout por inactividad humana;
-- revocación por versión de sesión;
-- rate limiting diferenciado;
-- CORS restrictivo;
-- secretos fuera de Vite y logs;
-- ORM/consultas parametrizadas;
-- autorización siempre validada en backend;
-- archivos privados con validación MIME + firma real.
+```text
+alembic upgrade head
+python scripts/bootstrap_admin.py
+uvicorn app.application:app
+```
+
+Esto evita DDL dentro del lifespan y no depende de una función `preDeployCommand` de pago en Render.
+
+> Para despliegues futuros con múltiples réplicas, las migraciones deben moverse a una etapa única de release/pre-deploy para evitar carreras.
+
+Antes de una migración productiva, crear snapshot/branch de respaldo en Neon.
 
 ## Desarrollo local
 
+### Requisitos
+
+- Python 3.12+
+- Node.js 20+
+- PostgreSQL/Neon
+
 ### Backend
 
-```powershell
+```bash
 cd backend
 python -m venv .venv
-.venv\Scripts\Activate.ps1
+# activar .venv
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+alembic upgrade head
+python scripts/bootstrap_admin.py
+uvicorn app.application:app --reload
 ```
+
+`uvicorn app.main:app --reload` continúa funcionando como alias de compatibilidad.
 
 ### Frontend
 
-```powershell
+```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-## Variables de entorno
+## Variables principales
 
-### Backend / Render
+Backend:
 
 ```env
 ENVIRONMENT=production
-DATABASE_URL=<URL PRIVADA DE NEON>
-PUBLIC_URL=<URL HTTPS DEL FRONTEND>
-CORS_ALLOWED_ORIGINS=<ORIGENES HTTPS AUTORIZADOS>
-SECRET_KEY=<SECRETO ALEATORIO>
-ANALYTICS_HASH_KEY=<SECRETO ALEATORIO DIFERENTE>
+DATABASE_URL=<NEON_URL>
+SECRET_KEY=<32+ RANDOM CHARS>
+ANALYTICS_HASH_KEY=<DIFFERENT 32+ RANDOM CHARS>
+PUBLIC_URL=<VERCEL_URL>
+CORS_ALLOWED_ORIGINS=<VERCEL_URL>
 TOKEN_EXPIRE_MINUTES=480
 SESSION_IDLE_MINUTES=30
 APP_TIME_ZONE=America/Panama
+
 EMAIL_MODE=brevo
-BREVO_API_KEY=<CLAVE BREVO>
-BREVO_SENDER_NAME=<NOMBRE VISIBLE>
-EMAIL_FROM=<CORREO VERIFICADO>
+BREVO_API_KEY=<SECRET>
+BREVO_SENDER_NAME=Gestión de Solicitudes
+EMAIL_FROM=<VERIFIED_EMAIL>
+
 ADMIN_NAME=Administrador del sistema
-ADMIN_EMAIL=<CORREO ADMIN TECNICO>
-ADMIN_PASSWORD=<CONTRASENA SEGURA>
+ADMIN_EMAIL=<TECHNICAL_ADMIN_EMAIL>
+ADMIN_PASSWORD=<12+ SECURE CHARS>
+
 UPLOAD_DIR=/app/uploads
 MAX_UPLOAD_STORAGE_MB=450
 ```
 
-### Frontend / Vercel
+Frontend:
 
 ```env
-VITE_API_URL=<URL HTTPS DEL BACKEND>
+VITE_API_URL=<RENDER_BACKEND_URL>
 VITE_TIME_ZONE=America/Panama
 ```
 
-Las variables `VITE_*` son visibles en el navegador y no pueden contener secretos.
+Las variables `VITE_*` son públicas porque quedan empaquetadas en el navegador.
 
-## Pruebas y CI
+## Clasificación Área + Categoría
 
-Backend:
+Área y Categoría son catálogos independientes con relación configurable N:M.
 
-```powershell
+```text
+Administración ─┐
+IT              ├── Equipos
+Operaciones     ┘
+```
+
+No se duplica la categoría `Equipos` por cada Área.
+
+Por compatibilidad histórica todavía existen nombres físicos legacy (`expense_type`, `expense_subcategory`, etc.). El contrato funcional nuevo es siempre Área + Categoría.
+
+## Flujo de solicitudes
+
+### Simple
+
+Una solicitud simple contiene proveedor, monto y soporte/cotización. La creación requiere `requests:create`.
+
+### Múltiples cotizaciones
+
+La población de votación se obtiene desde usuarios con `requests:approve`, excluyendo al solicitante y cuentas técnicas. Las invitaciones guardadas representan el snapshot de participantes de esa ronda.
+
+> La regla exacta futura de quorum/empate de cotizaciones es una decisión funcional separada. El refactor IAM no declara resuelta esa semántica.
+
+### Aprobación
+
+La población canónica de aprobadores se obtiene desde `requests:approve`, no desde cargos como Presidente/Tesorero ni flags `can_approve`.
+
+> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.2.0.
+
+### Cierre
+
+Cerrar o reemplazar factura requiere `requests:close`. `APPROVED` no equivale a `CLOSED`.
+
+## Testing
+
+```bash
 cd backend
-python -m compileall -q app
 python -m unittest discover -s tests -v
 ```
 
-Frontend:
+Incluye pruebas HTTP IAM con `FastAPI TestClient` y SQLite aislada.
 
-```powershell
+```bash
 cd frontend
-npm ci
 npm run build
 ```
 
-CI también construye las imágenes Docker de backend y frontend.
+CI ejecuta:
 
-## Documentación y Spec-Driven Development
+- Python compile;
+- backend tests;
+- frontend production build;
+- backend Docker build;
+- frontend Docker build.
 
-La documentación forma parte obligatoria del Definition of Done.
+## Documentación
 
-Fuentes principales:
+Orden de autoridad:
 
-- `.specify/memory/constitution.md` — reglas transversales del proyecto.
-- `specs/001-domain-normalization/spec.md` — requisitos e historias de la normalización actual.
-- `specs/001-domain-normalization/plan.md` — diseño técnico y compatibilidad.
-- `specs/001-domain-normalization/checklists/acceptance.md` — criterios verificables.
-- `PROMPT_RECONSTRUCCION.md` — comportamiento canónico para reconstrucción.
-- `docs/DOCUMENTATION_POLICY.md` — qué documentos revisar en cada cambio.
-- `docs/TERMINOLOGY.md` — lenguaje funcional canónico.
-- `docs/HISTORY.md` — decisiones funcionales y técnicas.
-- `CHANGELOG.md` — cambios entregables.
+1. `.specify/memory/constitution.md`
+2. `specs/*/spec.md`
+3. criterios de aceptación
+4. `specs/*/plan.md`
+5. código
+6. README/prompts/docs derivados
 
-**Regla:** un cambio no está completo si el código y la documentación afectada discrepan sin que la diferencia esté explícitamente documentada como transición/deuda.
+Documentos principales:
 
-## Migraciones destructivas
+- `docs/DOCUMENTATION_POLICY.md`
+- `docs/TERMINOLOGY.md`
+- `docs/CLASSIFICATION_MODEL.md`
+- `docs/IAM_MODEL.md`
+- `docs/FASTAPI_ARCHITECTURE.md`
+- `docs/HISTORY.md`
+- `CHANGELOG.md`
+- `PROMPT_RECONSTRUCCION.md`
 
-Antes de eliminar tablas, columnas o datos productivos:
+Un cambio de comportamiento sin su documentación correspondiente se considera incompleto.
 
-1. crear backup/snapshot;
-2. inventariar datos y dependencias;
-3. aplicar migración versionada en staging/test;
-4. validar integridad y aplicación;
-5. documentar recuperación real;
-6. aplicar en producción solo después de validación.
+## Deuda de transición conocida
 
-Un downgrade que recrea estructura no recupera datos borrados.
-
-## Documentación adicional
-
-Consulta `docs/README.md` para el índice completo del proyecto.
+- `UserRole`, `title` y `can_*` permanecen temporalmente para compatibilidad con el frontend/router legacy; no autorizan.
+- `/api/users` legacy se mantiene detrás de `config:manage` mientras migra la UI operacional.
+- `frontend/src/main.jsx` sigue siendo monolítico.
+- `domain-normalization.js` sigue como capa temporal.
+- partes no extraídas de `api/expenses.py` todavía contienen lógica legacy, pero las rutas canónicas críticas se registran antes y usan IAM.
+- quorum/mayoría de aprobación y reglas de empate de cotizaciones requieren specs funcionales separadas.
