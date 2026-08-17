@@ -90,6 +90,31 @@ El entrypoint Docker ejecuta `alembic upgrade head` y el bootstrap técnico ante
 
 Esto permite usar el patrón incluso en planes de Render que no incluyen una etapa pre-deploy separada. En despliegues con múltiples réplicas, la migración debe moverse a una etapa única para evitar carreras.
 
+## Portabilidad Docker Windows → Linux
+
+Los scripts shell ejecutados por la imagen backend son artefactos Linux aunque el checkout se realice en Windows.
+
+El repositorio aplica dos defensas:
+
+1. `.gitattributes` fuerza `*.sh text eol=lf`.
+2. `backend/Dockerfile` elimina `\r` de los scripts `.sh` durante el build antes de ejecutar `chmod +x`.
+
+Esto evita el caso en que Docker muestra:
+
+```text
+exec /app/scripts/start.sh: no such file or directory
+```
+
+cuando el archivo existe pero el shebang quedó materializado como `/bin/sh\r` por CRLF.
+
+En Docker Compose local, Nginx no debe iniciar únicamente porque el contenedor backend fue creado. Debe esperar a que `/api/health` pase. Así, si Alembic, bootstrap o Uvicorn fallan, el error principal queda visible en `backend` en lugar de producir primero el secundario:
+
+```text
+host not found in upstream "backend"
+```
+
+`tests/test_container_portability.py` protege estas reglas de regresión.
+
 ## Seguridad
 
 `require_permission()` es una dependencia FastAPI que consulta permisos efectivos IAM en PostgreSQL.
@@ -117,6 +142,8 @@ Al crear endpoints nuevos se debe declarar `response_model` salvo que la respues
 Los tests de autorización deben comprobar tanto ALLOW como DENY. Un test directo de una función auxiliar no sustituye un test HTTP para rutas críticas.
 
 `tests/test_migrations.py` verifica la topología de las revisiones Alembic sin conectarse a producción.
+
+`tests/test_container_portability.py` verifica que las defensas de LF y healthcheck local permanezcan en el repositorio.
 
 ## Router legacy
 
