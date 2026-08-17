@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     email_from: str = 'noreply@example.com'
     brevo_api_key: str | None = None
     brevo_sender_name: str = 'Gestión de Gastos'
+    smtp_host: str = 'smtp.gmail.com'
+    smtp_port: int = Field(default=465, ge=1, le=65535)
+    smtp_user: str = ''
+    smtp_password: str = ''
+    smtp_security: str = 'ssl'
 
     admin_name: str = 'Administrador del sistema'
     admin_email: str = 'admin@example.com'
@@ -63,24 +68,34 @@ class Settings(BaseSettings):
             raise ValueError('EMAIL_MODE debe ser console, brevo o smtp')
         return normalized
 
-    @model_validator(mode='after')
-    def validate_production_security(self):
-        if not self.is_production:
-            return self
+    @field_validator('smtp_security')
+    @classmethod
+    def validate_smtp_security(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {'ssl', 'starttls'}:
+            raise ValueError('SMTP_SECURITY debe ser ssl o starttls')
+        return normalized
 
+    @model_validator(mode='after')
+    def validate_runtime_configuration(self):
         errors: list[str] = []
-        if len(self.secret_key) < 32 or self.secret_key == 'development-only-change-me':
-            errors.append('SECRET_KEY debe contener al menos 32 caracteres')
-        if len(self.analytics_hash_key) < 32 or self.analytics_hash_key == self.secret_key:
-            errors.append('ANALYTICS_HASH_KEY debe ser distinto de SECRET_KEY y tener al menos 32 caracteres')
-        if len(self.admin_password) < 12 or self.admin_password == 'Admin123!':
-            errors.append('ADMIN_PASSWORD debe contener al menos 12 caracteres')
-        if not self.cors_origins or '*' in self.cors_origins or any(
-            not origin.startswith('https://') for origin in self.cors_origins
-        ):
-            errors.append('CORS_ALLOWED_ORIGINS debe contener únicamente orígenes HTTPS explícitos')
+        if self.email_mode == 'smtp' and (not self.smtp_user or not self.smtp_password):
+            errors.append('SMTP_USER y SMTP_PASSWORD son obligatorios cuando EMAIL_MODE=smtp')
         if self.email_mode == 'brevo' and not self.brevo_api_key:
             errors.append('BREVO_API_KEY es obligatorio cuando EMAIL_MODE=brevo')
+
+        if self.is_production:
+            if len(self.secret_key) < 32 or self.secret_key == 'development-only-change-me':
+                errors.append('SECRET_KEY debe contener al menos 32 caracteres')
+            if len(self.analytics_hash_key) < 32 or self.analytics_hash_key == self.secret_key:
+                errors.append('ANALYTICS_HASH_KEY debe ser distinto de SECRET_KEY y tener al menos 32 caracteres')
+            if len(self.admin_password) < 12 or self.admin_password == 'Admin123!':
+                errors.append('ADMIN_PASSWORD debe contener al menos 12 caracteres')
+            if not self.cors_origins or '*' in self.cors_origins or any(
+                not origin.startswith('https://') for origin in self.cors_origins
+            ):
+                errors.append('CORS_ALLOWED_ORIGINS debe contener únicamente orígenes HTTPS explícitos')
+
         if errors:
             raise ValueError('; '.join(errors))
         return self
