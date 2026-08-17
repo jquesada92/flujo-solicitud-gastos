@@ -212,6 +212,33 @@ Cada solicitud conserva como mínimo:
 
 Crear/corregir/cargar soporte requiere `requests:create`.
 
+### Correcciones
+
+`Corregir / reenviar` debe preservar siempre el `request_type` almacenado:
+
+```text
+SIMPLE      -> SIMPLE
+MULTI_QUOTE -> MULTI_QUOTE
+```
+
+El backend debe rechazar con `409 Conflict` cualquier intento de cambiar el tipo durante `resubmit`, aunque el frontend envíe un valor por defecto incorrecto.
+
+Para una corrección MULTI_QUOTE:
+
+- restaura en UI las opciones existentes;
+- conserva los attachments existentes como evidencia;
+- permite editar proveedor, monto, URL y observaciones;
+- conserva por ahora la cantidad de opciones;
+- genera un `flow_id` nuevo;
+- invalida/elimina votos e invitaciones vigentes de la ronda anterior;
+- conserva eventos históricos append-only;
+- crea nuevas invitaciones desde `requests:approve`;
+- vuelve a `QUOTATION_VOTING`.
+
+No conviertas SIMPLE ↔ MULTI_QUOTE como efecto colateral de una corrección. Si el producto requiere esa conversión, especifícala como una operación distinta.
+
+Mientras `ExpenseForm` permanezca en el `main.jsx` monolítico, puede existir un transform Vite temporal que hidrate correctamente drafts MULTI_QUOTE, pero debe fallar el build si deja de aplicar y debe retirarse al modularizar el formulario.
+
 ## 9. Cotizaciones
 
 SIMPLE exige proveedor, monto y soporte.
@@ -266,6 +293,7 @@ Reglas:
 - `lifespan` nunca ejecuta DDL/backfills/seeds de negocio.
 - Alembic para migraciones versionadas.
 - SQLAlchemy síncrono: rutas con DB/filesystem bloqueante deben ser `def` o hacer offload explícito.
+- invariantes de negocio como preservar `request_type` durante una corrección deben vivir también en backend, no solo en estado React.
 
 ## 13. Passwords y JWT
 
@@ -279,6 +307,8 @@ Reglas:
 ## 14. Documentos
 
 Admite PDF/JPEG/PNG/WEBP. Valida MIME, firma real, tamaño, cuota total y nombre interno impredecible. El disco es privado y la descarga pasa por autorización backend.
+
+Una corrección debe reconocer soportes existentes sin exigir que un `<input type="file">` del navegador pueda prellenarse.
 
 ## 15. Correo
 
@@ -331,6 +361,16 @@ Matriz IAM mínima:
 - permiso directo es aditivo;
 - rol técnico no se edita desde UI.
 
+Matriz de correcciones mínima:
+
+- MULTI_QUOTE corregida permanece MULTI_QUOTE;
+- `flow_id` cambia;
+- opciones y soportes existentes se conservan;
+- votos vigentes se limpian;
+- invitaciones se reemplazan;
+- MULTI_QUOTE → SIMPLE por `resubmit` devuelve 409;
+- frontend build falla si la hidratación legacy deja de poder parchearse.
+
 CI ejecuta Python compile, backend tests, frontend build y builds/smoke tests Docker.
 
 ## 18. Seguridad
@@ -350,14 +390,16 @@ CI ejecuta Python compile, backend tests, frontend build y builds/smoke tests Do
 
 Eventos significativos deben conservar actor, tiempo, entidad, cambios y motivo. La evolución del IAM debe incorporarse a auditoría para que cambios de roles/grupos/permisos no sean silenciosos.
 
+Una corrección debe conservar el historial de rondas anteriores aunque limpie el estado vigente de votos/invitaciones.
+
 ## 20. Documentación obligatoria
 
 Un cambio no está terminado hasta revisar y actualizar cuando aplique Constitución, spec, plan, criterios de aceptación, README, este prompt, documentación técnica/funcional, terminología, HISTORY, CHANGELOG y PR.
 
 ## 21. Deuda permitida solo si está explícita
 
-Durante la transición pueden existir `UserRole`, `can_*`, router legacy `/api/users`, `main.jsx` monolítico y `domain-normalization.js`.
+Durante la transición pueden existir `UserRole`, `can_*`, router legacy `/api/users`, `main.jsx` monolítico, `domain-normalization.js` y un transform Vite temporal de correcciones.
 
-No los presentes como arquitectura objetivo. No deben ser fuente de autorización.
+No los presentes como arquitectura objetivo. No deben ser fuente de autorización ni de invariantes críticos sin defensa backend.
 
 No reconstruyas funcionalidad inmobiliaria ni vuelvas a introducir roles/cargos organizacionales hardcodeados.
