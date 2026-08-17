@@ -32,6 +32,9 @@
 - Modelos de clasificación se movieron fuera de `api/areas.py`.
 - Servicio de correo usa Settings y branding organizacional neutral.
 - README, prompt maestro, Constitución, terminología e historia se actualizan al nuevo modelo.
+- Docker Compose local espera a que `/api/health` del backend esté sano antes de iniciar Nginx.
+- `.gitattributes` fuerza LF para scripts shell y archivos de configuración Linux.
+- El backend Docker normaliza CRLF de scripts `.sh` durante el build para soportar checkouts Windows.
 
 ### Security
 - System Accounts filtran permisos financieros incluso ante una asignación accidental.
