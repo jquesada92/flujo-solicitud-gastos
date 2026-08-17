@@ -53,6 +53,18 @@ El administrador técnico de la plataforma no debe formar parte del proceso fina
 - `FastAPI TestClient` agregado para la matriz IAM;
 - application factory y routers canónicos registrados antes de compatibilidad legacy.
 
+### Baseline de base de datos
+
+Al retirar `Base.metadata.create_all()` del startup se detectó que una instalación nueva también necesitaba una ruta determinista de creación. Se añadió `20260817_0000_application_baseline.py`, libre del dominio inmobiliario, y se dejó una única cadena Alembic:
+
+```text
+0000 application baseline → 0001 IAM foundation → 0002 system accounts
+```
+
+El baseline conserva tablas existentes cuando se aplica sobre la base actual y crea el esquema base cuando se ejecuta sobre una base limpia. Una prueba de topología falla si aparecen múltiples heads o se rompe esta cadena.
+
+El CI valida código y topología Alembic; antes del despliegue productivo continúa siendo obligatorio ejecutar un smoke test real de las migraciones contra PostgreSQL/Neon de preview con respaldo previo.
+
 ### Despliegue Render
 
 Se evaluó `preDeployCommand`. Aunque Render lo recomienda para migraciones, está asociado a servicios pagos. Para mantener compatibilidad con un despliegue económico, el contenedor ejecuta Alembic + bootstrap antes de `uvicorn` mediante `scripts/start.sh`. En un futuro despliegue con múltiples réplicas, la migración debe moverse a una etapa única de release/pre-deploy.
