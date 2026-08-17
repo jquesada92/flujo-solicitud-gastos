@@ -6,6 +6,7 @@ services:
     dockerfilePath: ./Dockerfile
     autoDeploy: false
     healthCheckPath: /api/health
+    preDeployCommand: alembic upgrade head && python scripts/bootstrap_admin.py
     envVars:
       - key: ENVIRONMENT
         value: production
@@ -54,7 +55,7 @@ services:
       - key: BREVO_API_KEY
         sync: false
       - key: BREVO_SENDER_NAME
-        value: PH · Gestión de Gastos
+        value: Gestión de Gastos
       - key: UPLOAD_DIR
         value: /app/uploads
       - key: MAX_UPLOAD_STORAGE_MB
