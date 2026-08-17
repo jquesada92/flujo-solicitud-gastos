@@ -65,4 +65,5 @@
 - [x] CHANGELOG actualizado.
 - [x] Índice documental actualizado.
 - [x] Terminología actualizada para SIMPLE, MULTI_QUOTE y Corrección / Corregir y reenviar.
+- [x] Feature 002 revisada para referenciar la Constitución vigente 2.3.1 y Feature 003.
 - [ ] Descripción final del PR debe incluir la corrección y la Constitución 2.3.1.
