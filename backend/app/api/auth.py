@@ -7,8 +7,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import create_token, current_user, hash_password, normalize_email, verify_password
+from app.core.security import (
+    create_token,
+    current_user,
+    hash_password,
+    normalize_email,
+    verify_password,
+    verify_password_and_upgrade,
+)
 from app.models.entities import User
+from app.schemas.auth import LoginResponse, TokenResponse
 from app.schemas.user import ChangePasswordRequest, LoginRequest, UserOut
 
 router = APIRouter()
@@ -48,20 +56,28 @@ def _clear_login_failures(key: str) -> None:
         _login_attempts.pop(key, None)
 
 
-@router.post('/login')
+@router.post('/login', response_model=LoginResponse)
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
     email = normalize_email(str(payload.email))
     key = _login_key(request, email)
     _check_login_limit(key)
     user = db.scalar(select(User).where(func.lower(User.email) == email))
-    if not user or not user.active or not verify_password(payload.password, user.password_hash):
+    if not user or not user.active:
         _record_login_failure(key)
         raise HTTPException(status_code=401, detail='Correo o contraseña incorrectos')
+
+    verified, upgraded_hash = verify_password_and_upgrade(payload.password, user.password_hash)
+    if not verified:
+        _record_login_failure(key)
+        raise HTTPException(status_code=401, detail='Correo o contraseña incorrectos')
+
     _clear_login_failures(key)
+    if upgraded_hash:
+        user.password_hash = upgraded_hash
     user.last_activity_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)
-    return {'access_token': create_token(user), 'token_type': 'bearer', 'user': UserOut.model_validate(user)}
+    return LoginResponse(access_token=create_token(user), user=UserOut.model_validate(user))
 
 
 @router.get('/me', response_model=UserOut)
@@ -69,16 +85,20 @@ def me(user: User = Depends(current_user)):
     return user
 
 
-@router.post('/activity')
+@router.post('/activity', response_model=TokenResponse)
 def record_activity(db: Session = Depends(get_db), user: User = Depends(current_user)):
     user.last_activity_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)
-    return {'access_token': create_token(user), 'token_type': 'bearer'}
+    return TokenResponse(access_token=create_token(user))
 
 
-@router.post('/change-password')
-def change_password(payload: ChangePasswordRequest, db: Session = Depends(get_db), user: User = Depends(current_user)):
+@router.post('/change-password', response_model=LoginResponse)
+def change_password(
+    payload: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
     if not verify_password(payload.current_password, user.password_hash):
         raise HTTPException(status_code=400, detail='La contraseña temporal no es correcta')
     if payload.current_password == payload.new_password:
@@ -89,4 +109,4 @@ def change_password(payload: ChangePasswordRequest, db: Session = Depends(get_db
     user.last_activity_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)
-    return {'access_token': create_token(user), 'token_type': 'bearer', 'user': UserOut.model_validate(user)}
+    return LoginResponse(access_token=create_token(user), user=UserOut.model_validate(user))
