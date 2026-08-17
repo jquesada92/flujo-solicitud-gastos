@@ -2,7 +2,7 @@
 
 ## Gobierno y especificaciones
 
-- [Constitución del proyecto](../.specify/memory/constitution.md)
+- [Constitución del proyecto](../.specify/memory/constitution.md) — versión vigente 2.3.1.
 - [Política de sincronización documental](DOCUMENTATION_POLICY.md)
 - [Feature 001 — normalización de dominio](../specs/001-domain-normalization/spec.md)
 - [Feature 001 — plan técnico](../specs/001-domain-normalization/plan.md)
@@ -17,7 +17,7 @@
 ## Dominio funcional y seguridad
 
 - [Modelo IAM configurable](IAM_MODEL.md) — incluye política `TECHNICAL_ADMIN` por ambiente.
-- [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md) — incluye separación `is_production_environment` / endurecimiento de runtime.
+- [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md) — incluye separación `is_production_environment` / endurecimiento de runtime y rutas canónicas.
 - [Modelo Área + Categoría](CLASSIFICATION_MODEL.md)
 - [Correcciones y reenvío](REQUEST_CORRECTIONS.md) — invariantes SIMPLE/MULTI_QUOTE y reinicio de rondas.
 - [Terminología funcional](TERMINOLOGY.md)
@@ -88,6 +88,7 @@ Clasificación de solicitudes:
 - Cuenta técnica / Administrador del sistema para la identidad técnica gobernada por ambiente.
 - Área para unidad/contexto organizacional del gasto.
 - Categoría para naturaleza del gasto.
+- Corrección / Corregir y reenviar para editar una solicitud sin cambiar su tipo SIMPLE/MULTI_QUOTE.
 
 ## Regla de mantenimiento
 
