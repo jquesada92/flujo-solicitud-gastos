@@ -92,6 +92,24 @@ def create_token(user: User) -> str:
     )
 
 
+def apply_effective_permissions_to_user(db: Session, user: User) -> User:
+    """Attach effective IAM permissions to the current user response view.
+
+    The legacy can_* properties remain transient compatibility aliases. They are
+    derived on every authenticated response and are never the authorization
+    source of truth. `permission_codes` is the canonical frontend capability
+    list, including `requests:close` which has no legacy can_* column.
+    """
+    permissions = effective_permission_codes(db, user.id)
+    user.can_view = 'requests:read' in permissions
+    user.can_request = 'requests:create' in permissions
+    user.can_approve = 'requests:approve' in permissions
+    user.can_configure = 'config:manage' in permissions
+    user.can_close = 'requests:close' in permissions
+    user.permission_codes = sorted(permissions)
+    return user
+
+
 def current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
@@ -130,22 +148,16 @@ def current_user(
             detail='Debes cambiar tu contraseña temporal antes de continuar',
         )
 
-    # Transitional compatibility only. Legacy code may still render or branch on
-    # these attributes, but their values are derived from IAM on every request.
-    permissions = effective_permission_codes(db, user.id)
-    user.can_view = 'requests:read' in permissions
-    user.can_request = 'requests:create' in permissions
-    user.can_approve = 'requests:approve' in permissions
-    user.can_configure = 'config:manage' in permissions
-    return user
+    return apply_effective_permissions_to_user(db, user)
 
 
 def require_permission(permission_code: str):
     """Authorize solely from effective permissions persisted in PostgreSQL.
 
-    There is intentionally no administrator, role-name, position-name, email or
-    numeric-ID bypass. Legacy can_* names are aliases only while old route code
-    is retired.
+    System-account environment policy is resolved by IAM: outside production a
+    technical account may exercise every active product permission for testing;
+    production keeps strict segregation of duties. No authorization depends on
+    user email, role name, position name or numeric ID.
     """
     canonical_code = LEGACY_PERMISSION_ALIASES.get(permission_code, permission_code)
 
