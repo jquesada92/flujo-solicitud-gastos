@@ -25,6 +25,16 @@
 - [README principal](../README.md)
 - [Prompt maestro de reconstrucción](../PROMPT_RECONSTRUCCION.md)
 
+El contrato operativo backend vigente es:
+
+```text
+alembic upgrade head
+python -m scripts.bootstrap_admin
+uvicorn app.application:app
+```
+
+El bootstrap debe ejecutarse como módulo desde la raíz del backend; no se documenta `python scripts/bootstrap_admin.py` como comando canónico.
+
 ## Modelo vigente
 
 ```text
