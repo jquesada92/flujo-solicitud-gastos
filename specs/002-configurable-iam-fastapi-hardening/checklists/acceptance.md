@@ -68,6 +68,9 @@
 - [x] Bootstrap del administrador técnico es idempotente y externo al lifespan.
 - [x] Docker ejecuta migraciones y bootstrap antes de iniciar Uvicorn.
 - [x] El despliegue no depende de `preDeployCommand` de un plan pago de Render.
+- [x] Los scripts `.sh` se fuerzan a LF mediante `.gitattributes`.
+- [x] El Dockerfile normaliza CRLF defensivamente antes de ejecutar `start.sh`.
+- [x] Docker Compose espera el healthcheck del backend antes de iniciar Nginx.
 - [ ] Antes del despliegue productivo se crea snapshot/backup de Neon.
 - [ ] Se ejecuta smoke test real de `alembic upgrade head` contra PostgreSQL/Neon de preview antes de producción.
 
