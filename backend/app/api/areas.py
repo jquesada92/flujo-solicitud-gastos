@@ -1,36 +1,18 @@
 import re
 import unicodedata
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, func, select
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
-from app.core.database import Base, get_db
+from app.core.database import get_db
 from app.core.security import current_user, require_permission
+from app.models.classification import AreaCategoryLink, ExpenseCategoryCatalog
 from app.models.entities import ExpenseArea, ExpenseSubcategory, User
 from app.schemas.area import AreaCreate, AreaOut, AreaUpdate, CategoryCreate, CategoryOut, CategoryUpdate
+from app.services.iam_service import has_permission
 
 router = APIRouter()
-
-
-class ExpenseCategoryCatalog(Base):
-    __tablename__ = 'expense_category_catalog'
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[str] = mapped_column(String(80), unique=True, nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(150), unique=True, nullable=False)
-    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-
-
-class AreaCategoryLink(Base):
-    __tablename__ = 'expense_area_categories'
-    __table_args__ = (UniqueConstraint('area_id', 'category_id', name='uq_expense_area_category'),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    area_id: Mapped[int] = mapped_column(ForeignKey('expense_categories.id', ondelete='CASCADE'), nullable=False, index=True)
-    category_id: Mapped[int] = mapped_column(ForeignKey('expense_category_catalog.id', ondelete='CASCADE'), nullable=False, index=True)
 
 
 def _base_code(name: str) -> str:
@@ -104,7 +86,13 @@ def _category_out(db: Session, category: ExpenseCategoryCatalog) -> dict:
     area_ids = list(db.scalars(select(AreaCategoryLink.area_id).where(
         AreaCategoryLink.category_id == category.id,
     ).order_by(AreaCategoryLink.area_id)).all())
-    return {'id': category.id, 'code': category.code, 'name': category.name, 'active': category.active, 'area_ids': area_ids}
+    return {
+        'id': category.id,
+        'code': category.code,
+        'name': category.name,
+        'active': category.active,
+        'area_ids': area_ids,
+    }
 
 
 def _area_out(db: Session, area: ExpenseArea, include_inactive: bool = False) -> dict:
@@ -117,7 +105,13 @@ def _area_out(db: Session, area: ExpenseArea, include_inactive: bool = False) ->
     if not include_inactive:
         stmt = stmt.where(ExpenseCategoryCatalog.active.is_(True))
     categories = list(db.scalars(stmt).all())
-    return {'id': area.id, 'code': area.code, 'name': area.name, 'active': area.active, 'categories': [_category_out(db, item) for item in categories]}
+    return {
+        'id': area.id,
+        'code': area.code,
+        'name': area.name,
+        'active': area.active,
+        'categories': [_category_out(db, item) for item in categories],
+    }
 
 
 def _link_category(db: Session, area: ExpenseArea, category: ExpenseCategoryCatalog) -> None:
@@ -136,20 +130,29 @@ def _link_category(db: Session, area: ExpenseArea, category: ExpenseCategoryCata
         legacy.name = category.name
         legacy.active = category.active
     else:
-        db.add(ExpenseSubcategory(area_id=area.id, code=category.code, name=category.name, active=category.active))
+        db.add(ExpenseSubcategory(
+            area_id=area.id,
+            code=category.code,
+            name=category.name,
+            active=category.active,
+        ))
 
 
 @router.get('', response_model=list[AreaOut])
-def list_areas(include_inactive: bool = False, db: Session = Depends(get_db), user: User = Depends(current_user)):
+def list_areas(
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
     _ensure_category_catalog(db)
-    include_all = include_inactive and (user.role.value == 'ADMIN' or user.can_configure)
+    include_all = include_inactive and has_permission(db, user.id, 'config:manage')
     stmt = select(ExpenseArea).order_by(ExpenseArea.name)
     if not include_all:
         stmt = stmt.where(ExpenseArea.active.is_(True))
     return [_area_out(db, item, include_all) for item in db.scalars(stmt).all()]
 
 
-@router.post('', response_model=AreaOut, status_code=201, dependencies=[Depends(require_permission('can_configure'))])
+@router.post('', response_model=AreaOut, status_code=201, dependencies=[Depends(require_permission('config:manage'))])
 def create_area(payload: AreaCreate, db: Session = Depends(get_db)):
     item = ExpenseArea(code=_unique_area_code(db, payload.name), name=payload.name)
     db.add(item)
@@ -158,7 +161,7 @@ def create_area(payload: AreaCreate, db: Session = Depends(get_db)):
     return _area_out(db, item)
 
 
-@router.patch('/{area_id}', response_model=AreaOut, dependencies=[Depends(require_permission('can_configure'))])
+@router.patch('/{area_id}', response_model=AreaOut, dependencies=[Depends(require_permission('config:manage'))])
 def update_area(area_id: int, payload: AreaUpdate, db: Session = Depends(get_db)):
     item = _area(db, area_id)
     for key, value in payload.model_dump(exclude_unset=True).items():
@@ -169,18 +172,25 @@ def update_area(area_id: int, payload: AreaUpdate, db: Session = Depends(get_db)
 
 
 @router.get('/categories', response_model=list[CategoryOut])
-def list_categories(include_inactive: bool = False, db: Session = Depends(get_db), user: User = Depends(current_user)):
+def list_categories(
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
     _ensure_category_catalog(db)
+    include_all = include_inactive and has_permission(db, user.id, 'config:manage')
     stmt = select(ExpenseCategoryCatalog).order_by(ExpenseCategoryCatalog.name)
-    if not include_inactive or not (user.role.value == 'ADMIN' or user.can_configure):
+    if not include_all:
         stmt = stmt.where(ExpenseCategoryCatalog.active.is_(True))
     return [_category_out(db, item) for item in db.scalars(stmt).all()]
 
 
-@router.post('/categories', response_model=CategoryOut, status_code=201, dependencies=[Depends(require_permission('can_configure'))])
+@router.post('/categories', response_model=CategoryOut, status_code=201, dependencies=[Depends(require_permission('config:manage'))])
 def create_category(payload: CategoryCreate, db: Session = Depends(get_db)):
     _ensure_category_catalog(db)
-    duplicate = db.scalar(select(ExpenseCategoryCatalog).where(func.lower(ExpenseCategoryCatalog.name) == payload.name.lower()))
+    duplicate = db.scalar(select(ExpenseCategoryCatalog).where(
+        func.lower(ExpenseCategoryCatalog.name) == payload.name.lower()
+    ))
     if duplicate:
         raise HTTPException(status_code=409, detail='Ya existe una categoría con ese nombre')
     item = ExpenseCategoryCatalog(code=_unique_category_code(db, payload.name), name=payload.name)
@@ -190,13 +200,19 @@ def create_category(payload: CategoryCreate, db: Session = Depends(get_db)):
     return _category_out(db, item)
 
 
-@router.post('/{area_id}/categories', response_model=CategoryOut, status_code=201, dependencies=[Depends(require_permission('can_configure'))])
+@router.post('/{area_id}/categories', response_model=CategoryOut, status_code=201, dependencies=[Depends(require_permission('config:manage'))])
 def create_or_link_category(area_id: int, payload: CategoryCreate, db: Session = Depends(get_db)):
     _ensure_category_catalog(db)
     area = _area(db, area_id)
-    category = db.scalar(select(ExpenseCategoryCatalog).where(func.lower(ExpenseCategoryCatalog.name) == payload.name.lower()))
+    category = db.scalar(select(ExpenseCategoryCatalog).where(
+        func.lower(ExpenseCategoryCatalog.name) == payload.name.lower()
+    ))
     if not category:
-        category = ExpenseCategoryCatalog(code=_unique_category_code(db, payload.name), name=payload.name, active=True)
+        category = ExpenseCategoryCatalog(
+            code=_unique_category_code(db, payload.name),
+            name=payload.name,
+            active=True,
+        )
         db.add(category)
         db.flush()
     _link_category(db, area, category)
@@ -205,7 +221,7 @@ def create_or_link_category(area_id: int, payload: CategoryCreate, db: Session =
     return _category_out(db, category)
 
 
-@router.post('/{area_id}/categories/{category_id}', response_model=AreaOut, dependencies=[Depends(require_permission('can_configure'))])
+@router.post('/{area_id}/categories/{category_id}', response_model=AreaOut, dependencies=[Depends(require_permission('config:manage'))])
 def link_existing_category(area_id: int, category_id: int, db: Session = Depends(get_db)):
     area = _area(db, area_id)
     category = _category(db, category_id)
@@ -214,22 +230,28 @@ def link_existing_category(area_id: int, category_id: int, db: Session = Depends
     return _area_out(db, area, include_inactive=True)
 
 
-@router.delete('/{area_id}/categories/{category_id}', response_model=AreaOut, dependencies=[Depends(require_permission('can_configure'))])
+@router.delete('/{area_id}/categories/{category_id}', response_model=AreaOut, dependencies=[Depends(require_permission('config:manage'))])
 def unlink_category(area_id: int, category_id: int, db: Session = Depends(get_db)):
     area = _area(db, area_id)
     category = _category(db, category_id)
-    link = db.scalar(select(AreaCategoryLink).where(AreaCategoryLink.area_id == area.id, AreaCategoryLink.category_id == category.id))
+    link = db.scalar(select(AreaCategoryLink).where(
+        AreaCategoryLink.area_id == area.id,
+        AreaCategoryLink.category_id == category.id,
+    ))
     if not link:
         raise HTTPException(status_code=404, detail='La categoría no está habilitada para esta área')
     db.delete(link)
-    legacy = db.scalar(select(ExpenseSubcategory).where(ExpenseSubcategory.area_id == area.id, ExpenseSubcategory.code == category.code))
+    legacy = db.scalar(select(ExpenseSubcategory).where(
+        ExpenseSubcategory.area_id == area.id,
+        ExpenseSubcategory.code == category.code,
+    ))
     if legacy:
         legacy.active = False
     db.commit()
     return _area_out(db, area, include_inactive=True)
 
 
-@router.patch('/categories/{category_id}', response_model=CategoryOut, dependencies=[Depends(require_permission('can_configure'))])
+@router.patch('/categories/{category_id}', response_model=CategoryOut, dependencies=[Depends(require_permission('config:manage'))])
 def update_category(category_id: int, payload: CategoryUpdate, db: Session = Depends(get_db)):
     item = _category(db, category_id)
     changes = payload.model_dump(exclude_unset=True)
@@ -243,7 +265,9 @@ def update_category(category_id: int, payload: CategoryUpdate, db: Session = Dep
         item.name = changes['name'].strip()
     if 'active' in changes:
         item.active = changes['active']
-    for legacy in db.scalars(select(ExpenseSubcategory).where(ExpenseSubcategory.code == item.code)).all():
+    for legacy in db.scalars(select(ExpenseSubcategory).where(
+        ExpenseSubcategory.code == item.code
+    )).all():
         legacy.name = item.name
         legacy.active = item.active
     db.commit()
