@@ -49,7 +49,7 @@
 - [x] El test verifica reemplazo de invitación.
 - [x] El test verifica 409 al intentar MULTI_QUOTE → SIMPLE.
 - [x] Backend tests y frontend build del commit funcional pasaron antes del cierre documental final.
-- [ ] Todos los jobs del commit documental final deben quedar verdes antes de considerar esta corrección terminada.
+- [x] CI run 387 sobre el head funcional/documental `d2d5c39` terminó con Backend, Frontend y Docker/smoke tests en success.
 
 ## Documentación
 
@@ -66,4 +66,4 @@
 - [x] Índice documental actualizado y referencia la Constitución 2.3.1.
 - [x] Terminología actualizada para SIMPLE, MULTI_QUOTE y Corrección / Corregir y reenviar.
 - [x] Feature 002 spec/plan/checklist revisados para la Constitución vigente 2.3.1 y la relación con Feature 003.
-- [ ] Descripción final del PR debe incluir la corrección y la Constitución 2.3.1.
+- [x] Descripción final del PR incluye la corrección, Feature 003 y la Constitución 2.3.1.
