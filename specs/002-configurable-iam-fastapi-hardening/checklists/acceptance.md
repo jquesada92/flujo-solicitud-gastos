@@ -117,6 +117,7 @@
 - [x] README actualizado.
 - [x] Prompt maestro actualizado.
 - [x] Documentación IAM/FastAPI actualizada.
+- [x] Índice de documentación actualizado.
 - [x] Terminología revisada; este cambio no altera términos funcionales.
 - [x] HISTORY actualizado.
 - [x] CHANGELOG actualizado.
