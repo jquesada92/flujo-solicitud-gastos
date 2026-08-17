@@ -9,8 +9,10 @@ from app.core.database import get_db
 from app.core.security import require_permission
 from app.models.entities import (
     Expense,
+    ExpenseArea,
     ExpenseAttachment,
     ExpenseStatus,
+    ExpenseSubcategory,
     QuotationOption,
     QuotationVote,
     QuotationVotingInvitation,
@@ -23,6 +25,31 @@ from app.services.iam_service import users_with_permission
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _validate_classification(db: Session, area_code: str, category_code: str | None) -> None:
+    area = db.scalar(
+        select(ExpenseArea).where(
+            ExpenseArea.code == area_code,
+            ExpenseArea.active.is_(True),
+        )
+    )
+    if not area:
+        raise HTTPException(status_code=422, detail='El área seleccionada no existe o está inactiva')
+    if not category_code:
+        raise HTTPException(status_code=422, detail='Debes seleccionar una categoría')
+    category = db.scalar(
+        select(ExpenseSubcategory).where(
+            ExpenseSubcategory.area_id == area.id,
+            ExpenseSubcategory.code == category_code,
+            ExpenseSubcategory.active.is_(True),
+        )
+    )
+    if not category:
+        raise HTTPException(
+            status_code=422,
+            detail='La categoría no está habilitada para el área seleccionada o está inactiva',
+        )
 
 
 def _load_expense(db: Session, request_id: str) -> Expense:
@@ -141,6 +168,7 @@ def resubmit_expense(
     A SIMPLE correction remains SIMPLE. This prevents the legacy form default from
     silently changing the business semantics of an existing request.
     """
+    _validate_classification(db, payload.expense_type, payload.expense_subcategory)
     expense = _load_expense(db, request_id)
     db.scalar(select(Expense.id).where(Expense.id == expense.id).with_for_update())
     db.refresh(expense)
