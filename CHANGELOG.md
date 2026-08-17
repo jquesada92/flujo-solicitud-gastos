@@ -8,23 +8,29 @@
 - Consola gráfica **Configuración → Accesos**.
 - API neutral `/api/iam/*` y `/api/iam/users`.
 - Vista de permisos efectivos y fuentes de herencia.
-- Protección explícita de cuentas técnicas.
-- Pydantic Settings centralizado.
+- Política ambiental explícita para `TECHNICAL_ADMIN`.
+- `UserOut.permission_codes` y alias temporal `can_close`.
+- Pydantic Settings centralizado con distinción entre `is_production_environment` e `is_production`.
 - Argon2 mediante `pwdlib` con upgrade transparente de PBKDF2 legacy.
 - Alembic y migraciones versionadas con baseline explícito para bases nuevas.
 - Entry point Docker que migra/bootstrap antes de Uvicorn.
 - `FastAPI TestClient` para matriz de autorización IAM.
+- Tests específicos de política productiva/no-productiva de la cuenta técnica.
 - Test de topología que exige un solo head Alembic y la cadena esperada.
 - Test de regresión de portabilidad Windows→Linux para scripts y healthchecks de Docker Compose.
-- Smoke test de CI que carga la imagen backend y valida el entrypoint Linux real.
-- Smoke test de CI que importa `scripts.bootstrap_admin` dentro de la imagen backend.
+- Smoke tests Docker de entrypoint Linux e import de `scripts.bootstrap_admin`.
 - Servicios canónicos para resolución de aprobadores, documentos y votación.
 - `docs/IAM_MODEL.md` y `docs/FASTAPI_ARCHITECTURE.md`.
 - Spec/plan/checklist de `002-configurable-iam-fastapi-hardening`.
 
 ### Changed
-- Autorización runtime consulta permisos efectivos persistidos; desaparece el bypass automático de `ADMIN`.
-- Cuenta técnica queda limitada a configuración + consulta.
+- Autorización runtime consulta permisos efectivos/política de cuenta técnica; `UserRole.ADMIN` no es autoridad.
+- **Producción:** la cuenta técnica queda limitada a `config:manage` + `requests:read`.
+- **No producción:** la cuenta técnica recibe todos los permisos atómicos activos para pruebas end-to-end.
+- Fuera de producción la cuenta técnica puede participar en poblaciones de aprobación/votación.
+- En producción las asignaciones financieras accidentales a la cuenta técnica siguen siendo filtradas.
+- `RENDER=true` mantiene endurecimiento de secretos/CORS, pero ya no implica por sí solo política funcional de producción; solo `ENVIRONMENT=production` activa segregación financiera.
+- Login y `current_user()` derivan permisos efectivos para el contrato del frontend.
 - Población canónica de aprobadores/votantes se resuelve por `requests:approve`, no por cargos fijos.
 - Crear solicitudes exige `requests:create`.
 - Cerrar/reemplazar factura exige `requests:close`.
@@ -34,17 +40,24 @@
 - Operaciones canónicas con SQLAlchemy/filesystem síncrono utilizan path functions `def`.
 - Modelos de clasificación se movieron fuera de `api/areas.py`.
 - Servicio de correo usa Settings y branding organizacional neutral.
-- README, prompt maestro, Constitución, terminología e historia se actualizan al nuevo modelo.
 - Docker Compose local espera a que `/api/health` del backend esté sano antes de iniciar Nginx.
-- `.gitattributes` fuerza LF para scripts shell y archivos de configuración Linux.
-- El backend Docker normaliza CRLF de scripts `.sh` durante el build para soportar checkouts Windows.
-- El bootstrap técnico se ejecuta como `python -m scripts.bootstrap_admin`; `scripts` es un paquete importable y ya no se depende de `python scripts/bootstrap_admin.py` ni de un `PYTHONPATH` implícito.
+- `.gitattributes` fuerza LF y Docker normaliza CRLF.
+- El bootstrap técnico se ejecuta como `python -m scripts.bootstrap_admin`.
 
 ### Security
-- System Accounts filtran permisos financieros incluso ante una asignación accidental.
+- En producción System Accounts filtran permisos financieros incluso ante asignaciones accidentales.
+- Fuera de producción el acceso completo de la cuenta técnica se concede únicamente por política `SystemAccount + ENVIRONMENT` para testing.
 - Roles técnicos `system_managed` no se pueden modificar desde la interfaz.
-- Default deny cuando falta un permiso efectivo.
+- Default deny para usuarios operativos.
 - Backend mantiene autoridad sobre acciones aunque el frontend o campos legacy indiquen otra cosa.
+
+### Testing
+- No-producción: cuenta técnica obtiene todos los permisos activos.
+- No-producción: login expone `permission_codes`, `can_request`, `can_approve`, `can_view`, `can_configure` y `can_close` efectivos.
+- No-producción: cuenta técnica puede entrar en población `requests:approve`.
+- Producción: cuenta técnica queda en config/read.
+- Producción: `requests:close` directo accidental es filtrado y el endpoint de cierre devuelve 403.
+- Producción: cuenta técnica queda fuera de población de aprobación.
 
 ### Migrations
 - `20260817_0000_application_baseline.py` define un baseline property-free para instalaciones limpias y conserva tablas productivas que ya existen.
@@ -52,14 +65,15 @@
 - `20260817_0002_system_accounts.py` identifica cuentas técnicas existentes.
 - La cadena Alembic es lineal: `0000 → 0001 → 0002`.
 - `scripts.bootstrap_admin` crea/asocia idempotentemente la cuenta técnica fuera del lifespan.
-- El smoke test contra PostgreSQL/Neon real continúa siendo requisito previo al despliegue productivo; el CI actual valida topología, compilación, tests de aplicación, ejecutabilidad del entrypoint e importabilidad del bootstrap dentro de la imagen backend.
+- El smoke test contra PostgreSQL/Neon real continúa siendo requisito previo al despliegue productivo.
 
 ### Compatibility / Technical debt
-- `UserRole`, `title` y `can_*` permanecen temporalmente como metadatos/puente para UI/router legacy; no son autoridad de acceso.
-- `/api/users` legacy permanece detrás de `config:manage` mientras migra el frontend operacional.
-- `frontend/src/main.jsx` continúa monolítico y `domain-normalization.js` sigue temporalmente.
-- El refactor no declara corregida la fórmula legacy de quorum/mayoría del motor de aprobación.
-- La regla exacta de quorum/empate de MULTI_QUOTE queda para una spec funcional separada.
+- `UserRole`, `title` y `can_*` permanecen temporalmente como metadatos/puente; no son autoridad de acceso.
+- `/api/users` legacy permanece mientras migra el frontend operacional.
+- `frontend/src/main.jsx` continúa monolítico.
+- El monolito todavía contiene bypasses visuales legacy `user.role === "ADMIN"` y `canClose={true}`; el backend no confía en ellos y deben migrarse a `permission_codes`.
+- `domain-normalization.js` sigue temporalmente.
+- El refactor no declara corregida la fórmula legacy de quorum/mayoría ni la regla de empate MULTI_QUOTE.
 
 ---
 
