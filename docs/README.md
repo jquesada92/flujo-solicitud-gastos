@@ -13,8 +13,8 @@
 
 ## Dominio funcional y seguridad
 
-- [Modelo IAM configurable](IAM_MODEL.md)
-- [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md)
+- [Modelo IAM configurable](IAM_MODEL.md) — incluye política `TECHNICAL_ADMIN` por ambiente.
+- [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md) — incluye separación `is_production_environment` / endurecimiento de runtime.
 - [Modelo Área + Categoría](CLASSIFICATION_MODEL.md)
 - [Terminología funcional](TERMINOLOGY.md)
 - [Historial funcional y técnico](HISTORY.md)
@@ -25,7 +25,7 @@
 - [README principal](../README.md)
 - [Prompt maestro de reconstrucción](../PROMPT_RECONSTRUCCION.md)
 
-El contrato operativo backend vigente es:
+Contrato operativo backend:
 
 ```text
 alembic upgrade head
@@ -33,7 +33,19 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
-El bootstrap debe ejecutarse como módulo desde la raíz del backend; no se documenta `python scripts/bootstrap_admin.py` como comando canónico.
+## Política ambiental de la cuenta técnica
+
+```text
+ENVIRONMENT=production
+→ TECHNICAL_ADMIN: config:manage + requests:read
+
+ENVIRONMENT!=production
+→ TECHNICAL_ADMIN: todos los permisos activos para testing
+```
+
+Esto permite usar el Administrador del sistema para probar crear/aprobar/votar/cerrar en local/dev/test/preview, manteniendo segregación financiera en producción.
+
+`RENDER=true` no sustituye a `ENVIRONMENT=production` para esta política; solo `ENVIRONMENT` decide la autorización funcional productiva.
 
 ## Modelo vigente
 
@@ -44,7 +56,7 @@ Usuario → Grupo → Rol → Permiso
        ↘ Cargo (descriptivo)
 ```
 
-Autorización depende de Permisos efectivos. Cargos, grupos y roles no autorizan por su nombre.
+Para usuarios operativos, autorización depende de permisos efectivos. Cargos, grupos y roles no autorizan por su nombre. La cuenta técnica aplica además la política ambiental descrita arriba.
 
 Clasificación de solicitudes:
 
