@@ -1,86 +1,180 @@
 # Flujo de Control de Gastos
 
-Aplicación web para solicitar, evaluar, aprobar y documentar gastos con evidencia verificable de cada decisión.
+Aplicación web para solicitar, evaluar, aprobar, ejecutar y documentar gastos con evidencia verificable de cada decisión.
 
-## Contexto y propósito
+El producto está diseñado para ser neutral respecto al tipo de organización: puede utilizarse en empresas, PH u otras organizaciones sin que el núcleo dependa de conceptos inmobiliarios.
 
-El control de gastos es un punto sensible tanto en organizaciones empresariales —por ejemplo, operaciones logísticas 3PL— como en la administración de una propiedad horizontal. Cuando las solicitudes, evaluaciones y aprobaciones dependen de conversaciones informales o documentos físicos, resulta difícil demostrar quién tomó una decisión, cuándo la tomó y qué alternativas tenía disponibles.
+## Propósito
 
-Este proyecto busca convertir el proceso completo en un expediente digital, trazable y auditable. Cada gasto debe conservar la solicitud original, las opciones de productos y proveedores, las cotizaciones evaluadas, las decisiones de la junta directiva y la documentación final.
+Cada solicitud debe convertirse en un expediente digital trazable que permita reconstruir:
 
-La aplicación permite reducir problemas como:
+- quién creó la solicitud y cuándo;
+- qué Área y Categoría se asociaron al gasto;
+- qué proveedores, opciones y cotizaciones fueron evaluados;
+- quién votó, aprobó, rechazó o solicitó corrección;
+- qué documentos estaban disponibles en cada etapa;
+- cuál fue la opción seleccionada;
+- qué factura corresponde al gasto ejecutado;
+- cómo evolucionó el flujo sin alterar silenciosamente su historia.
 
-- dificultad para confirmar quién aprobó o rechazó una solicitud;
-- falta de fecha, hora, comentarios o justificación de las decisiones;
-- poca visibilidad sobre los proveedores y productos evaluados;
-- riesgo de conflictos de interés o análisis insuficiente;
-- documentación dispersa entre correos, mensajes y archivos físicos;
-- demoras para localizar facturas, cotizaciones o actas de años anteriores;
-- controversias que no pueden resolverse objetivamente por falta de evidencia.
+## Terminología canónica
 
-El propósito no es únicamente agilizar aprobaciones. El sistema debe funcionar como una fuente confiable de evidencia que permita reconstruir qué ocurrió, quién participó, qué información estaba disponible y cómo se llegó al resultado final.
+La aplicación utiliza los siguientes términos funcionales:
 
-## Objetivos
+- **Usuario**: cuenta que interactúa con el sistema. La UI usa Usuario/Usuarios, no Persona/Personas como nombre del dominio de cuentas.
+- **Área**: unidad, departamento o función organizacional asociada al gasto.
+- **Categoría**: naturaleza del bien o servicio adquirido.
 
-- Registrar la fecha, hora y responsable de cada solicitud y decisión.
-- Evidenciar aprobaciones, rechazos y solicitudes de corrección.
-- Documentar la evaluación de múltiples opciones cuando corresponda.
-- Centralizar cotizaciones, facturas, actas y documentos relacionados.
-- Facilitar auditorías y consultas históricas sin depender de archivos físicos.
-- Mantener un historial íntegro que no pueda modificarse silenciosamente.
-- Aplicar permisos y políticas de aprobación de manera consistente.
+Ejemplo:
 
-## Arquitectura actual
+```text
+Área: IT
+Categoría: Equipos
+```
+
+Área y Categoría son catálogos independientes. Una misma Categoría puede habilitarse para varias Áreas.
+
+Documentación detallada:
+
+- `docs/TERMINOLOGY.md`
+- `docs/CLASSIFICATION_MODEL.md`
+
+## Dominio excluido
+
+El modelo canónico no debe depender de:
+
+- apartamentos;
+- propietarios/copropietarios;
+- residentes/arrendatarios;
+- `PersonType`;
+- `OwnershipRole`;
+- relaciones usuario-apartamento.
+
+La limpieza física de datos legacy es una migración separada y requiere respaldo previo.
+
+## Arquitectura
 
 ```mermaid
 flowchart LR
     U[Usuario] --> V[Frontend React + Vite<br/>Vercel]
-    V -->|HTTPS / API JSON| R[Backend FastAPI<br/>Render]
+    V -->|HTTPS / JSON| R[Backend FastAPI<br/>Render]
     R --> N[(PostgreSQL<br/>Neon)]
-    R --> D[(Disco persistente<br/>Render)]
-    R -->|API HTTPS| B[Brevo<br/>Correo]
+    R --> D[(Documentos privados<br/>Render Disk)]
+    R -->|HTTPS API| B[Brevo]
 ```
 
-| Componente | Implementación actual | Responsabilidad |
+| Componente | Implementación | Responsabilidad |
 | --- | --- | --- |
-| Frontend | React con Vite en Vercel | Interfaz, navegación, formularios y comunicación con la API. |
-| Backend | FastAPI con SQLAlchemy en un contenedor Docker de Render | Reglas de negocio, autenticación, autorización, auditoría y acceso a datos. |
-| Base de datos | PostgreSQL en Neon | Usuarios, solicitudes, decisiones, políticas y eventos históricos. |
-| Documentos | Disco persistente privado de Render | Cotizaciones, facturas y demás archivos adjuntos. |
-| Correo | API HTTPS de Brevo | Invitaciones, solicitudes de aprobación, votaciones y notificaciones. |
-| Autenticación | JWT firmado por el backend | Sesiones con vencimiento absoluto, inactividad y revocación por usuario. |
+| Frontend | React + Vite / Vercel | UX, formularios, navegación y consumo de API. |
+| Backend | FastAPI + SQLAlchemy / Docker / Render | Negocio, autorización, auditoría y acceso a datos. |
+| Base de datos | PostgreSQL / Neon | Usuarios, solicitudes, catálogos, políticas y eventos. |
+| Documentos | Render persistent disk | Cotizaciones, facturas y evidencia privada. |
+| Correo | Brevo HTTPS API | Invitaciones, votaciones, aprobaciones y notificaciones. |
+| Autenticación | JWT | Expiración absoluta, inactividad y revocación. |
 
-Vercel entrega únicamente el frontend. El navegador llama directamente a la URL pública del backend indicada por `VITE_API_URL`. Render procesa la solicitud, valida la sesión y los permisos, consulta Neon y accede al disco privado cuando se requiere un documento. Los archivos no se publican como contenido estático: el backend autoriza cada descarga.
+El frontend nunca accede directamente a PostgreSQL o al almacenamiento privado. El backend es la autoridad final.
 
-## Tipos de usuario
+## Clasificación Área + Categoría
 
-- **Administrador del sistema:** cuenta técnica inicial creada con las variables `ADMIN_*`. Administra el sistema, pero no representa al administrador operativo de la propiedad horizontal.
-- **Administrador de la PH:** usuario operativo creado desde el portal y asignado al perfil correspondiente.
-- **Miembros de junta directiva:** presidente, vicepresidente, tesorero, vocal u otros perfiles configurados.
-- **Solicitantes y demás usuarios:** sus permisos dependen de los perfiles asignados desde el portal.
+### Área
 
-La presidencia y tesorería no se configuran con correos fijos en variables de entorno. Los miembros, cargos y políticas de aprobación se administran desde el portal web. El flujo no requiere construir apartamentos, asignar unidades ni clasificar usuarios como propietarios.
+Ejemplos:
 
-## Reglas principales
+- Administración
+- Operaciones
+- IT
+- Mantenimiento
+- Marketing
+- Recursos Humanos
 
-- La cédula se normaliza y debe ser única entre los usuarios.
-- Las personas se pueden buscar por cédula, nombre, apellido o correo electrónico.
-- Las aprobaciones se asignan por perfiles y políticas configurables, no por direcciones de correo codificadas.
-- Los eventos de aprobación son de solo anexado para preservar la auditoría.
-- Las aprobaciones pendientes no expiran por tiempo; permanecen vigentes hasta recibir respuesta o hasta que el flujo sea invalidado.
+### Categoría
+
+Ejemplos:
+
+- Equipos
+- Servicios / Consultoría
+- Insumos
+- Software / Licencias
+- Mobiliario
+- Capacitación
+
+### Relación
+
+Una Categoría puede habilitarse para múltiples Áreas mediante una relación configurable Área ↔ Categoría.
+
+API canónica:
+
+```text
+GET    /api/areas
+POST   /api/areas
+PATCH  /api/areas/{area_id}
+GET    /api/areas/categories
+POST   /api/areas/categories
+PATCH  /api/areas/categories/{category_id}
+POST   /api/areas/{area_id}/categories
+POST   /api/areas/{area_id}/categories/{category_id}
+DELETE /api/areas/{area_id}/categories/{category_id}
+```
+
+## Compatibilidad legacy de clasificación
+
+Durante la migración se mantienen temporalmente nombres físicos anteriores para no romper expedientes históricos:
+
+```text
+expenses.expense_type        -> Área
+expenses.expense_subcategory -> Categoría
+expense_categories           -> almacenamiento legacy de Áreas
+expense_subcategories        -> puente temporal Área-Categoría
+```
+
+Las estructuras canónicas nuevas incluyen:
+
+```text
+expense_category_catalog
+expense_area_categories
+```
+
+La compatibilidad física no cambia el lenguaje funcional: el producto usa **Área + Categoría**.
+
+## Usuarios, perfiles y permisos
+
+El backend utiliza la entidad `User` y rutas `/api/users`.
+
+Los usuarios pueden incluir identidad, nombres, apellidos, correo, teléfono, cargo/perfil y estado. Las capacidades deben evolucionar hacia autorización completamente persistida en PostgreSQL; no deben depender de correos, IDs mágicos o conceptos inmobiliarios.
+
+El administrador técnico inicial se crea mediante `ADMIN_*`, pero no debe utilizarse su nombre o correo como regla de autorización.
+
+## Solicitudes
+
+Tipos principales:
+
+- `SIMPLE`: una opción/cotización.
+- `MULTI_QUOTE`: múltiples opciones y una ronda de selección antes de aprobación.
+
+Estados vigentes incluyen:
+
+```text
+QUOTATION_VOTING
+SUBMITTED
+PENDING_APPROVAL
+APPROVED
+REJECTED
+CANCELLED
+CLOSED
+NEEDS_REVISION
+```
+
+Aprobar no equivale a cerrar. Una solicitud aprobada permanece en proceso hasta completar los requisitos de ejecución/cierre.
+
+## Documentos y auditoría
+
+Los documentos son privados y deben validarse por contenido real. Las sustituciones deben preservar versiones anteriores.
+
+Las acciones relevantes deben ser trazables con actor, fecha/hora, entidad, cambio de estado y motivo/comentario cuando aplique. Los eventos históricos críticos son append-only.
 
 ## Seguridad
 
-- JWT con vencimiento absoluto configurable mediante `TOKEN_EXPIRE_MINUTES`.
-- Cierre de sesión tras `SESSION_IDLE_MINUTES` minutos sin actividad humana. El frontend informa actividad mediante `POST /api/auth/activity`; el polling no mantiene viva la sesión.
-- Revocación de sesiones mediante una versión de sesión almacenada por usuario.
-- Bloqueo temporal por intentos fallidos de inicio de sesión.
-- Límites separados para lecturas, escrituras, cargas y acciones sensibles.
-- Validación del contenido real de archivos PDF, JPEG, PNG y WEBP.
-- CORS restringido, CSP y encabezados de seguridad en producción.
-- Secretos y contraseñas fuera del repositorio.
-
-Valores iniciales recomendados:
+Configuración base:
 
 ```env
 TOKEN_EXPIRE_MINUTES=480
@@ -89,30 +183,25 @@ USER_READ_RATE_LIMIT=120
 USER_WRITE_RATE_LIMIT=30
 USER_UPLOAD_RATE_LIMIT=6
 USER_SENSITIVE_RATE_LIMIT=10
+DEFAULT_PAGE_SIZE=25
+MAX_PAGE_SIZE=100
+QUERY_TIMEOUT_MS=5000
+APP_TIME_ZONE=America/Panama
 ```
 
-Los límites se expresan por usuario y por minuto. Deben ajustarse usando métricas reales antes de aumentarlos.
+Principios:
 
-## Correo con Brevo
-
-En producción se usa la API HTTPS de Brevo, por lo que no es necesario configurar un puerto SMTP en Render.
-
-```env
-EMAIL_MODE=brevo
-BREVO_API_KEY=< CLAVE API DE BREVO >
-BREVO_SENDER_NAME=< NOMBRE VISIBLE DEL REMITENTE >
-EMAIL_FROM=< CORREO VERIFICADO EN BREVO >
-```
-
-El correo de `EMAIL_FROM` debe estar verificado en Brevo. SMTP puede conservarse como opción local; Brevo ofrece `smtp-relay.brevo.com` y el puerto `587`, pero no es la opción recomendada cuando Render bloquea conexiones SMTP salientes.
+- JWT con expiración absoluta;
+- timeout por inactividad humana;
+- revocación por versión de sesión;
+- rate limiting diferenciado;
+- CORS restrictivo;
+- secretos fuera de Vite y logs;
+- ORM/consultas parametrizadas;
+- autorización siempre validada en backend;
+- archivos privados con validación MIME + firma real.
 
 ## Desarrollo local
-
-### Requisitos
-
-- Python 3.12 o compatible.
-- Node.js 20 o compatible.
-- PostgreSQL o una cadena de conexión de Neon.
 
 ### Backend
 
@@ -126,166 +215,97 @@ uvicorn app.main:app --reload
 
 ### Frontend
 
-```bash
+```powershell
 cd frontend
 npm install
 npm run dev
 ```
 
-Copia la plantilla del sistema que vas a ejecutar y reemplaza únicamente sus marcadores. Nunca uses claves reales en archivos versionados.
+## Variables de entorno
 
-| Sistema | Plantilla canónica | Archivo local no versionado |
-| --- | --- | --- |
-| Backend FastAPI | `backend/.env.example` | `backend/.env` |
-| Backend de preview | `backend/.env.preview.example` | `backend/.env.preview` |
-| Frontend React + Vite | `frontend/.env.example` | `frontend/.env` |
-| Infraestructura Docker Compose | `.env.example` | `.env` |
-| Infraestructura preview | `.env.preview.example` | `.env.preview` |
-
-Las variables privadas pertenecen al backend. El frontend acepta únicamente variables públicas con prefijo `VITE_*`.
-
-## Variables de Render
-
-Estas variables pertenecen al backend. Las credenciales deben configurarse únicamente en Render y nunca copiarse al frontend ni guardarse en el repositorio.
-
-La plantilla canónica es `backend/.env.example`; en Render configura su variante de producción directamente en el panel.
+### Backend / Render
 
 ```env
 ENVIRONMENT=production
-DATABASE_URL=< URL DE CONEXION DE NEON >
-PUBLIC_URL=< URL PUBLICA DEL FRONTEND EN VERCEL >
-CORS_ALLOWED_ORIGINS=< URL PUBLICA DEL FRONTEND EN VERCEL >
-
-SECRET_KEY=< SECRETO ALEATORIO LARGO >
-ANALYTICS_HASH_KEY=< OTRA CLAVE ALEATORIA LARGA >
+DATABASE_URL=<URL PRIVADA DE NEON>
+PUBLIC_URL=<URL HTTPS DEL FRONTEND>
+CORS_ALLOWED_ORIGINS=<ORIGENES HTTPS AUTORIZADOS>
+SECRET_KEY=<SECRETO ALEATORIO>
+ANALYTICS_HASH_KEY=<SECRETO ALEATORIO DIFERENTE>
 TOKEN_EXPIRE_MINUTES=480
 SESSION_IDLE_MINUTES=30
-# Variable heredada observada en Render; el backend actual no la consume.
-APPROVAL_LINK_HOURS=< NO APLICA EN EL FLUJO ACTUAL >
-
-USER_READ_RATE_LIMIT=120
-USER_WRITE_RATE_LIMIT=30
-USER_UPLOAD_RATE_LIMIT=6
-USER_SENSITIVE_RATE_LIMIT=10
 APP_TIME_ZONE=America/Panama
-
 EMAIL_MODE=brevo
-BREVO_API_KEY=< CLAVE API DE BREVO >
-BREVO_SENDER_NAME=< NOMBRE VISIBLE DEL REMITENTE >
-EMAIL_FROM=< CORREO VERIFICADO EN BREVO >
-
+BREVO_API_KEY=<CLAVE BREVO>
+BREVO_SENDER_NAME=<NOMBRE VISIBLE>
+EMAIL_FROM=<CORREO VERIFICADO>
 ADMIN_NAME=Administrador del sistema
-ADMIN_EMAIL=< CORREO DEL ADMINISTRADOR DEL SISTEMA >
-ADMIN_PASSWORD=< CONTRASENA SEGURA DE AL MENOS 12 CARACTERES >
-
+ADMIN_EMAIL=<CORREO ADMIN TECNICO>
+ADMIN_PASSWORD=<CONTRASENA SEGURA>
 UPLOAD_DIR=/app/uploads
 MAX_UPLOAD_STORAGE_MB=450
 ```
 
-| Variable | Propósito | ¿Es secreta? |
-| --- | --- | --- |
-| `ENVIRONMENT` | Activa las validaciones y medidas correspondientes a producción. | No |
-| `DATABASE_URL` | Cadena privada de conexión de SQLAlchemy a PostgreSQL en Neon. | Sí |
-| `PUBLIC_URL` | URL pública del frontend usada para construir enlaces enviados por correo. | No |
-| `CORS_ALLOWED_ORIGINS` | Lista de orígenes web autorizados para llamar a la API; en producción debe contener la URL HTTPS de Vercel. | No |
-| `SECRET_KEY` | Firma y valida los JWT. Debe ser larga, aleatoria y diferente en cada entorno. | Sí |
-| `ANALYTICS_HASH_KEY` | Genera identificadores seudónimos sin exponer directamente la identidad de los usuarios. Debe ser distinta de `SECRET_KEY`. | Sí |
-| `TOKEN_EXPIRE_MINUTES` | Duración absoluta máxima del JWT. El valor actual recomendado es 480 minutos. | No |
-| `SESSION_IDLE_MINUTES` | Tiempo máximo sin actividad humana antes de cerrar la sesión. El valor actual es 30 minutos. | No |
-| `APPROVAL_LINK_HOURS` | Variable heredada visible en Render, pero no es consumida por el backend actual. Las aprobaciones pendientes no vencen por horas; se invalidan al decidirse o cuando el flujo deja de ser vigente. Puede eliminarse de Render. | No |
-| `USER_READ_RATE_LIMIT` | Máximo de lecturas por usuario y minuto. | No |
-| `USER_WRITE_RATE_LIMIT` | Máximo de escrituras por usuario y minuto. | No |
-| `USER_UPLOAD_RATE_LIMIT` | Máximo de cargas de archivos por usuario y minuto. | No |
-| `USER_SENSITIVE_RATE_LIMIT` | Máximo de acciones sensibles por usuario y minuto. | No |
-| `APP_TIME_ZONE` | Zona horaria utilizada por el backend para presentar información temporal. | No |
-| `EMAIL_MODE` | Selecciona el adaptador de correo: `brevo` en producción, `console` en desarrollo o `smtp` como alternativa. | No |
-| `BREVO_API_KEY` | Credencial para consumir la API de Brevo. | Sí |
-| `BREVO_SENDER_NAME` | Nombre visible del remitente. | No |
-| `EMAIL_FROM` | Dirección remitente verificada en Brevo. | Normalmente no, aunque debe controlarse su modificación |
-| `ADMIN_NAME` | Nombre de la cuenta técnica inicial. | No |
-| `ADMIN_EMAIL` | Correo de inicio de sesión del administrador técnico. | Dato sensible |
-| `ADMIN_PASSWORD` | Contraseña inicial del administrador técnico. | Sí |
-| `UPLOAD_DIR` | Ruta privada del disco persistente donde se almacenan documentos. | No |
-| `MAX_UPLOAD_STORAGE_MB` | Cuota total que la aplicación puede ocupar dentro de `UPLOAD_DIR`; no es el límite individual de cada archivo. | No |
-
-No configures `TREASURER_EMAIL`, `PRESIDENT_EMAIL` ni variables SMTP si `EMAIL_MODE=brevo`.
-
-La lista observada en Render coincide con las variables anteriores, con dos consideraciones:
-
-- `APPROVAL_LINK_HOURS` está configurada, pero actualmente no tiene efecto y puede eliminarse.
-- `ENVIRONMENT` no aparece en la captura. En Render, el backend también reconoce la variable de plataforma `RENDER=true` para aplicar las validaciones de producción; por eso `ENVIRONMENT=production` es recomendable para expresar la intención, pero no es imprescindible en ese proveedor.
-
-## Variables de Vercel
-
-Según la configuración actual mostrada en Vercel, ambas variables aplican a los entornos **Production** y **Preview**:
-
-La plantilla canónica es `frontend/.env.example`.
+### Frontend / Vercel
 
 ```env
-VITE_API_URL=< URL PUBLICA DEL BACKEND EN RENDER >
+VITE_API_URL=<URL HTTPS DEL BACKEND>
 VITE_TIME_ZONE=America/Panama
 ```
 
-| Variable | Valor esperado | Explicación |
-| --- | --- | --- |
-| `VITE_API_URL` | La URL HTTPS pública de Render, sin una ruta privada ni credenciales. | Indica al navegador dónde está la API. Aunque Vercel la muestre como `Sensitive`, Vite incorpora las variables `VITE_*` al paquete del frontend y su valor puede ser inspeccionado por cualquier usuario. No es un secreto. |
-| `VITE_TIME_ZONE` | `America/Panama` | Controla la zona horaria utilizada para mostrar fechas y horas en la interfaz. |
+Las variables `VITE_*` son visibles en el navegador y no pueden contener secretos.
 
-Las variables de Vite se leen durante la compilación. Después de modificar cualquiera de estas variables en Vercel es necesario volver a desplegar el frontend. Cambiar una variable de Render también requiere reiniciar o desplegar nuevamente el servicio para que el backend lea el valor nuevo.
+## Pruebas y CI
 
-## Orden recomendado de despliegue
+Backend:
 
-1. Publica primero el backend actualizado en Render.
-2. Confirma que abre el puerto asignado por Render y que el endpoint de salud responde.
-3. Ejecuta o deja completar las migraciones.
-4. Publica el frontend en Vercel con la URL correcta del backend.
-5. Comprueba el inicio de sesión, `POST /api/auth/activity`, la búsqueda de personas y un envío real de correo.
-
-Si Render queda en `Waiting for application startup` o muestra `No open ports detected`, revisa el error anterior en el log. Normalmente la aplicación no abrió el puerto porque falló una migración o una conexión con PostgreSQL. No termines sesiones de Neon sin identificar primero el proceso y su consulta.
-
-## Reiniciar Neon desde cero
-
-El reinicio elimina datos y debe hacerse solamente de forma explícita:
-
-1. Crea una rama de respaldo en Neon.
-2. Detén temporalmente el backend o evita nuevos accesos.
-3. Confirma que Render ya contiene la versión nueva del código.
-4. Vacía el esquema de la rama de producción y ejecuta las migraciones o la inicialización.
-5. Verifica que se creó solamente el administrador técnico definido por `ADMIN_*`.
-6. Crea desde el portal el administrador de la PH, los perfiles y los miembros de junta.
-7. Comprueba la cédula única, los permisos y las políticas de aprobación.
-
-Vaciar Neon no elimina los archivos del disco persistente de Render. Para reiniciar completamente el entorno también debe vaciarse por separado el contenido de `/app/uploads`, conservando el directorio montado.
-
-## Endpoints destacados
-
-- `POST /api/auth/login`: inicio de sesión.
-- `POST /api/auth/activity`: registra actividad humana y renueva la sesión activa.
-- `GET /api/users`: listado y búsqueda por cédula, nombre o correo.
-- Rutas de organigrama: perfiles, cargos y miembros de junta.
-- Rutas de solicitudes: creación, consulta, adjuntos y seguimiento.
-- Rutas de aprobación: decisiones mediante sesión o enlace seguro.
-
-La documentación interactiva está disponible en `/api/docs` cuando la configuración del entorno la habilita.
-
-## Verificación
-
-```bash
+```powershell
 cd backend
-pytest
+python -m compileall -q app
+python -m unittest discover -s tests -v
 ```
 
-```bash
+Frontend:
+
+```powershell
 cd frontend
+npm ci
 npm run build
 ```
 
-Antes de producción prueba también:
+CI también construye las imágenes Docker de backend y frontend.
 
-- expiración por 30 minutos de inactividad;
-- renovación con actividad humana;
-- límites de solicitudes;
-- rechazo de una cédula duplicada;
-- creación de miembros de junta sin apartamentos ni roles de propiedad;
-- envío mediante Brevo;
-- carga y descarga autorizada de adjuntos.
+## Documentación y Spec-Driven Development
+
+La documentación forma parte obligatoria del Definition of Done.
+
+Fuentes principales:
+
+- `.specify/memory/constitution.md` — reglas transversales del proyecto.
+- `specs/001-domain-normalization/spec.md` — requisitos e historias de la normalización actual.
+- `specs/001-domain-normalization/plan.md` — diseño técnico y compatibilidad.
+- `specs/001-domain-normalization/checklists/acceptance.md` — criterios verificables.
+- `PROMPT_RECONSTRUCCION.md` — comportamiento canónico para reconstrucción.
+- `docs/DOCUMENTATION_POLICY.md` — qué documentos revisar en cada cambio.
+- `docs/TERMINOLOGY.md` — lenguaje funcional canónico.
+- `docs/HISTORY.md` — decisiones funcionales y técnicas.
+- `CHANGELOG.md` — cambios entregables.
+
+**Regla:** un cambio no está completo si el código y la documentación afectada discrepan sin que la diferencia esté explícitamente documentada como transición/deuda.
+
+## Migraciones destructivas
+
+Antes de eliminar tablas, columnas o datos productivos:
+
+1. crear backup/snapshot;
+2. inventariar datos y dependencias;
+3. aplicar migración versionada en staging/test;
+4. validar integridad y aplicación;
+5. documentar recuperación real;
+6. aplicar en producción solo después de validación.
+
+Un downgrade que recrea estructura no recupera datos borrados.
+
+## Documentación adicional
+
+Consulta `docs/README.md` para el índice completo del proyecto.
