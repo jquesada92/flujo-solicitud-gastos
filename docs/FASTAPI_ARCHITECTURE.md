@@ -112,16 +112,21 @@ Esto permite que cambios IAM y el cambio de ambiente se reflejen sin confiar en 
 
 ## Invariant de correcciones
 
-`revision_actions.py` protege una regla de negocio que no puede depender del estado React:
+`revision_actions.py` protege una regla de negocio que no puede depender del estado React ni de la pestaña SIMPLE/MULTI_QUOTE seleccionada en el formulario de creación.
+
+El tipo canónico se resuelve defensivamente como MULTI_QUOTE cuando existe cualquiera de estas señales durables:
 
 ```text
-payload.request_type == expense.request_type
+request_type == MULTI_QUOTE
+OR status == QUOTATION_VOTING
+OR quotation_options.length >= 2
 ```
 
-Un mismatch devuelve `409`.
+El endpoint compara el payload contra ese tipo canónico. Un intento real de convertirlo devuelve `409`.
 
 Para MULTI_QUOTE la ruta canónica:
 
+- repara `request_type` legacy inconsistente;
 - conserva los IDs de opciones y sus attachments;
 - permite actualizar contenido de las opciones manteniendo su cantidad actual;
 - cambia `flow_id`;
@@ -153,9 +158,13 @@ Topología lineal:
 20260817_0001 configurable IAM
         ↓
 20260817_0002 protected system accounts
+        ↓
+20260817_0003 backfill MULTI_QUOTE request_type
 ```
 
-`tests/test_migrations.py` exige un único head.
+`0003` es una reparación de datos histórica: cambia a `MULTI_QUOTE` filas con evidencia durable de múltiples cotizaciones que aún conservaban el default `SIMPLE`.
+
+`tests/test_migrations.py` exige `0003` como único head.
 
 El entrypoint Docker ejecuta:
 
@@ -197,9 +206,9 @@ prod    → config/read only
 
 También verifica población de aprobadores, 403 de cierre productivo y el contrato del login.
 
-`tests/test_multi_quote_revision.py` verifica el invariant de correcciones con una solicitud MULTI_QUOTE real: preserva tipo/evidencia, reinicia ronda y rechaza conversión a SIMPLE.
+`tests/test_multi_quote_revision.py` verifica el invariant de correcciones con una solicitud MULTI_QUOTE real y con un registro legacy cuyo `request_type` quedó erróneamente en SIMPLE: preserva/repara tipo, conserva evidencia, reinicia ronda y rechaza conversión real a SIMPLE.
 
-`tests/test_migrations.py` verifica topología Alembic.
+`tests/test_migrations.py` verifica topología Alembic hasta `0003`.
 
 `tests/test_container_portability.py` verifica defensas de portabilidad local.
 
@@ -228,6 +237,13 @@ El backend no confía en esos valores, pero la deuda debe retirarse migrando la 
 
 ### Transform temporal de correcciones
 
-Mientras `ExpenseForm` siga dentro del monolito, `frontend/vite.config.js` aplica un plugin `legacy-revision-safety` antes del plugin React. Restaura `request_type`, cotizaciones y metadata de attachments al abrir una corrección MULTI_QUOTE.
+Mientras `ExpenseForm` siga dentro del monolito, `frontend/vite.config.js` aplica un plugin `legacy-revision-safety` antes del plugin React.
+
+El plugin ahora protege explícitamente el aislamiento de estado:
+
+- deriva el `requestType` inicial desde el draft/evidencia durable;
+- al entrar en corrección, `ExpenseForm` recibe una `key` basada en la solicitud/flujo y se remonta;
+- el estado de la pestaña de creación anterior no sobrevive al cambio de modo;
+- restaura cotizaciones y metadata de attachments.
 
 El transform utiliza reemplazos obligatorios y hace fallar `vite build` si los fragmentos legacy dejan de coincidir. Esto evita una degradación silenciosa, pero no sustituye la modularización. Al extraer `ExpenseForm` a un componente propio, el plugin debe eliminarse y la hidratación debe cubrirse con tests frontend normales.
