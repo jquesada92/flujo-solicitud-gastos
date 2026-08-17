@@ -1,5 +1,7 @@
 # Flujo de Control de Gastos
 
+> Constitución vigente: **2.3.1**.
+
 Aplicación web para solicitar, evaluar, aprobar, ejecutar y documentar gastos con trazabilidad y evidencia verificable.
 
 El producto es **neutral respecto al tipo de organización**. Un PH, empresa, comité o área de negocio puede configurar su estructura sin modificar el código.
