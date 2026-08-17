@@ -64,8 +64,8 @@
 - [x] El test verifica limpieza de votos.
 - [x] El test verifica reemplazo de invitación.
 - [x] El test verifica 409 al intentar MULTI_QUOTE → SIMPLE cuando el tipo canónico es múltiple.
+- [x] Backend tests, frontend build y Docker/smoke del head funcional quedaron verdes en CI run 481.
 - [ ] Verificar manualmente: con pestaña **Solicitud sencilla** activa, corregir una MULTI_QUOTE debe abrir directamente el editor múltiple.
-- [ ] Todos los jobs del commit final de esta corrección deben quedar verdes antes de considerarla terminada.
 
 ## Documentación
 
