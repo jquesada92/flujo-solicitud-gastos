@@ -12,6 +12,7 @@ El producto es **neutral respecto al tipo de organización**. Un PH, empresa, co
 - Un cargo no concede permisos.
 - La cuenta técnica tiene política explícita por ambiente.
 - Área y Categoría son dimensiones independientes.
+- Una corrección nunca cambia silenciosamente el tipo de solicitud.
 - Documentos e historial forman parte del expediente auditable.
 - Migraciones son versionadas con Alembic y no se ejecutan dentro del lifespan de FastAPI.
 
@@ -358,11 +359,35 @@ La población de votación se obtiene desde usuarios con `requests:approve`, exc
 
 Las invitaciones guardadas representan el snapshot de participantes de esa ronda.
 
+### Corrección y reenvío
+
+`Corregir / reenviar` **preserva siempre el tipo original**:
+
+```text
+SIMPLE      -> SIMPLE
+MULTI_QUOTE -> MULTI_QUOTE
+```
+
+El backend rechaza con `409` un payload que intente cambiar el `request_type` durante una corrección.
+
+Cuando se corrige una MULTI_QUOTE:
+
+- el formulario vuelve a mostrar sus cotizaciones existentes;
+- proveedor, monto, URL y observaciones pueden corregirse;
+- los soportes existentes se conservan;
+- por ahora se mantiene la misma cantidad de opciones;
+- se genera un `flow_id` nuevo;
+- votos e invitaciones vigentes de la ronda anterior se reinician;
+- los eventos históricos se conservan;
+- la solicitud vuelve a `QUOTATION_VOTING`.
+
+Mientras `ExpenseForm` siga dentro del monolito legacy, `frontend/vite.config.js` aplica una transformación estricta para hidratar correctamente una corrección MULTI_QUOTE en dev/build. El build falla si ese parche deja de encontrar los fragmentos esperados. Ver `docs/REQUEST_CORRECTIONS.md` y `specs/003-request-correction-invariants/`.
+
 ### Aprobación
 
 La población canónica de aprobadores se obtiene desde `requests:approve`, no desde cargos como Presidente/Tesorero ni flags `can_approve`.
 
-> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.3.0.
+> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.3.1.
 
 ### Cierre
 
@@ -386,6 +411,8 @@ La suite IAM verifica específicamente:
 - 403 de cierre en producción incluso con permiso financiero accidental;
 - exclusión de población de aprobación en producción.
 
+La suite de correcciones verifica además que una MULTI_QUOTE no pueda degradarse a SIMPLE, que conserve evidencia y que reinicie votos/invitaciones de la ronda.
+
 CI ejecuta además frontend build y construcción/smoke tests de imágenes Docker.
 
 ## Documentación
@@ -406,6 +433,7 @@ Documentos principales:
 - `docs/CLASSIFICATION_MODEL.md`
 - `docs/IAM_MODEL.md`
 - `docs/FASTAPI_ARCHITECTURE.md`
+- `docs/REQUEST_CORRECTIONS.md`
 - `docs/HISTORY.md`
 - `CHANGELOG.md`
 - `PROMPT_RECONSTRUCCION.md`
@@ -416,5 +444,6 @@ Documentos principales:
 - `/api/users` legacy continúa temporalmente.
 - `frontend/src/main.jsx` sigue siendo monolítico.
 - El monolito todavía contiene bypasses visuales legacy como `user.role === "ADMIN"` y `canClose={true}`; el backend no confía en ellos. Deben migrarse a `permission_codes`.
+- `frontend/vite.config.js` contiene temporalmente el transform de seguridad para hidratar correcciones MULTI_QUOTE; debe retirarse al modularizar `ExpenseForm`.
 - `domain-normalization.js` sigue como capa temporal.
 - quorum/mayoría de aprobación y empate de cotizaciones requieren specs funcionales separadas.
