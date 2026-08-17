@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.2.2  
+**Versión:** 2.3.0  
 **Vigente desde:** 2026-08-17
 
 ## 1. Evolucionar, no reconstruir sin necesidad
@@ -37,7 +37,7 @@ La estructura organizacional tampoco puede quedar codificada mediante nombres co
 
 ## 4. IAM configurable: permisos sobre nombres
 
-La autorización canónica se resuelve mediante permisos efectivos persistidos en PostgreSQL.
+La autorización canónica se resuelve mediante permisos efectivos persistidos en PostgreSQL y las políticas explícitas de cuenta técnica definidas por ambiente.
 
 Modelo:
 
@@ -48,7 +48,7 @@ Usuario → Grupo → Rol → Permiso
        ↘ Cargo/Posición (descriptivo solamente)
 ```
 
-Los permisos efectivos son la unión de:
+Para usuarios operativos, los permisos efectivos son la unión de:
 
 1. permisos directos del usuario;
 2. permisos de roles asignados directamente;
@@ -78,18 +78,38 @@ No autorizar por:
 
 Los campos legacy pueden existir temporalmente durante una migración, pero no pueden ser autoridad de autorización.
 
-## 5. Separación de funciones de la cuenta técnica
+## 5. Política de la cuenta técnica por ambiente
 
-El administrador técnico de bootstrap es una **cuenta de sistema protegida**, no un superusuario financiero.
+El administrador técnico de bootstrap es una **cuenta de sistema protegida** identificada mediante `system_accounts`. No se identifica por email, nombre, cargo ni enum legacy.
 
-Su conjunto efectivo permitido es:
+La política depende exclusivamente del ambiente declarado por `ENVIRONMENT`:
+
+### Producción
+
+Cuando `ENVIRONMENT=production`, la cuenta técnica mantiene segregación estricta de funciones. Sus permisos efectivos máximos son:
 
 - `config:manage`;
 - `requests:read`.
 
-Una cuenta técnica no puede obtener `requests:create`, `requests:approve` ni `requests:close`, incluso si una configuración posterior intenta otorgárselos accidentalmente.
+En producción no puede obtener ni ejercer:
 
-El bootstrap puede usar variables `ADMIN_*` únicamente para crear o recuperar la cuenta técnica inicial. Después del bootstrap, su autorización se representa mediante datos IAM persistidos.
+- `requests:create`;
+- `requests:approve`;
+- `requests:close`.
+
+Esta restricción prevalece incluso si una configuración posterior intenta otorgarle permisos financieros mediante grupo, rol o permiso directo. Tampoco participa en poblaciones financieras de aprobación o votación.
+
+### No producción
+
+En cualquier ambiente distinto de `production` —por ejemplo `local`, `development`, `dev`, `test`, `staging` o `preview`— la cuenta técnica debe poder ejercer **todos los permisos atómicos activos del producto** para realizar pruebas end-to-end.
+
+En no producción también puede participar en poblaciones de aprobación/votación cuando el permiso correspondiente esté activo, de forma que un único administrador técnico pueda validar todas las funcionalidades sin crear cuentas auxiliares obligatorias.
+
+Este acceso ampliado es una política de prueba del sistema, no un rol empresarial ni una excepción por nombre de usuario.
+
+El hecho de ejecutar la aplicación en Render u otro hosting puede exigir secretos fuertes y CORS restrictivo, pero **no convierte automáticamente el ambiente en producción para autorización**. La segregación financiera de producción se activa únicamente con `ENVIRONMENT=production`.
+
+El bootstrap puede usar variables `ADMIN_*` únicamente para crear o recuperar la cuenta técnica inicial. Después del bootstrap, la identidad de cuenta técnica se representa mediante datos persistidos.
 
 ## 6. Configuración gráfica sobre código
 
@@ -118,7 +138,8 @@ El frontend puede ocultar o mostrar acciones por UX, pero el backend es la autor
 - población de participantes;
 - acceso a documentos;
 - decisiones;
-- configuración IAM.
+- configuración IAM;
+- política ambiental de cuentas técnicas.
 
 Una operación sensible debe declarar una dependencia de permiso explícita o pasar por un servicio que la aplique.
 
@@ -184,7 +205,10 @@ Las reglas de selección de cotización no se presumen iguales a las reglas de a
 
 ## 14. Aprobado no significa cerrado
 
-Una solicitud aprobada permanece en proceso hasta cumplir el cierre. El cierre requiere factura y `requests:close`. Una cuenta de sistema no puede cerrar solicitudes.
+Una solicitud aprobada permanece en proceso hasta cumplir el cierre. El cierre requiere factura y `requests:close`.
+
+- En producción, una cuenta técnica nunca puede cerrar solicitudes.
+- En no producción, una cuenta técnica puede cerrar solicitudes para pruebas end-to-end conforme a la política de la sección 5.
 
 ## 15. Migraciones, despliegue y portabilidad de contenedores
 
@@ -212,7 +236,7 @@ Antes de retirar datos: respaldo, inventario, migración versionada, validación
 
 Como mínimo:
 
-- default deny;
+- default deny para usuarios operativos;
 - backend authoritative;
 - rate limiting diferenciado;
 - CORS restrictivo;
@@ -222,7 +246,8 @@ Como mínimo:
 - paginación backend para colecciones crecientes, default 25 y máximo 100;
 - evitar N+1;
 - pool y query timeout configurables antes de escalar;
-- una futura capa de scope debe limitar permisos por organización/área/recurso sin reutilizar cargos como autorización.
+- una futura capa de scope debe limitar permisos por organización/área/recurso sin reutilizar cargos como autorización;
+- la elevación de la cuenta técnica fuera de producción debe depender de `ENVIRONMENT`, nunca de email/nombre/cargo.
 
 ## 17. Calidad y pruebas
 
@@ -230,10 +255,13 @@ Los cambios incluyen pruebas proporcionales al riesgo. Para IAM son obligatorias
 
 - permisos directos;
 - herencia Grupo → Rol → Permiso;
-- restricción de cuentas técnicas;
+- cuenta técnica con todos los permisos activos en no producción;
+- cuenta técnica incluida en poblaciones de aprobación/votación fuera de producción;
+- cuenta técnica restringida a `config:manage` + `requests:read` en producción;
+- operaciones financieras negadas a la cuenta técnica en producción incluso con asignación accidental;
 - endpoints `config:manage`;
-- operaciones financieras negadas a la cuenta técnica;
-- cambios de permisos efectivos sin reiniciar la app.
+- cambios de permisos efectivos sin reiniciar la app;
+- login/respuesta de usuario exponiendo permisos efectivos coherentes con el ambiente.
 
 Para portabilidad de contenedores deben existir controles de regresión que verifiquen la política LF de scripts, el mecanismo defensivo de normalización y que el módulo de bootstrap sea importable desde la imagen construida.
 
@@ -276,6 +304,7 @@ Una feature está terminada cuando:
 
 - comportamiento implementado coincide con requisitos y criterios;
 - autorización no depende de nombres organizacionales hardcodeados;
+- la política de cuenta técnica está probada en producción y no producción;
 - migraciones son versionadas y desplegables;
 - términos visibles coinciden con `docs/TERMINOLOGY.md`;
 - README/prompt no reconstruyen conceptos retirados;
