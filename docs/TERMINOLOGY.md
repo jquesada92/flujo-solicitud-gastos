@@ -124,6 +124,12 @@ Solicitud que utiliza una única opción de compra/proveedor y su evidencia corr
 
 Solicitud que contiene varias opciones de cotización y pasa por una ronda de selección/votación antes de continuar con el flujo definido.
 
+## Selector de tipo de nueva solicitud
+
+Control de UI que permite elegir **Solicitud sencilla** o **Múltiples cotizaciones** mientras se está creando una solicitud nueva.
+
+Ese selector representa intención de **creación**. No es autoridad sobre una solicitud existente y su estado no debe heredarse al entrar en una corrección.
+
 ## Corrección / Corregir y reenviar
 
 Acción que modifica datos de una solicitud existente y reinicia el flujo que corresponda **sin cambiar su tipo de solicitud**.
@@ -133,7 +139,11 @@ SIMPLE      → corrección → SIMPLE
 MULTI_QUOTE → corrección → MULTI_QUOTE
 ```
 
-Una conversión entre SIMPLE y MULTI_QUOTE no debe llamarse corrección; requeriría una acción funcional explícita diferente.
+Al entrar en corrección, el editor deriva el tipo desde la solicitud seleccionada y descarta el estado previo del selector de nueva solicitud. Una conversión entre SIMPLE y MULTI_QUOTE no debe llamarse corrección; requeriría una acción funcional explícita diferente.
+
+## Tipo canónico de solicitud
+
+Tipo de flujo derivado de la persistencia y evidencia durable. Durante la compatibilidad legacy, una solicitud se considera MULTI_QUOTE si está marcada como tal, está en `QUOTATION_VOTING` o posee dos o más `quotation_options`.
 
 ## Términos legacy
 
@@ -160,4 +170,5 @@ Nuevos componentes, APIs, specs y documentación deben usar:
 - **Área** para contexto organizacional del gasto;
 - **Categoría** para naturaleza del gasto;
 - **Solicitud sencilla / SIMPLE** y **Múltiples cotizaciones / MULTI_QUOTE** para los tipos de solicitud;
+- **Selector de tipo de nueva solicitud** solo para la elección durante creación;
 - **Corrección / Corregir y reenviar** para editar sin cambiar el tipo de solicitud.
