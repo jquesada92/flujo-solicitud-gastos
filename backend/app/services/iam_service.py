@@ -9,6 +9,7 @@ from app.models.iam import (
     Permission,
     Role,
     RolePermission,
+    SystemAccount,
     UserGroup,
     UserPermission,
     UserRoleAssignment,
@@ -22,9 +23,14 @@ CORE_PERMISSION_CODES = (
     'requests:close',
     'config:manage',
 )
+SYSTEM_ACCOUNT_ALLOWED_PERMISSIONS = {'requests:read', 'config:manage'}
 
 
-def effective_permission_codes(db: Session, user_id: int) -> set[str]:
+def is_system_account(db: Session, user_id: int) -> bool:
+    return db.scalar(select(SystemAccount.id).where(SystemAccount.user_id == user_id)) is not None
+
+
+def _unrestricted_permission_codes(db: Session, user_id: int) -> set[str]:
     direct_permissions = set(db.scalars(
         select(Permission.code)
         .join(UserPermission, UserPermission.permission_id == Permission.id)
@@ -64,11 +70,21 @@ def effective_permission_codes(db: Session, user_id: int) -> set[str]:
     return direct_permissions | direct_role_permissions | group_role_permissions
 
 
+def effective_permission_codes(db: Session, user_id: int) -> set[str]:
+    permissions = _unrestricted_permission_codes(db, user_id)
+    if is_system_account(db, user_id):
+        # Technical accounts are deliberately separated from the financial
+        # workflow even if someone later assigns an overly broad role/group.
+        return permissions & SYSTEM_ACCOUNT_ALLOWED_PERMISSIONS
+    return permissions
+
+
 def has_permission(db: Session, user_id: int, permission_code: str) -> bool:
     return permission_code in effective_permission_codes(db, user_id)
 
 
 def permission_sources(db: Session, user_id: int) -> dict[str, list[str]]:
+    effective = effective_permission_codes(db, user_id)
     sources: dict[str, set[str]] = defaultdict(set)
 
     for code in db.scalars(
@@ -76,7 +92,8 @@ def permission_sources(db: Session, user_id: int) -> dict[str, list[str]]:
         .join(UserPermission, UserPermission.permission_id == Permission.id)
         .where(UserPermission.user_id == user_id, Permission.active.is_(True))
     ).all():
-        sources[code].add('Asignación directa')
+        if code in effective:
+            sources[code].add('Asignación directa')
 
     direct_role_rows = db.execute(
         select(Permission.code, Role.name)
@@ -90,7 +107,8 @@ def permission_sources(db: Session, user_id: int) -> dict[str, list[str]]:
         )
     ).all()
     for code, role_name in direct_role_rows:
-        sources[code].add(f'Rol directo: {role_name}')
+        if code in effective:
+            sources[code].add(f'Rol directo: {role_name}')
 
     group_rows = db.execute(
         select(Permission.code, UserGroup.name, Role.name)
@@ -107,6 +125,11 @@ def permission_sources(db: Session, user_id: int) -> dict[str, list[str]]:
         )
     ).all()
     for code, group_name, role_name in group_rows:
-        sources[code].add(f'Grupo {group_name} → {role_name}')
+        if code in effective:
+            sources[code].add(f'Grupo {group_name} → {role_name}')
+
+    if is_system_account(db, user_id):
+        for code in effective:
+            sources[code].add('Política de cuenta técnica')
 
     return {code: sorted(values) for code, values in sorted(sources.items())}
