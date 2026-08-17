@@ -15,6 +15,8 @@
 - Entry point Docker que migra/bootstrap antes de Uvicorn.
 - `FastAPI TestClient` para matriz de autorización IAM.
 - Test de topología que exige un solo head Alembic y la cadena esperada.
+- Test de regresión de portabilidad Windows→Linux para scripts y healthchecks de Docker Compose.
+- Smoke test de CI que carga la imagen backend y valida el entrypoint Linux real.
 - Servicios canónicos para resolución de aprobadores, documentos y votación.
 - `docs/IAM_MODEL.md` y `docs/FASTAPI_ARCHITECTURE.md`.
 - Spec/plan/checklist de `002-configurable-iam-fastapi-hardening`.
@@ -48,7 +50,7 @@
 - `20260817_0002_system_accounts.py` identifica cuentas técnicas existentes.
 - La cadena Alembic es lineal: `0000 → 0001 → 0002`.
 - `scripts/bootstrap_admin.py` crea/asocia idempotentemente la cuenta técnica fuera del lifespan.
-- El smoke test contra PostgreSQL/Neon real continúa siendo requisito previo al despliegue productivo; el CI actual valida topología, compilación y tests de aplicación.
+- El smoke test contra PostgreSQL/Neon real continúa siendo requisito previo al despliegue productivo; el CI actual valida topología, compilación, tests de aplicación y ejecutabilidad del entrypoint dentro de la imagen backend.
 
 ### Compatibility / Technical debt
 - `UserRole`, `title` y `can_*` permanecen temporalmente como metadatos/puente para UI/router legacy; no son autoridad de acceso.
