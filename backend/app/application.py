@@ -1,12 +1,13 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import approvals, areas, audit, auth, expenses, iam, rules, users
+from app.api import approvals, areas, audit, auth, expenses, financial_actions, iam, rules, users
 from app.core.config import get_settings
 from app.core.rate_limit import authenticated_subject, consume_user_request, policy_for_request
+from app.core.security import require_permission
 
 
 @asynccontextmanager
@@ -76,13 +77,31 @@ def create_app() -> FastAPI:
             response.headers['X-Frame-Options'] = 'DENY'
         return response
 
+    # Secure shadow routes are registered before the legacy expense router so
+    # invoice/closure operations always require requests:close.
+    app.include_router(financial_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(expenses.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(approvals.router, prefix='/api/approvals', tags=['Approvals'])
-    app.include_router(rules.router, prefix='/api/rules', tags=['Approval Rules'])
+    app.include_router(
+        rules.router,
+        prefix='/api/rules',
+        tags=['Approval Rules'],
+        dependencies=[Depends(require_permission('config:manage'))],
+    )
     app.include_router(auth.router, prefix='/api/auth', tags=['Authentication'])
-    app.include_router(users.router, prefix='/api/users', tags=['Users'])
+    app.include_router(
+        users.router,
+        prefix='/api/users',
+        tags=['Users'],
+        dependencies=[Depends(require_permission('config:manage'))],
+    )
     app.include_router(areas.router, prefix='/api/areas', tags=['Areas'])
-    app.include_router(audit.router, prefix='/api/audit', tags=['Audit'])
+    app.include_router(
+        audit.router,
+        prefix='/api/audit',
+        tags=['Audit'],
+        dependencies=[Depends(require_permission('config:manage'))],
+    )
     app.include_router(iam.router, prefix='/api/iam', tags=['Access Management'])
 
     @app.get('/api/health')
