@@ -17,6 +17,7 @@
 - Test de topología que exige un solo head Alembic y la cadena esperada.
 - Test de regresión de portabilidad Windows→Linux para scripts y healthchecks de Docker Compose.
 - Smoke test de CI que carga la imagen backend y valida el entrypoint Linux real.
+- Smoke test de CI que importa `scripts.bootstrap_admin` dentro de la imagen backend.
 - Servicios canónicos para resolución de aprobadores, documentos y votación.
 - `docs/IAM_MODEL.md` y `docs/FASTAPI_ARCHITECTURE.md`.
 - Spec/plan/checklist de `002-configurable-iam-fastapi-hardening`.
@@ -37,6 +38,7 @@
 - Docker Compose local espera a que `/api/health` del backend esté sano antes de iniciar Nginx.
 - `.gitattributes` fuerza LF para scripts shell y archivos de configuración Linux.
 - El backend Docker normaliza CRLF de scripts `.sh` durante el build para soportar checkouts Windows.
+- El bootstrap técnico se ejecuta como `python -m scripts.bootstrap_admin`; `scripts` es un paquete importable y ya no se depende de `python scripts/bootstrap_admin.py` ni de un `PYTHONPATH` implícito.
 
 ### Security
 - System Accounts filtran permisos financieros incluso ante una asignación accidental.
@@ -49,8 +51,8 @@
 - `20260817_0001_iam_foundation.py` crea IAM y migra flags legacy a permisos como operación única de compatibilidad.
 - `20260817_0002_system_accounts.py` identifica cuentas técnicas existentes.
 - La cadena Alembic es lineal: `0000 → 0001 → 0002`.
-- `scripts/bootstrap_admin.py` crea/asocia idempotentemente la cuenta técnica fuera del lifespan.
-- El smoke test contra PostgreSQL/Neon real continúa siendo requisito previo al despliegue productivo; el CI actual valida topología, compilación, tests de aplicación y ejecutabilidad del entrypoint dentro de la imagen backend.
+- `scripts.bootstrap_admin` crea/asocia idempotentemente la cuenta técnica fuera del lifespan.
+- El smoke test contra PostgreSQL/Neon real continúa siendo requisito previo al despliegue productivo; el CI actual valida topología, compilación, tests de aplicación, ejecutabilidad del entrypoint e importabilidad del bootstrap dentro de la imagen backend.
 
 ### Compatibility / Technical debt
 - `UserRole`, `title` y `can_*` permanecen temporalmente como metadatos/puente para UI/router legacy; no son autoridad de acceso.
