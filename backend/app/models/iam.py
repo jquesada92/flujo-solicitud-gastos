@@ -103,3 +103,12 @@ class UserPosition(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     position_id: Mapped[int] = mapped_column(ForeignKey('positions.id', ondelete='CASCADE'), nullable=False, index=True)
+
+
+class SystemAccount(Base):
+    __tablename__ = 'system_accounts'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), unique=True, nullable=False, index=True)
+    account_type: Mapped[str] = mapped_column(String(50), nullable=False, default='TECHNICAL_ADMIN')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
