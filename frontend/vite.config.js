@@ -92,7 +92,7 @@ function legacyRevisionSafetyPlugin() {
       next = replaceRequired(
         next,
         `              <ExpenseForm\n                onCreated={created}`,
-        `              <ExpenseForm\n                key={revision ? \`${'${revision.request_id}:${revision.flow_id || revision.status || "draft"}'}\` : "new-request"}\n                onCreated={created}`,
+        `              <ExpenseForm\n                key={revision ? revision.request_id + ":" + (revision.flow_id || revision.status || "draft") : "new-request"}\n                onCreated={created}`,
         "force correction form remount",
       );
 
