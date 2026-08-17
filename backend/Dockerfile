@@ -12,7 +12,12 @@ COPY alembic.ini ./alembic.ini
 COPY alembic ./alembic
 COPY scripts ./scripts
 COPY app ./app
-RUN chmod +x /app/scripts/start.sh
+
+# Windows checkouts can materialize shell scripts with CRLF even when the Git
+# blob is LF. Normalize inside the Linux image as a second line of defense so
+# the shebang remains /bin/sh instead of /bin/sh\r.
+RUN find /app/scripts -type f -name '*.sh' -exec sed -i 's/\r$//' {} + \
+    && chmod +x /app/scripts/*.sh
 
 EXPOSE 8000
 
