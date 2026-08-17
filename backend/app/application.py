@@ -4,7 +4,20 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import approvals, areas, audit, auth, expenses, financial_actions, iam, iam_users, rules, users
+from app.api import (
+    approvals,
+    areas,
+    audit,
+    auth,
+    expenses,
+    financial_actions,
+    iam,
+    iam_users,
+    quotation_actions,
+    request_actions,
+    rules,
+    users,
+)
 from app.core.config import get_settings
 from app.core.rate_limit import authenticated_subject, consume_user_request, policy_for_request
 from app.core.security import require_permission
@@ -77,10 +90,12 @@ def create_app() -> FastAPI:
             response.headers['X-Frame-Options'] = 'DENY'
         return response
 
-    # Secure shadow routes are registered before the legacy expense router so
-    # invoice/closure operations always require requests:close.
+    # Canonical action routes are registered before the legacy expense router.
+    # The old router remains only for endpoints not yet extracted from the MVP.
+    app.include_router(request_actions.router, prefix='/api/expenses', tags=['Expenses'])
+    app.include_router(quotation_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(financial_actions.router, prefix='/api/expenses', tags=['Expenses'])
-    app.include_router(expenses.router, prefix='/api/expenses', tags=['Expenses'])
+    app.include_router(expenses.router, prefix='/api/expenses', tags=['Expenses (legacy compatibility)'])
     app.include_router(approvals.router, prefix='/api/approvals', tags=['Approvals'])
     app.include_router(
         rules.router,
