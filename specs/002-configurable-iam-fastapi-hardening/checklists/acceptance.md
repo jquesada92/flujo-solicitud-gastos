@@ -71,6 +71,7 @@
 - [x] Los scripts `.sh` se fuerzan a LF mediante `.gitattributes`.
 - [x] El Dockerfile normaliza CRLF defensivamente antes de ejecutar `start.sh`.
 - [x] Docker Compose espera el healthcheck del backend antes de iniciar Nginx.
+- [x] CI carga la imagen backend y valida que `/app/scripts/start.sh` exista, sea ejecutable y tenga un shebang Linux válido.
 - [ ] Antes del despliegue productivo se crea snapshot/backup de Neon.
 - [ ] Se ejecuta smoke test real de `alembic upgrade head` contra PostgreSQL/Neon de preview antes de producción.
 
@@ -83,7 +84,7 @@
 - [x] Cerrar/reemplazar factura requiere `requests:close`.
 - [x] Uploads canónicos requieren permisos explícitos.
 - [x] Motor de aprobación obtiene participantes desde IAM para políticas canónicas.
-- [ ] **Feature futura:** refactorizar fórmula funcional de quorum/mayoría de aprobación para cumplir exactamente la Constitución 2.2.0.
+- [ ] **Feature futura:** refactorizar fórmula funcional de quorum/mayoría de aprobación para cumplir exactamente la Constitución 2.2.1.
 - [ ] **Feature futura:** especificar/refactorizar quorum y empate de cotizaciones.
 
 ## Compatibilidad / deuda
@@ -101,6 +102,7 @@
 - [x] `npm run build` forma parte de CI.
 - [x] Backend compile/tests forman parte de CI.
 - [x] Imágenes Docker se construyen en CI.
+- [x] El entrypoint backend se valida dentro de la imagen construida por CI.
 - [x] Todos los jobs del commit final del PR están verdes antes de marcarlo Ready for review.
 
 ## Documentación
