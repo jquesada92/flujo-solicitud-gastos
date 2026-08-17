@@ -127,12 +127,25 @@ function classificationTerminology(text) {
   return normalized;
 }
 
+function userTerminology(text) {
+  if (!text) return text;
+  return String(text)
+    .replaceAll('Personas', 'Usuarios')
+    .replaceAll('personas', 'usuarios')
+    .replaceAll('Persona', 'Usuario')
+    .replaceAll('persona', 'usuario');
+}
+
+function productTerminology(text) {
+  return userTerminology(classificationTerminology(text));
+}
+
 function normalizeTextNodes(root) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const nodes = [];
   while (walker.nextNode()) nodes.push(walker.currentNode);
   for (const node of nodes) {
-    const normalized = classificationTerminology(node.nodeValue);
+    const normalized = productTerminology(node.nodeValue);
     if (normalized !== node.nodeValue) node.nodeValue = normalized;
   }
 
@@ -141,7 +154,7 @@ function normalizeTextNodes(root) {
       for (const attribute of ['placeholder', 'aria-label', 'title']) {
         if (!element.hasAttribute(attribute)) continue;
         const value = element.getAttribute(attribute);
-        const normalized = classificationTerminology(value);
+        const normalized = productTerminology(value);
         if (normalized !== value) element.setAttribute(attribute, normalized);
       }
     }
@@ -152,7 +165,7 @@ const observer = new MutationObserver((records) => {
   for (const record of records) {
     for (const node of record.addedNodes) {
       if (node.nodeType === Node.TEXT_NODE) {
-        const normalized = classificationTerminology(node.nodeValue);
+        const normalized = productTerminology(node.nodeValue);
         if (normalized !== node.nodeValue) node.nodeValue = normalized;
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         normalizeTextNodes(node);
