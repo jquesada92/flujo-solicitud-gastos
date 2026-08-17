@@ -6,15 +6,7 @@ La arquitectura sigue los patrones recomendados por la documentación oficial de
 
 ## Application factory
 
-`app/application.py` crea la aplicación y registra:
-
-- middleware;
-- routers;
-- dependencias globales de routers;
-- health endpoint;
-- lifespan mínimo.
-
-`app/main.py` existe únicamente como alias de compatibilidad.
+`app/application.py` crea la aplicación y registra middleware, routers, health endpoint y lifespan mínimo. `app/main.py` existe únicamente como alias de compatibilidad.
 
 ## Separación de responsabilidades
 
@@ -26,43 +18,89 @@ models/    persistencia SQLAlchemy
 core/      configuración, DB, seguridad, rate limiting
 ```
 
-Los modelos de clasificación que antes vivían en `api/areas.py` están en `models/classification.py`.
-
 ## Dependencia de DB
 
-`get_db()` usa un context manager/yield para entregar una sesión por request y cerrarla siempre.
+`get_db()` usa `yield`/context manager para entregar una sesión por request y cerrarla siempre.
 
-El backend actual usa SQLAlchemy síncrono. No se mezcla con AsyncSession.
-
-## Sync vs async
-
-FastAPI ejecuta path operations declaradas con `def` en un threadpool. Por eso las rutas canónicas que realizan SQLAlchemy síncrono o escritura síncrona de archivos usan `def`.
-
-No debe añadirse un `async def` que ejecute directamente:
-
-- `Session.scalar/execute/commit` síncronos;
-- `Path.write_bytes`;
-- otras operaciones bloqueantes;
-
-sin migrar la dependencia a una API async o hacer offload explícito.
+El backend actual usa SQLAlchemy síncrono. Las rutas canónicas que ejecutan SQLAlchemy o filesystem bloqueante se declaran con `def` para que FastAPI las ejecute en threadpool.
 
 ## Settings
 
-`core/config.py` utiliza `pydantic-settings` y centraliza la lectura/validación de variables de entorno.
+`core/config.py` utiliza `pydantic-settings` y centraliza variables de entorno.
 
-No introducir nuevos `os.getenv()` dispersos salvo una razón técnica documentada.
+Se distinguen dos propiedades:
 
-Producción valida:
+### `is_production_environment`
+
+```text
+ENVIRONMENT=production → True
+cualquier otro valor   → False
+```
+
+Gobierna **comportamiento funcional sensible al ambiente**, actualmente la segregación de la cuenta `TECHNICAL_ADMIN`.
+
+### `is_production`
+
+Es verdadero cuando el ambiente es productivo o el runtime está alojado bajo condiciones que requieren endurecimiento, por ejemplo Render.
+
+Gobierna validaciones como:
 
 - secretos fuertes;
 - CORS HTTPS explícito;
-- credenciales necesarias según modo de correo.
+- credenciales requeridas.
+
+Esta separación es deliberada: un preview alojado puede requerir secretos fuertes sin perder la capacidad de probar todo el flujo con la cuenta técnica.
+
+## IAM y dependencias FastAPI
+
+`require_permission(code)` consulta `iam_service.has_permission()`.
+
+Para usuarios operativos, los permisos provienen de asignaciones persistidas de usuario/rol/grupo.
+
+Para una cuenta registrada en `system_accounts`:
+
+```text
+ENVIRONMENT=production
+→ permisos activos ∩ {requests:read, config:manage}
+
+ENVIRONMENT!=production
+→ todos los permisos activos del producto
+```
+
+No existe bypass por `UserRole.ADMIN`, email, cargo o ID.
+
+`users_with_permission()` aplica la misma política a poblaciones de workflow. Por tanto:
+
+- producción: cuenta técnica excluida de permisos financieros;
+- no producción: puede participar en aprobación/votación para pruebas.
+
+## Vista del usuario autenticado
+
+`apply_effective_permissions_to_user()` calcula capacidades antes de serializar el usuario actual.
+
+Contrato canónico:
+
+```text
+permission_codes
+```
+
+Aliases temporales:
+
+```text
+can_request
+can_approve
+can_view
+can_configure
+can_close
+```
+
+El login aplica esta decoración inmediatamente. `current_user()` la recalcula en cada request autenticado.
+
+Esto permite que cambios IAM y el cambio de ambiente se reflejen sin confiar en columnas legacy persistidas.
 
 ## Lifespan
 
-El lifespan solo valida/carga configuración de ciclo de vida.
-
-No ejecuta:
+El lifespan solo valida/carga recursos de ciclo de vida. No ejecuta:
 
 - `Base.metadata.create_all()`;
 - `ALTER TABLE`;
@@ -72,7 +110,7 @@ No ejecuta:
 
 ## Alembic
 
-Alembic es la autoridad para cambios de esquema. La topología actual es deliberadamente lineal:
+Topología lineal:
 
 ```text
 20260817_0000 application baseline
@@ -82,9 +120,7 @@ Alembic es la autoridad para cambios de esquema. La topología actual es deliber
 20260817_0002 protected system accounts
 ```
 
-`0000` permite que una base PostgreSQL limpia reciba el esquema base property-free y, al mismo tiempo, conserva tablas que ya existen al aplicarse sobre la base productiva actual. Su downgrade es deliberadamente no destructivo porque no puede asumir que Alembic creó las tablas preexistentes.
-
-`tests/test_migrations.py` exige un único head y la cadena anterior. Esto detecta errores de topología, pero no reemplaza un smoke test real de `alembic upgrade head` contra PostgreSQL/Neon de preview.
+`tests/test_migrations.py` exige un único head.
 
 El entrypoint Docker ejecuta:
 
@@ -94,74 +130,61 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
-`scripts` es un paquete importable. El bootstrap se ejecuta como módulo desde `/app` para que `app` permanezca en la raíz de imports; no se ejecuta por ruta de archivo.
-
-Esto permite usar el patrón incluso en planes de Render que no incluyen una etapa pre-deploy separada. En despliegues con múltiples réplicas, la migración debe moverse a una etapa única para evitar carreras.
+`scripts` es importable y el bootstrap se ejecuta como módulo desde `/app`.
 
 ## Portabilidad Docker Windows → Linux
 
-Los scripts shell ejecutados por la imagen backend son artefactos Linux aunque el checkout se realice en Windows.
-
-El repositorio aplica dos defensas:
-
-1. `.gitattributes` fuerza `*.sh text eol=lf`.
-2. `backend/Dockerfile` elimina `\r` de los scripts `.sh` durante el build antes de ejecutar `chmod +x`.
-
-Esto evita el caso en que Docker muestra:
-
-```text
-exec /app/scripts/start.sh: no such file or directory
-```
-
-cuando el archivo existe pero el shebang quedó materializado como `/bin/sh\r` por CRLF.
-
-En Docker Compose local, Nginx no debe iniciar únicamente porque el contenedor backend fue creado. Debe esperar a que `/api/health` pase. Así, si Alembic, bootstrap o Uvicorn fallan, el error principal queda visible en `backend` en lugar de producir primero el secundario:
-
-```text
-host not found in upstream "backend"
-```
-
-`tests/test_container_portability.py` protege estas reglas de regresión.
-
-El job Docker de CI, además de construir la imagen, debe comprobar:
-
-- `start.sh` existe, es ejecutable y conserva `#!/bin/sh`;
-- `scripts.bootstrap_admin` se puede importar dentro de la imagen con una configuración de DB de prueba.
-
-Esto detecta errores de `sys.path` que un simple `docker build` no revela.
-
-## Seguridad
-
-`require_permission()` es una dependencia FastAPI que consulta permisos efectivos IAM en PostgreSQL.
-
-No existe bypass por ADMIN.
-
-Se pueden aplicar dependencias a routers completos, por ejemplo configuración/auditoría, evitando repetir checks en cada handler.
+- `.gitattributes` fuerza `*.sh text eol=lf`.
+- `backend/Dockerfile` elimina `\r` defensivamente.
+- Docker Compose espera `/api/health` antes de iniciar Nginx.
+- CI valida `start.sh` real e `import scripts.bootstrap_admin` dentro de la imagen.
 
 ## Password hashing
 
 `pwdlib.PasswordHash.recommended()` genera Argon2.
 
-`verify_password_and_upgrade()` permite autenticar PBKDF2 legacy y reemplazarlo por Argon2 después de un login exitoso.
+`verify_password_and_upgrade()` permite autenticar PBKDF2 legacy y reemplazarlo por Argon2 después de login exitoso.
 
 ## Response models
 
-Autenticación usa `LoginResponse` y `TokenResponse`. Nuevas APIs IAM usan schemas Pydantic explícitos.
+Autenticación usa `LoginResponse`/`TokenResponse`. `UserOut` incluye `permission_codes` y `can_close` para la transición hacia autorización visual por capacidades.
 
-Al crear endpoints nuevos se debe declarar `response_model` salvo que la respuesta sea streaming/file o exista una razón documentada.
+Al crear endpoints nuevos se debe declarar `response_model` salvo streaming/file o razón documentada.
 
 ## Testing
 
-`tests/test_iam_api.py` usa `FastAPI TestClient` con override de `get_db()` y SQLite aislada.
+`tests/test_iam_api.py` usa `FastAPI TestClient` con SQLite aislada y cubre ambas políticas ambientales:
 
-Los tests de autorización deben comprobar tanto ALLOW como DENY. Un test directo de una función auxiliar no sustituye un test HTTP para rutas críticas.
+```text
+no-prod → full technical-admin access
+prod    → config/read only
+```
 
-`tests/test_migrations.py` verifica la topología de las revisiones Alembic sin conectarse a producción.
+También verifica población de aprobadores, 403 de cierre productivo y el contrato del login.
 
-`tests/test_container_portability.py` verifica que las defensas de LF y healthcheck local permanezcan en el repositorio.
+`tests/test_migrations.py` verifica topología Alembic.
 
-## Router legacy
+`tests/test_container_portability.py` verifica defensas de portabilidad local.
 
-`api/expenses.py` y `api/users.py` contienen partes del MVP anterior. Las rutas canónicas extraídas se registran antes que las equivalentes legacy.
+## Producción vs preview
 
-Esta estrategia permite migración incremental sin un big-bang rewrite. La meta es retirar gradualmente las ramas basadas en `UserRole`/`can_*` y modularizar el frontend.
+`render.yaml` de producción declara explícitamente:
+
+```env
+ENVIRONMENT=production
+```
+
+Un servicio de preview/test debe usar otro valor si se desea acceso funcional completo con la cuenta técnica.
+
+## Router/frontend legacy
+
+`api/expenses.py`, `api/users.py` y `frontend/src/main.jsx` contienen partes del MVP anterior. Las rutas canónicas se registran antes que equivalentes legacy.
+
+El frontend monolítico todavía contiene bypasses visuales como:
+
+```text
+user.role === "ADMIN"
+canClose={true}
+```
+
+El backend no confía en esos valores, pero la deuda debe retirarse migrando la visibilidad de acciones a `permission_codes`.
