@@ -1,10 +1,47 @@
 # Historial funcional y técnico
 
+## 2026-08-17 — Aislamiento del estado de corrección y reparación de request_type
+
+### Incidente refinado
+
+La reproducción manual permitió precisar la causa del bug de correcciones MULTI_QUOTE:
+
+```text
+Pestaña SIMPLE activa
+→ Corregir MULTI_QUOTE
+→ editor SIMPLE ❌
+
+Pestaña MULTI_QUOTE activa
+→ Corregir la misma MULTI_QUOTE
+→ editor MULTI_QUOTE ✅
+```
+
+Esto demostró que el estado React de la pestaña de **creación** estaba sobreviviendo al cambio a modo corrección. La solicitud seleccionada no era la única fuente de verdad del editor.
+
+También se identificó una segunda posibilidad de compatibilidad: filas históricas con `request_type=SIMPLE` aunque exista evidencia durable de múltiples cotizaciones.
+
+### Corrección
+
+Se agregaron defensas independientes:
+
+1. `ExpenseForm` deriva su tipo inicial desde el draft/evidencia durable.
+2. Al entrar o cambiar de corrección el formulario recibe una `key` basada en la solicitud/flujo y se remonta, descartando el estado previo de las pestañas.
+3. `revision_actions.py` deriva el tipo canónico por `request_type`, estado `QUOTATION_VOTING` o presencia de dos o más `quotation_options`.
+4. Alembic `20260817_0003_backfill_multi_quote_request_type.py` repara permanentemente filas legacy inconsistentes.
+5. La topología Alembic pasa a `0000 → 0001 → 0002 → 0003`.
+6. Se agregó regresión backend para un registro con flag SIMPLE pero evidencia MULTI_QUOTE.
+
+### Regla consolidada
+
+La pestaña SIMPLE/MULTI_QUOTE solo representa intención al **crear una nueva solicitud**. No puede influir en una corrección.
+
+---
+
 ## 2026-08-17 — Corrección MULTI_QUOTE preserva el tipo de solicitud
 
 ### Incidente detectado
 
-Al seleccionar **Corregir / reenviar** sobre una solicitud en `QUOTATION_VOTING`, el formulario legacy se abría como **Solicitud sencilla**. La causa era que `ExpenseForm` inicializaba `requestType` en `SIMPLE` y, al hidratar un draft, no restauraba `draft.request_type` ni `draft.quotation_options`.
+Al seleccionar **Corregir / reenviar** sobre una solicitud en `QUOTATION_VOTING`, el formulario legacy se abría como **Solicitud sencilla**. La causa inicial identificada era que `ExpenseForm` inicializaba `requestType` en `SIMPLE` y, al hidratar un draft, no restauraba correctamente `draft.request_type` ni `draft.quotation_options`.
 
 El endpoint legacy de `resubmit` tampoco reconstruía correctamente una nueva ronda MULTI_QUOTE.
 
@@ -17,7 +54,7 @@ SIMPLE      → corrección → SIMPLE
 MULTI_QUOTE → corrección → MULTI_QUOTE
 ```
 
-`Corregir / reenviar` no puede utilizarse para convertir el tipo de solicitud. Un intento de cambio de `request_type` es rechazado por backend con `409 Conflict`.
+`Corregir / reenviar` no puede utilizarse para convertir el tipo de solicitud. Un intento real de cambio del tipo canónico es rechazado por backend con `409 Conflict`.
 
 ### Comportamiento MULTI_QUOTE
 
@@ -36,13 +73,13 @@ Una corrección:
 
 ### Implementación temporal frontend
 
-Mientras `ExpenseForm` siga dentro de `main.jsx`, `vite.config.js` aplica un transform de compatibilidad durante dev/build para restaurar correctamente el draft MULTI_QUOTE. El build falla si el transform no encuentra los fragmentos legacy esperados.
+Mientras `ExpenseForm` siga dentro de `main.jsx`, `vite.config.js` aplica un transform de compatibilidad durante dev/build para restaurar correctamente el draft MULTI_QUOTE y aislarlo del estado previo de creación. El build falla si el transform no encuentra los fragmentos legacy esperados.
 
 Este transform no es arquitectura objetivo y debe retirarse al modularizar `ExpenseForm`.
 
 ### Protección backend y pruebas
 
-Se añadió `api/revision_actions.py` como ruta canónica registrada antes de `expenses.py` legacy, y una suite `TestClient` que verifica preservación del tipo, evidencia, reinicio de votos/invitaciones y rechazo de MULTI_QUOTE → SIMPLE.
+Se añadió `api/revision_actions.py` como ruta canónica registrada antes de `expenses.py` legacy, y una suite `TestClient` que verifica preservación/reparación del tipo, evidencia, reinicio de votos/invitaciones y rechazo de MULTI_QUOTE → SIMPLE.
 
 ---
 
@@ -137,10 +174,10 @@ El administrador técnico de la plataforma no debe formar parte del proceso fina
 
 ### Baseline de base de datos
 
-Al retirar `Base.metadata.create_all()` del startup se detectó que una instalación nueva también necesitaba una ruta determinista de creación. Se añadió `20260817_0000_application_baseline.py`, libre del dominio inmobiliario, y se dejó una única cadena Alembic:
+Al retirar `Base.metadata.create_all()` del startup se detectó que una instalación nueva también necesitaba una ruta determinista de creación. Se añadió `20260817_0000_application_baseline.py`, libre del dominio inmobiliario. La cadena actual es:
 
 ```text
-0000 application baseline → 0001 IAM foundation → 0002 system accounts
+0000 application baseline → 0001 IAM foundation → 0002 system accounts → 0003 MULTI_QUOTE request_type repair
 ```
 
 El baseline conserva tablas existentes cuando se aplica sobre la base actual y crea el esquema base cuando se ejecuta sobre una base limpia. Una prueba de topología falla si aparecen múltiples heads o se rompe esta cadena.
@@ -195,7 +232,7 @@ La consola consume `/api/iam/*` y no depende de perfiles/cargos hardcodeados del
 
 Pendientes separados:
 
-- fórmula exacta del motor de aprobación para cumplir la Constitución 2.3.1;
+- fórmula exacta del motor de aprobación para cumplir la Constitución 2.3.2;
 - regla de quorum/empate de votación de cotizaciones;
 - edición estructural de una ronda MULTI_QUOTE corregida (agregar/eliminar opciones con evidencia/versionado explícito);
 - retiro completo de `UserRole`, `can_*`, `/api/users` legacy y ramas legacy de `api/expenses.py`;
