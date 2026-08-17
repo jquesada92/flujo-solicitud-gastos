@@ -14,15 +14,16 @@ class CleanName(BaseModel):
         return cleaned
 
 
-class SubcategoryCreate(CleanName):
+class CategoryCreate(CleanName):
     pass
 
 
-class SubcategoryOut(BaseModel):
+class CategoryOut(BaseModel):
     id: int
     code: str
     name: str
     active: bool
+    area_ids: list[int] = []
 
     class Config:
         from_attributes = True
@@ -44,12 +45,16 @@ class AreaUpdate(BaseModel):
         return CleanName(name=value).name
 
 
+class CategoryUpdate(AreaUpdate):
+    pass
+
+
 class AreaOut(BaseModel):
     id: int
     code: str
     name: str
     active: bool
-    subcategories: list[SubcategoryOut]
+    categories: list[CategoryOut]
 
     class Config:
         from_attributes = True
