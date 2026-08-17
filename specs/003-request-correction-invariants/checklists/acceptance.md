@@ -64,5 +64,5 @@
 - [x] HISTORY actualizado.
 - [x] CHANGELOG actualizado.
 - [x] Índice documental actualizado.
-- [x] Terminología revisada; no se introdujo un término nuevo.
+- [x] Terminología actualizada para SIMPLE, MULTI_QUOTE y Corrección / Corregir y reenviar.
 - [ ] Descripción final del PR debe incluir la corrección y la Constitución 2.3.1.
