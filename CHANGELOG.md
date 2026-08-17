@@ -3,24 +3,34 @@
 ## 2026-08-17 — Correcciones MULTI_QUOTE preservan el flujo
 
 ### Fixed
-- **Corregir / reenviar** ya no degrada una solicitud `MULTI_QUOTE` a `SIMPLE` por el valor por defecto del formulario.
-- El frontend restaura `request_type`, opciones de cotización y soportes existentes al hidratar una corrección.
-- El backend canónico rechaza con `409` cualquier intento de cambiar el `request_type` durante `resubmit`.
+- **Corregir / reenviar** ya no depende de la pestaña SIMPLE/MULTI_QUOTE seleccionada antes de editar.
+- Si **Solicitud sencilla** está activa y se corrige una solicitud MULTI_QUOTE, el editor se remonta y abre directamente como MULTI_QUOTE.
+- El frontend deriva el tipo inicial desde la solicitud/evidencia durable y no reutiliza el estado React de creación.
+- El frontend restaura opciones de cotización y soportes existentes al hidratar una corrección.
+- El backend canónico deriva un tipo canónico de solicitud y rechaza con `409` cualquier intento real de cambiarlo durante `resubmit`.
+- Registros legacy con `request_type=SIMPLE` pero evidencia MULTI_QUOTE se reconocen y reparan correctamente.
 - Una corrección MULTI_QUOTE reinicia correctamente la ronda: nuevo `flow_id`, votos vigentes limpiados, invitaciones reemplazadas y estado `QUOTATION_VOTING`.
 - Los attachments existentes permanecen asociados a sus opciones.
 
 ### Added
 - `backend/app/api/revision_actions.py` como ruta canónica de correcciones registrada antes del router legacy.
-- `backend/tests/test_multi_quote_revision.py` con regresión HTTP de preservación de tipo/evidencia/ronda.
-- `frontend/vite.config.js` con transform temporal y estricto para hidratar correctamente `ExpenseForm` mientras siga en el monolito.
+- `backend/tests/test_multi_quote_revision.py` con regresión HTTP de preservación/reparación de tipo, evidencia y ronda.
+- Test específico de fila legacy con `request_type=SIMPLE` y evidencia MULTI_QUOTE.
+- `frontend/vite.config.js` con transform temporal y estricto que fuerza aislamiento/remount del estado de corrección.
+- `20260817_0003_backfill_multi_quote_request_type.py` para reparar solicitudes históricas inconsistentes.
 - `specs/003-request-correction-invariants/`.
 - `docs/REQUEST_CORRECTIONS.md`.
 
 ### Behavior
 - `SIMPLE → corrección → SIMPLE`.
 - `MULTI_QUOTE → corrección → MULTI_QUOTE`.
+- La pestaña seleccionada antes de pulsar **Corregir / reenviar** no influye en el editor.
 - Durante esta feature una MULTI_QUOTE corregida conserva la misma cantidad de opciones; se pueden editar proveedor, monto, URL y observaciones.
 - Cambiar deliberadamente SIMPLE ↔ MULTI_QUOTE queda fuera de `Corregir / reenviar`.
+
+### Migrations
+- La cadena Alembic pasa a `0000 → 0001 → 0002 → 0003`.
+- `0003` cambia a `MULTI_QUOTE` filas con `QUOTATION_VOTING` o dos/más opciones que aún tengan el default `SIMPLE`.
 
 ### Compatibility / Technical debt
 - El transform Vite es temporal y debe retirarse cuando `ExpenseForm` salga de `frontend/src/main.jsx`.
@@ -91,7 +101,8 @@
 - `20260817_0000_application_baseline.py` define un baseline property-free para instalaciones limpias y conserva tablas productivas que ya existen.
 - `20260817_0001_iam_foundation.py` crea IAM y migra flags legacy a permisos como operación única de compatibilidad.
 - `20260817_0002_system_accounts.py` identifica cuentas técnicas existentes.
-- La cadena Alembic es lineal: `0000 → 0001 → 0002`.
+- `20260817_0003_backfill_multi_quote_request_type.py` repara el tipo de solicitudes MULTI_QUOTE históricas.
+- La cadena Alembic es lineal: `0000 → 0001 → 0002 → 0003`.
 - `scripts.bootstrap_admin` crea/asocia idempotentemente la cuenta técnica fuera del lifespan.
 - El smoke test contra PostgreSQL/Neon real continúa siendo requisito previo al despliegue productivo.
 
