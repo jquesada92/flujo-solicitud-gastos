@@ -207,14 +207,16 @@ Pueden permanecer temporalmente:
 - `title`;
 - router legacy `/api/users`;
 - partes del router monolítico de gastos;
-- capa frontend `domain-normalization.js`.
+- capa frontend `domain-normalization.js`;
+- transform Vite temporal de Feature 003 mientras `ExpenseForm` siga dentro del monolito.
 
 Condiciones:
 
 1. no son fuente de autorización;
 2. los `can_*` que vea código legacy se derivan del IAM efectivo;
 3. las rutas canónicas se registran antes que las rutas legacy equivalentes;
-4. la deuda se documenta y retira gradualmente.
+4. invariantes funcionales posteriores, como preservar `request_type` durante una corrección, se protegen también en backend;
+5. la deuda se documenta y retira gradualmente.
 
 ## Criterios funcionales clave de la política ambiental
 
@@ -224,7 +226,11 @@ Condiciones:
 - En producción, aunque se asigne directamente `requests:close`, el permiso efectivo no aparece y el endpoint de cierre devuelve 403.
 - En producción, la cuenta técnica no aparece como aprobador/votante financiero.
 
-## Fuera de alcance de este PR
+## Relación con Feature 003
+
+La política IAM de esta feature no define por sí sola la semántica de correcciones. La Feature `003-request-correction-invariants` añadió posteriormente la regla constitucional de que `Corregir / reenviar` preserva `SIMPLE` o `MULTI_QUOTE` y reinicia correctamente una ronda MULTI_QUOTE. La Constitución vigente es **2.3.1**.
+
+## Fuera de alcance de esta feature
 
 - motor de DENY explícito;
 - scopes por organización/Área/recurso;
@@ -236,6 +242,6 @@ Condiciones:
 
 ## Deuda funcional explícita
 
-La votación `MULTI_QUOTE` mantiene en este PR la regla legacy de resolución al participar toda la población invitada y existir un ganador único. La semántica de quorum/empates de cotizaciones requiere una especificación funcional independiente.
+La votación `MULTI_QUOTE` mantiene la regla legacy de resolución al participar toda la población invitada y existir un ganador único. La semántica de quorum/empates de cotizaciones requiere una especificación funcional independiente.
 
-Asimismo, la regla de mayoría del motor de aprobación existente no se declara corregida por este PR; la constitución vigente sigue siendo la fuente de verdad funcional para la futura refactorización del motor de decisiones.
+Asimismo, la regla de mayoría del motor de aprobación existente no se declara corregida por este PR; la Constitución vigente 2.3.1 sigue siendo la fuente de verdad funcional para la futura refactorización del motor de decisiones.
