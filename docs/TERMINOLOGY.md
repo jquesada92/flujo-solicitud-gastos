@@ -57,13 +57,12 @@ Los permisos son la autoridad de acceso.
 
 ## Permiso efectivo
 
-Permiso que un Usuario posee después de combinar las fuentes IAM aplicables y, cuando corresponde, políticas explícitas de cuenta técnica por ambiente.
-
-Para usuarios operativos puede provenir de:
+Permiso que un Usuario posee después de combinar:
 
 - permisos directos;
 - permisos de roles directos;
-- permisos de roles heredados por grupos.
+- permisos de roles heredados por grupos;
+- políticas especiales aplicables a cuentas técnicas según el ambiente.
 
 ## Cargo / Posición
 
@@ -81,26 +80,14 @@ Ejemplos:
 
 ## Cuenta técnica / Administrador del sistema
 
-Cuenta de sistema creada mediante bootstrap y registrada en `system_accounts` para administrar/probar la plataforma.
-
-**Administrador del sistema no es un Cargo ni un Rol organizacional.** Tampoco significa un bypass basado en `UserRole.ADMIN`.
+Cuenta de sistema creada mediante bootstrap para administrar la plataforma.
 
 Su política depende del ambiente:
 
-### Producción
+- `ENVIRONMENT=production`: `config:manage` + `requests:read`; no participa en el flujo financiero.
+- cualquier otro `ENVIRONMENT`: todos los permisos atómicos activos para pruebas end-to-end.
 
-Con `ENVIRONMENT=production` sus permisos efectivos máximos son:
-
-- `config:manage`;
-- `requests:read`.
-
-No puede crear, aprobar/votar ni cerrar solicitudes.
-
-### No producción
-
-Con cualquier `ENVIRONMENT` distinto de `production`, la cuenta técnica obtiene todos los permisos atómicos activos para permitir pruebas end-to-end del producto.
-
-Puede crear, consultar, aprobar/votar, cerrar y configurar.
+La condición se basa en `SystemAccount + ENVIRONMENT`, no en nombre, email, Cargo o `UserRole.ADMIN`.
 
 ## Área
 
@@ -129,20 +116,37 @@ Ejemplos:
 
 Área y Categoría son catálogos independientes relacionados de forma configurable.
 
+## Solicitud sencilla / SIMPLE
+
+Solicitud que utiliza una única opción de compra/proveedor y su evidencia correspondiente.
+
+## Múltiples cotizaciones / MULTI_QUOTE
+
+Solicitud que contiene varias opciones de cotización y pasa por una ronda de selección/votación antes de continuar con el flujo definido.
+
+## Corrección / Corregir y reenviar
+
+Acción que modifica datos de una solicitud existente y reinicia el flujo que corresponda **sin cambiar su tipo de solicitud**.
+
+```text
+SIMPLE      → corrección → SIMPLE
+MULTI_QUOTE → corrección → MULTI_QUOTE
+```
+
+Una conversión entre SIMPLE y MULTI_QUOTE no debe llamarse corrección; requeriría una acción funcional explícita diferente.
+
 ## Términos legacy
 
 Los siguientes términos pueden aparecer temporalmente en código de compatibilidad, pero no representan la arquitectura objetivo:
 
 - `UserRole.ADMIN`, `REQUESTER`, `APPROVER`, `VIEWER`;
-- `can_request`, `can_approve`, `can_view`, `can_configure` como columnas persistidas;
+- `can_request`, `can_approve`, `can_view`, `can_configure`;
 - `title` usado como cargo/perfil;
 - `AccessProfile` como mezcla de cargo/permisos;
 - Persona/Personas;
 - Subárea para representar Categoría.
 
-`can_close` y los `can_*` expuestos en `UserOut` son aliases temporales derivados de `permission_codes`; no son permisos independientes.
-
-No introducir nuevas dependencias funcionales sobre conceptos legacy.
+No introducir nuevas dependencias funcionales sobre estos conceptos.
 
 ## Regla de consistencia
 
@@ -153,6 +157,7 @@ Nuevos componentes, APIs, specs y documentación deben usar:
 - **Rol** para conjuntos de permisos;
 - **Permiso** para autorización;
 - **Cargo/Posición** para metadato organizacional;
-- **Cuenta técnica / Administrador del sistema** para la identidad técnica gobernada por ambiente;
 - **Área** para contexto organizacional del gasto;
-- **Categoría** para naturaleza del gasto.
+- **Categoría** para naturaleza del gasto;
+- **Solicitud sencilla / SIMPLE** y **Múltiples cotizaciones / MULTI_QUOTE** para los tipos de solicitud;
+- **Corrección / Corregir y reenviar** para editar sin cambiar el tipo de solicitud.
