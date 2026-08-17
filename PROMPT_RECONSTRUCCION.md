@@ -1,5 +1,7 @@
 # Prompt maestro de reconstrucción
 
+> Constitución vigente: **2.3.2**.
+
 Reconstruye una aplicación web lista para producción llamada **Flujo de Control de Gastos**, destinada a solicitar, evaluar, aprobar, ejecutar y documentar gastos con evidencia verificable.
 
 ## Autoridad documental
@@ -214,17 +216,28 @@ Crear/corregir/cargar soporte requiere `requests:create`.
 
 ### Correcciones
 
-`Corregir / reenviar` debe preservar siempre el `request_type` almacenado:
+`Corregir / reenviar` debe preservar siempre el tipo canónico:
 
 ```text
 SIMPLE      -> SIMPLE
 MULTI_QUOTE -> MULTI_QUOTE
 ```
 
-El backend debe rechazar con `409 Conflict` cualquier intento de cambiar el tipo durante `resubmit`, aunque el frontend envíe un valor por defecto incorrecto.
+**La pestaña SIMPLE/MULTI_QUOTE seleccionada antes del clic solo pertenece al modo de creación y MUST descartarse al entrar en corrección.** El editor debe derivar su tipo desde la solicitud seleccionada. Si SIMPLE estaba activa y el usuario corrige una MULTI_QUOTE, debe abrir directamente el editor múltiple sin que el usuario seleccione antes esa pestaña.
+
+Mientras exista compatibilidad con datos legacy, considera MULTI_QUOTE si existe cualquiera de estas señales durables:
+
+```text
+request_type == MULTI_QUOTE
+OR status == QUOTATION_VOTING
+OR quotation_options.length >= 2
+```
+
+El backend debe rechazar con `409 Conflict` un intento real de convertir el tipo canónico durante `resubmit`, aunque el frontend envíe un valor por defecto incorrecto.
 
 Para una corrección MULTI_QUOTE:
 
+- fuerza un estado/editor nuevo derivado del draft; no reutilices estado React de la pestaña de creación;
 - restaura en UI las opciones existentes;
 - conserva los attachments existentes como evidencia;
 - permite editar proveedor, monto, URL y observaciones;
@@ -237,7 +250,12 @@ Para una corrección MULTI_QUOTE:
 
 No conviertas SIMPLE ↔ MULTI_QUOTE como efecto colateral de una corrección. Si el producto requiere esa conversión, especifícala como una operación distinta.
 
-Mientras `ExpenseForm` permanezca en el `main.jsx` monolítico, puede existir un transform Vite temporal que hidrate correctamente drafts MULTI_QUOTE, pero debe fallar el build si deja de aplicar y debe retirarse al modularizar el formulario.
+Mientras `ExpenseForm` permanezca en el `main.jsx` monolítico, puede existir un transform Vite temporal que hidrate correctamente drafts MULTI_QUOTE. Ese transform debe:
+
+- derivar el tipo inicial desde el draft/evidencia durable;
+- forzar remount del formulario al entrar/cambiar corrección;
+- fallar el build si deja de aplicar;
+- retirarse al modularizar el formulario.
 
 ## 9. Cotizaciones
 
@@ -326,6 +344,17 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
+Cadena Alembic vigente:
+
+```text
+0000 application baseline
+→ 0001 IAM foundation
+→ 0002 system accounts
+→ 0003 backfill MULTI_QUOTE request_type
+```
+
+`0003` repara filas históricas con evidencia múltiple y default `SIMPLE` incorrecto. No reviertas esa reparación mediante lógica de UI.
+
 No ejecutes el bootstrap como `python scripts/bootstrap_admin.py`.
 
 Portabilidad:
@@ -364,12 +393,15 @@ Matriz IAM mínima:
 Matriz de correcciones mínima:
 
 - MULTI_QUOTE corregida permanece MULTI_QUOTE;
+- con la pestaña SIMPLE activa antes de corregir, una MULTI_QUOTE abre como múltiple;
+- un registro legacy `request_type=SIMPLE` con evidencia múltiple se trata/repara como MULTI_QUOTE;
 - `flow_id` cambia;
 - opciones y soportes existentes se conservan;
 - votos vigentes se limpian;
 - invitaciones se reemplazan;
 - MULTI_QUOTE → SIMPLE por `resubmit` devuelve 409;
-- frontend build falla si la hidratación legacy deja de poder parchearse.
+- frontend build falla si la hidratación legacy deja de poder parchearse;
+- topología Alembic exige `0003` como único head.
 
 CI ejecuta Python compile, backend tests, frontend build y builds/smoke tests Docker.
 
