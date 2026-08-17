@@ -37,19 +37,66 @@ Tablas canónicas:
 
 ## Resolución de permisos
 
-`app/services/iam_service.py` resuelve permisos desde tres fuentes:
+Para usuarios operativos, `app/services/iam_service.py` resuelve permisos desde:
 
 1. `user_permissions`;
 2. `user_role_assignments → role_permissions`;
 3. `group_members → group_roles → role_permissions`.
 
-La cuenta técnica aplica una intersección defensiva con:
+La cuenta técnica se detecta exclusivamente mediante `system_accounts` y aplica una política por ambiente.
+
+### Política de producción
+
+Si `Settings.is_production_environment == True`, equivalente a `ENVIRONMENT=production`:
 
 ```text
-{requests:read, config:manage}
+TECHNICAL_ADMIN effective permissions =
+active_permissions ∩ {requests:read, config:manage}
 ```
 
-`require_permission(code)` consulta el servicio IAM. No existe bypass ADMIN.
+Esta política ignora asignaciones financieras accidentales y excluye a la cuenta técnica de poblaciones de aprobación/votación para permisos financieros.
+
+### Política no productiva
+
+Si `ENVIRONMENT != production`:
+
+```text
+TECHNICAL_ADMIN effective permissions = all active product permissions
+```
+
+Esto permite usar una sola cuenta técnica para probar creación, consulta, aprobación, votación, cierre y configuración.
+
+`users_with_permission()` incorpora la misma política: la cuenta técnica puede formar parte de poblaciones funcionales fuera de producción cuando el permiso está activo.
+
+`require_permission(code)` consulta siempre este servicio IAM. No existe bypass por `UserRole.ADMIN`, email, cargo o ID.
+
+## Settings
+
+`app/core/config.py` distingue dos conceptos:
+
+- `is_production_environment`: únicamente `ENVIRONMENT=production`; controla la segregación funcional de la cuenta técnica.
+- `is_production`: producción o runtime alojado como Render; conserva validaciones fuertes de secretos/CORS.
+
+Esto evita que un preview alojado en Render pierda capacidad de prueba solo por estar hospedado, sin relajar requisitos de secretos.
+
+## Contrato de usuario autenticado
+
+`app/core/security.py` aplica `apply_effective_permissions_to_user()` en cada vista autenticada relevante.
+
+El usuario actual expone:
+
+```text
+permission_codes
+can_request      ← requests:create
+can_approve      ← requests:approve
+can_view         ← requests:read
+can_configure    ← config:manage
+can_close        ← requests:close
+```
+
+`permission_codes` es el contrato canónico para frontend. Los `can_*` son compatibilidad temporal con `main.jsx`.
+
+El login aplica esta decoración antes de serializar `UserOut`, de modo que el primer render del frontend ya refleja el ambiente actual.
 
 ## API IAM
 
@@ -82,11 +129,15 @@ Las rutas registradas antes del router legacy garantizan:
 
 La población de aprobadores se resuelve con `users_with_permission('requests:approve')`.
 
+En producción la cuenta técnica no entra en esa población. Fuera de producción sí puede entrar para pruebas, salvo exclusiones propias del flujo como ser el mismo solicitante.
+
 Las invitaciones de votación almacenadas representan el snapshot de participantes de la ronda actual.
 
 ## Seguridad de cuenta técnica
 
-`system_accounts` identifica cuentas técnicas independientemente del enum legacy. El bootstrap crea/asocia la cuenta y la política IAM filtra cualquier permiso financiero accidental.
+`system_accounts` identifica cuentas técnicas independientemente del enum legacy. El bootstrap crea/asocia la cuenta, pero no necesita otorgar físicamente todos los permisos en no-producción: la política ambiental del servicio IAM calcula el acceso efectivo a partir del catálogo activo.
+
+Esto evita contaminar datos persistidos de roles con privilegios de prueba y garantiza que el mismo dataset pase a segregación estricta al ejecutar con `ENVIRONMENT=production`.
 
 ## Password hashing
 
@@ -94,21 +145,6 @@ Las invitaciones de votación almacenadas representan el snapshot de participant
 - legacy: PBKDF2 se verifica temporalmente;
 - login correcto PBKDF2 genera y persiste hash Argon2;
 - cambio de contraseña siempre genera Argon2.
-
-## Settings
-
-`app/core/config.py` centraliza:
-
-- DB;
-- JWT/sesión;
-- CORS;
-- rate limits;
-- documentos;
-- correo/Brevo/SMTP;
-- bootstrap admin;
-- timezone.
-
-Producción valida secretos, CORS y credenciales necesarias.
 
 ## Migraciones y startup
 
@@ -122,8 +158,6 @@ Alembic es la herramienta canónica. La cadena debe permanecer lineal:
 20260817_0002 system accounts
 ```
 
-`0000` define el baseline property-free requerido para instalar el producto sobre una base PostgreSQL limpia y utiliza inspección para conservar tablas que ya existen en la base productiva actual.
-
 `FastAPI.lifespan` no crea tablas, no ejecuta ALTER TABLE y no hace backfills.
 
 Docker ejecuta:
@@ -134,98 +168,82 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
-`scripts` es un paquete Python explícito y el bootstrap se ejecuta como módulo desde `/app`. No se usa `python scripts/bootstrap_admin.py` porque ese modo puede fijar `sys.path[0]` en `/app/scripts` y romper imports de `app`.
+`scripts` es un paquete Python explícito y el bootstrap se ejecuta como módulo desde `/app`.
 
-Esto mantiene la migración fuera del ciclo de vida FastAPI y funciona en planes de Render sin pre-deploy separado. Para despliegues con múltiples réplicas se debe mover la migración a una etapa única de release/pre-deploy para evitar carreras.
+## Portabilidad Windows → Linux
 
-`tests/test_migrations.py` debe fallar si existe más de un head o se rompe la cadena `0000 → 0001 → 0002`.
-
-La topología del script no sustituye una ejecución real: antes de producción se requiere snapshot y smoke test contra PostgreSQL/Neon de preview.
-
-### Portabilidad Windows → Linux de scripts de arranque
-
-Los entrypoints del contenedor son shell scripts Linux. El repositorio debe forzar `*.sh` a LF mediante `.gitattributes` y la imagen backend debe normalizar de forma defensiva cualquier `\r` antes de ejecutar `start.sh`.
-
-Esto evita el fallo típico de checkouts Windows:
-
-```text
-exec /app/scripts/start.sh: no such file or directory
-```
-
-que puede ocurrir aunque el archivo exista cuando el shebang termina materializado como `/bin/sh\r`.
-
-El frontend local debe esperar a que el backend pase `/api/health` antes de arrancar Nginx. Así, un error de migración/startup se presenta como fallo del backend y no como un secundario `host not found in upstream "backend"`.
-
-El CI debe cargar la imagen backend y validar tanto el entrypoint shell como `import scripts.bootstrap_admin` con una `DATABASE_URL` de prueba. Esto cubre el error de import que no detecta un simple Docker build.
+- `.gitattributes` fuerza `*.sh` a LF.
+- El Dockerfile normaliza defensivamente CRLF.
+- Docker Compose espera `/api/health` antes de iniciar Nginx.
+- CI carga la imagen backend y valida el entrypoint y `import scripts.bootstrap_admin`.
 
 ## Sync / async
 
-SQLAlchemy actual es síncrono. Las nuevas rutas que ejecutan SQLAlchemy y filesystem bloqueante se declaran con `def`, permitiendo que FastAPI las ejecute en threadpool.
+SQLAlchemy actual es síncrono. Las rutas que ejecutan SQLAlchemy/filesystem bloqueante se declaran con `def`, permitiendo que FastAPI las ejecute en threadpool.
 
 No se migra a Async SQLAlchemy en este PR.
 
 ## Modelos y routers
 
-Los modelos `ExpenseCategoryCatalog` y `AreaCategoryLink` se movieron de `api/areas.py` a `models/classification.py`.
-
-Nuevos contratos IAM y votación viven en `schemas/`.
+Los modelos SQLAlchemy viven en `models/`; contratos reutilizables en `schemas/`; lógica compartida en `services/`.
 
 `app/main.py` queda como alias de compatibilidad a `app.application`.
 
 ## Frontend
 
-Se agrega módulo `iam-admin.jsx` separado del monolito legacy.
+La consola `Configuración → Accesos` consume `/api/iam/*`.
 
-La consola se abre desde `Configuración → Accesos` y consume únicamente `/api/iam/*`.
+El backend ya entrega `permission_codes` y `can_close` además de los aliases legacy. La meta de frontend es migrar toda visibilidad de acciones a `permission_codes` y retirar el bypass visual `user.role === "ADMIN"` y cualquier `canClose={true}` hardcodeado durante la modularización del monolito.
 
-El módulo permite:
-
-- usuarios;
-- grupos;
-- roles;
-- permisos;
-- cargos;
-- membresías/asignaciones;
-- permisos efectivos.
-
-`main.jsx` y `domain-normalization.js` siguen siendo deuda de modularización; no son autoridad de seguridad.
+Mientras esa deuda visual exista, el backend continúa siendo la autoridad y niega las operaciones de producción no permitidas.
 
 ## Testing
 
-`tests/test_iam_api.py` utiliza:
+`tests/test_iam_api.py` usa `FastAPI TestClient`, SQLite aislada y dependency override de `get_db()`.
 
-- `FastAPI TestClient`;
-- DB SQLite aislada con `StaticPool`;
-- dependency override de `get_db`;
-- tokens reales del backend.
+Matriz obligatoria:
 
-Matriz mínima:
-
-- system admin: config/read;
-- system admin: close denied incluso con permiso accidental;
+- no-producción: cuenta técnica obtiene todos los permisos activos;
+- no-producción: login devuelve `permission_codes` y aliases habilitados, incluido `can_close`;
+- no-producción: cuenta técnica puede aparecer en población `requests:approve`;
+- producción: cuenta técnica obtiene solo config/read;
+- producción: `requests:close` asignado accidentalmente sigue en DENY;
+- producción: endpoint de cierre devuelve 403 para cuenta técnica;
+- producción: cuenta técnica no aparece en población `requests:approve`;
 - usuario sin config: IAM admin 403;
 - Grupo→Rol cambia permisos inmediatamente;
 - permiso directo es aditivo;
 - rol system-managed no editable.
 
-`tests/test_migrations.py` valida la topología Alembic sin afirmar que reemplaza un smoke test de PostgreSQL real.
+`tests/test_migrations.py` valida topología Alembic.
 
-`tests/test_container_portability.py` protege la política LF/healthcheck, mientras el job Docker de CI valida el entrypoint y la importabilidad real del bootstrap dentro de la imagen.
+`tests/test_container_portability.py` protege política LF/healthcheck y el job Docker valida la imagen real.
 
-## Despliegue
+## Despliegue por ambiente
+
+### Local / dev / test / staging / preview
+
+1. Definir `ENVIRONMENT` con cualquier valor distinto de `production`.
+2. Ejecutar migraciones + bootstrap.
+3. Iniciar FastAPI.
+4. Login con cuenta técnica.
+5. Verificar que `/api/iam/me/permissions` incluya todos los permisos activos.
+6. Ejecutar pruebas end-to-end con la misma cuenta cuando sea útil.
+
+### Producción
 
 1. Crear backup/snapshot/branch de Neon.
-2. Construir backend actualizado.
-3. En preview, ejecutar `alembic upgrade head` y comprobar `0000 → 0001 → 0002`.
-4. Ejecutar `python -m scripts.bootstrap_admin` desde la raíz del backend.
-5. Iniciar FastAPI.
-6. Verificar `/api/health`.
-7. Login administrador técnico.
-8. Verificar permisos efectivos: solo `config:manage`, `requests:read`.
-9. Configurar grupos/roles requeridos desde UI.
-10. Validar creación/aprobación/cierre con usuarios separados.
-11. Solo después repetir el procedimiento en producción.
+2. Definir explícitamente `ENVIRONMENT=production`.
+3. Ejecutar `alembic upgrade head`.
+4. Ejecutar `python -m scripts.bootstrap_admin`.
+5. Iniciar FastAPI y verificar `/api/health`.
+6. Login administrador técnico.
+7. Verificar permisos efectivos exactamente `config:manage` + `requests:read`.
+8. Verificar que crear/aprobar/cerrar devuelvan 403 para la cuenta técnica.
+9. Validar los flujos financieros con usuarios operativos separados.
+
+`render.yaml` productivo declara `ENVIRONMENT=production` explícitamente.
 
 ## Rollback
 
-No depender únicamente de `alembic downgrade` para recuperar datos. Antes de migración productiva mantener snapshot/branch Neon. El baseline 0000 tiene downgrade deliberadamente no destructivo porque puede haberse aplicado sobre tablas preexistentes que Alembic no creó. Si la migración falla después de escrituras de negocio, restaurar snapshot y versión previa del servicio.
+No depender únicamente de `alembic downgrade` para recuperar datos. Antes de migración productiva mantener snapshot/branch Neon. Si la migración falla después de escrituras de negocio, restaurar snapshot y versión previa del servicio.
