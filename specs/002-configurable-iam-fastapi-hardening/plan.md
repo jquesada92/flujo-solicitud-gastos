@@ -1,5 +1,7 @@
 # Plan técnico — IAM configurable y hardening FastAPI
 
+> Constitución vigente: **2.3.2**.
+
 ## Arquitectura objetivo
 
 ```text
@@ -91,14 +93,16 @@ Las invitaciones de votación almacenadas representan el snapshot de participant
 
 ### Invariant posterior de correcciones
 
-La Feature 003 añadió posteriormente:
+La Feature 003 establece:
 
 ```text
 SIMPLE      → corrección → SIMPLE
 MULTI_QUOTE → corrección → MULTI_QUOTE
 ```
 
-`revision_actions.py` rechaza un cambio de tipo con 409 y reinicia una ronda MULTI_QUOTE conservando evidencia. Ver `specs/003-request-correction-invariants/`. La Constitución vigente es 2.3.1.
+Además, la pestaña seleccionada antes de pulsar **Corregir / reenviar** es solo estado de creación y no puede decidir el tipo del editor. El formulario se remonta y deriva el tipo desde la solicitud/evidencia durable.
+
+`revision_actions.py` rechaza una conversión real con 409, reinicia una ronda MULTI_QUOTE conservando evidencia y reconoce registros legacy con evidencia múltiple aunque el flag haya quedado en SIMPLE. Ver `specs/003-request-correction-invariants/`.
 
 ## Seguridad de cuenta técnica
 
@@ -143,9 +147,13 @@ Alembic es la herramienta canónica. La cadena debe permanecer lineal:
 20260817_0001 IAM foundation
         ↓
 20260817_0002 system accounts
+        ↓
+20260817_0003 MULTI_QUOTE request_type repair
 ```
 
 `0000` define el baseline property-free requerido para instalar el producto sobre una base PostgreSQL limpia y utiliza inspección para conservar tablas que ya existen en la base productiva actual.
+
+`0003` repara filas históricas con `request_type=SIMPLE` cuando existe evidencia durable de flujo múltiple (`QUOTATION_VOTING` o dos/más opciones).
 
 `FastAPI.lifespan` no crea tablas, no ejecuta ALTER TABLE y no hace backfills.
 
@@ -161,7 +169,7 @@ uvicorn app.application:app
 
 Esto mantiene la migración fuera del ciclo de vida FastAPI y funciona en planes de Render sin pre-deploy separado. Para despliegues con múltiples réplicas se debe mover la migración a una etapa única de release/pre-deploy para evitar carreras.
 
-`tests/test_migrations.py` debe fallar si existe más de un head o se rompe la cadena `0000 → 0001 → 0002`.
+`tests/test_migrations.py` debe fallar si existe más de un head o se rompe la cadena `0000 → 0001 → 0002 → 0003`.
 
 La topología del script no sustituye una ejecución real: antes de producción se requiere snapshot y smoke test contra PostgreSQL/Neon de preview.
 
@@ -205,7 +213,7 @@ El módulo permite:
 
 `main.jsx` y `domain-normalization.js` siguen siendo deuda de modularización; no son autoridad de seguridad.
 
-La Feature 003 añade temporalmente `frontend/vite.config.js` para hidratar correcciones MULTI_QUOTE mientras `ExpenseForm` continúe dentro del monolito. Ese transform no es arquitectura objetivo y debe retirarse con la modularización del formulario.
+La Feature 003 añade temporalmente `frontend/vite.config.js` para hidratar correcciones MULTI_QUOTE mientras `ExpenseForm` continúe dentro del monolito. El transform deriva tipo desde el draft, fuerza remount al entrar/cambiar corrección y evita heredar la pestaña de creación. No es arquitectura objetivo y debe retirarse con la modularización del formulario.
 
 ## Testing
 
@@ -226,9 +234,9 @@ Matriz IAM mínima:
 - permiso directo es aditivo;
 - rol system-managed no editable.
 
-`tests/test_multi_quote_revision.py` cubre la semántica posterior de correcciones MULTI_QUOTE.
+`tests/test_multi_quote_revision.py` cubre la semántica posterior de correcciones MULTI_QUOTE, incluido el caso legacy `request_type=SIMPLE` con evidencia múltiple.
 
-`tests/test_migrations.py` valida la topología Alembic sin afirmar que reemplaza un smoke test de PostgreSQL real.
+`tests/test_migrations.py` valida la topología Alembic hasta `0003` sin afirmar que reemplaza un smoke test de PostgreSQL real.
 
 `tests/test_container_portability.py` protege la política LF/healthcheck, mientras el job Docker de CI valida el entrypoint y la importabilidad real del bootstrap dentro de la imagen.
 
@@ -236,7 +244,7 @@ Matriz IAM mínima:
 
 1. Crear backup/snapshot/branch de Neon.
 2. Construir backend actualizado.
-3. En preview, ejecutar `alembic upgrade head` y comprobar `0000 → 0001 → 0002`.
+3. En preview, ejecutar `alembic upgrade head` y comprobar `0000 → 0001 → 0002 → 0003`.
 4. Ejecutar `python -m scripts.bootstrap_admin` desde la raíz del backend.
 5. Iniciar FastAPI.
 6. Verificar `/api/health`.
@@ -244,9 +252,9 @@ Matriz IAM mínima:
 8. En producción verificar permisos efectivos: solo `config:manage`, `requests:read`.
 9. En preview/test verificar permisos técnicos completos si `ENVIRONMENT != production`.
 10. Configurar grupos/roles requeridos desde UI.
-11. Validar creación/aprobación/cierre con usuarios separados y validar correcciones SIMPLE/MULTI_QUOTE.
+11. Validar creación/aprobación/cierre con usuarios separados y validar correcciones SIMPLE/MULTI_QUOTE, incluyendo el caso de pestaña SIMPLE activa antes de corregir una MULTI_QUOTE.
 12. Solo después repetir el procedimiento en producción.
 
 ## Rollback
 
-No depender únicamente de `alembic downgrade` para recuperar datos. Antes de migración productiva mantener snapshot/branch Neon. El baseline 0000 tiene downgrade deliberadamente no destructivo porque puede haberse aplicado sobre tablas preexistentes que Alembic no creó. Si la migración falla después de escrituras de negocio, restaurar snapshot y versión previa del servicio.
+No depender únicamente de `alembic downgrade` para recuperar datos. Antes de migración productiva mantener snapshot/branch Neon. El baseline 0000 tiene downgrade deliberadamente no destructivo porque puede haberse aplicado sobre tablas preexistentes que Alembic no creó. La reparación `0003` es de datos y su downgrade no intenta reconstruir un valor incorrecto anterior. Si la migración falla después de escrituras de negocio, restaurar snapshot y versión previa del servicio.
