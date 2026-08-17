@@ -8,6 +8,18 @@ La arquitectura sigue los patrones recomendados por la documentación oficial de
 
 `app/application.py` crea la aplicación y registra middleware, routers, health endpoint y lifespan mínimo. `app/main.py` existe únicamente como alias de compatibilidad.
 
+Las rutas canónicas se registran antes del router legacy. Entre ellas:
+
+```text
+request_actions.py   → creación
+revision_actions.py  → corregir / reenviar
+quotation_actions.py → votación
+document_actions.py  → documentos
+financial_actions.py → factura / cierre
+```
+
+Esto permite reemplazar gradualmente handlers legacy sin depender del orden accidental de rutas en `expenses.py`.
+
 ## Separación de responsabilidades
 
 ```text
@@ -98,6 +110,29 @@ El login aplica esta decoración inmediatamente. `current_user()` la recalcula e
 
 Esto permite que cambios IAM y el cambio de ambiente se reflejen sin confiar en columnas legacy persistidas.
 
+## Invariant de correcciones
+
+`revision_actions.py` protege una regla de negocio que no puede depender del estado React:
+
+```text
+payload.request_type == expense.request_type
+```
+
+Un mismatch devuelve `409`.
+
+Para MULTI_QUOTE la ruta canónica:
+
+- conserva los IDs de opciones y sus attachments;
+- permite actualizar contenido de las opciones manteniendo su cantidad actual;
+- cambia `flow_id`;
+- limpia `QuotationVote` vigente;
+- reemplaza `QuotationVotingInvitation`;
+- conserva eventos históricos;
+- resuelve nuevos participantes con `requests:approve`;
+- vuelve a `QUOTATION_VOTING`.
+
+Este invariant permanece aunque el frontend se reescriba.
+
 ## Lifespan
 
 El lifespan solo valida/carga recursos de ciclo de vida. No ejecuta:
@@ -162,6 +197,8 @@ prod    → config/read only
 
 También verifica población de aprobadores, 403 de cierre productivo y el contrato del login.
 
+`tests/test_multi_quote_revision.py` verifica el invariant de correcciones con una solicitud MULTI_QUOTE real: preserva tipo/evidencia, reinicia ronda y rechaza conversión a SIMPLE.
+
 `tests/test_migrations.py` verifica topología Alembic.
 
 `tests/test_container_portability.py` verifica defensas de portabilidad local.
@@ -188,3 +225,9 @@ canClose={true}
 ```
 
 El backend no confía en esos valores, pero la deuda debe retirarse migrando la visibilidad de acciones a `permission_codes`.
+
+### Transform temporal de correcciones
+
+Mientras `ExpenseForm` siga dentro del monolito, `frontend/vite.config.js` aplica un plugin `legacy-revision-safety` antes del plugin React. Restaura `request_type`, cotizaciones y metadata de attachments al abrir una corrección MULTI_QUOTE.
+
+El transform utiliza reemplazos obligatorios y hace fallar `vite build` si los fragmentos legacy dejan de coincidir. Esto evita una degradación silenciosa, pero no sustituye la modularización. Al extraer `ExpenseForm` a un componente propio, el plugin debe eliminarse y la hidratación debe cubrirse con tests frontend normales.
