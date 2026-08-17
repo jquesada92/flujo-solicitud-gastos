@@ -105,7 +105,7 @@
 - [x] Cerrar/reemplazar factura requiere `requests:close`.
 - [x] Uploads canónicos requieren permisos explícitos.
 - [x] Motor de aprobación obtiene participantes desde IAM para políticas canónicas.
-- [ ] **Feature futura:** refactorizar fórmula funcional de quorum/mayoría de aprobación para cumplir exactamente la Constitución 2.3.0.
+- [ ] **Feature futura:** refactorizar fórmula funcional de quorum/mayoría de aprobación para cumplir exactamente la Constitución 2.3.1.
 - [ ] **Feature futura:** especificar/refactorizar quorum y empate de cotizaciones.
 
 ## Compatibilidad / deuda
@@ -141,15 +141,15 @@
 
 ## Documentación
 
-- [x] Constitución actualizada a 2.3.0.
+- [x] Constitución vigente revisada; actualmente 2.3.1 por el invariant posterior de correcciones.
 - [x] Spec funcional actualizada.
 - [x] Plan técnico actualizado.
 - [x] Criterios de aceptación actualizados.
-- [x] README refleja la nueva política ambiental.
-- [x] Prompt maestro refleja la nueva política ambiental.
-- [x] Documentación IAM/FastAPI refleja la nueva política ambiental.
+- [x] README refleja la política ambiental.
+- [x] Prompt maestro refleja la política ambiental.
+- [x] Documentación IAM/FastAPI refleja la política ambiental.
 - [x] HISTORY registra la decisión.
 - [x] CHANGELOG registra el cambio.
 - [x] Índice documental sincronizado.
 - [x] Terminología actualizada para Cuenta técnica / Administrador del sistema.
-- [x] Descripción final del PR sincronizada.
+- [x] Descripción del PR sincronizada con la política ambiental; cambios funcionales posteriores se documentan en sus propias specs.
