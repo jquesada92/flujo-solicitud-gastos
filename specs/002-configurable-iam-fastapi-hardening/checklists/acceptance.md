@@ -48,7 +48,7 @@
 - [x] `app/main.py` es un alias mínimo al application factory.
 - [x] Modelos nuevos no se declaran dentro de routers.
 - [x] Contratos nuevos reutilizables viven en `schemas/`.
-- [x] Operaciones nuevas con SQLAlchemy/filesystem síncrono usan path functions `def`.
+- [x] Operaciones canónicas con SQLAlchemy/filesystem síncrono usan path functions `def`.
 - [x] Login/activity tienen response models explícitos.
 - [x] Existe suite `TestClient` de autorización IAM.
 
@@ -77,17 +77,17 @@
 - [x] Cerrar/reemplazar factura requiere `requests:close`.
 - [x] Uploads canónicos requieren permisos explícitos.
 - [x] Motor de aprobación obtiene participantes desde IAM para políticas canónicas.
-- [ ] La fórmula funcional de quorum/mayoría de aprobación se refactoriza en una feature separada para cumplir exactamente la Constitución 2.2.0.
-- [ ] La regla de quorum/empate de cotizaciones se especifica y refactoriza en una feature separada.
+- [ ] **Feature futura:** refactorizar fórmula funcional de quorum/mayoría de aprobación para cumplir exactamente la Constitución 2.2.0.
+- [ ] **Feature futura:** especificar/refactorizar quorum y empate de cotizaciones.
 
 ## Compatibilidad / deuda
 
 - [x] `can_*` legacy no son fuente de autorización; se derivan de IAM cuando código viejo los necesita.
 - [x] Rutas canónicas se registran antes de rutas legacy equivalentes.
 - [x] `UserRole` queda documentado como compatibilidad temporal.
-- [ ] Retirar router legacy `/api/users` cuando el frontend operativo deje de consumirlo.
-- [ ] Retirar ramas por `UserRole` del router monolítico de gastos una vez extraídas todas sus rutas.
-- [ ] Modularizar `frontend/src/main.jsx` y retirar `domain-normalization.js`.
+- [ ] **Deuda:** retirar `/api/users` legacy cuando el frontend operativo deje de consumirlo.
+- [ ] **Deuda:** retirar ramas por `UserRole` del router monolítico de gastos una vez extraídas todas sus rutas.
+- [ ] **Deuda:** modularizar `frontend/src/main.jsx` y retirar `domain-normalization.js`.
 
 ## Calidad
 
@@ -103,10 +103,10 @@
 - [x] Spec funcional creada.
 - [x] Plan técnico creado.
 - [x] Criterios de aceptación creados.
-- [ ] README actualizado.
-- [ ] Prompt maestro actualizado.
-- [ ] Documentación IAM/FastAPI actualizada.
-- [ ] Terminología actualizada.
-- [ ] HISTORY actualizado.
-- [ ] CHANGELOG actualizado.
+- [x] README actualizado.
+- [x] Prompt maestro actualizado.
+- [x] Documentación IAM/FastAPI actualizada.
+- [x] Terminología actualizada.
+- [x] HISTORY actualizado.
+- [x] CHANGELOG actualizado.
 - [ ] Descripción final del PR sincronizada.
