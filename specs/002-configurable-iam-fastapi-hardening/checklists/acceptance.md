@@ -67,11 +67,14 @@
 - [x] Existen migraciones Alembic versionadas para IAM.
 - [x] Bootstrap del administrador técnico es idempotente y externo al lifespan.
 - [x] Docker ejecuta migraciones y bootstrap antes de iniciar Uvicorn.
+- [x] El bootstrap se ejecuta canónicamente como `python -m scripts.bootstrap_admin` desde la raíz del backend.
+- [x] `scripts` es importable como paquete y no depende de `PYTHONPATH` implícito.
 - [x] El despliegue no depende de `preDeployCommand` de un plan pago de Render.
 - [x] Los scripts `.sh` se fuerzan a LF mediante `.gitattributes`.
 - [x] El Dockerfile normaliza CRLF defensivamente antes de ejecutar `start.sh`.
 - [x] Docker Compose espera el healthcheck del backend antes de iniciar Nginx.
 - [x] CI carga la imagen backend y valida que `/app/scripts/start.sh` exista, sea ejecutable y tenga un shebang Linux válido.
+- [x] CI intenta importar `scripts.bootstrap_admin` dentro de la imagen backend con una configuración de DB de prueba.
 - [ ] Antes del despliegue productivo se crea snapshot/backup de Neon.
 - [ ] Se ejecuta smoke test real de `alembic upgrade head` contra PostgreSQL/Neon de preview antes de producción.
 
@@ -84,7 +87,7 @@
 - [x] Cerrar/reemplazar factura requiere `requests:close`.
 - [x] Uploads canónicos requieren permisos explícitos.
 - [x] Motor de aprobación obtiene participantes desde IAM para políticas canónicas.
-- [ ] **Feature futura:** refactorizar fórmula funcional de quorum/mayoría de aprobación para cumplir exactamente la Constitución 2.2.1.
+- [ ] **Feature futura:** refactorizar fórmula funcional de quorum/mayoría de aprobación para cumplir exactamente la Constitución 2.2.2.
 - [ ] **Feature futura:** especificar/refactorizar quorum y empate de cotizaciones.
 
 ## Compatibilidad / deuda
@@ -103,18 +106,18 @@
 - [x] Backend compile/tests forman parte de CI.
 - [x] Imágenes Docker se construyen en CI.
 - [x] El entrypoint backend se valida dentro de la imagen construida por CI.
-- [x] Todos los jobs del commit final del PR están verdes antes de marcarlo Ready for review.
+- [ ] Todos los jobs del commit final del PR deben estar verdes antes de marcarlo Ready for review.
 
 ## Documentación
 
 - [x] Constitución actualizada.
-- [x] Spec funcional creada.
-- [x] Plan técnico creado.
-- [x] Criterios de aceptación creados.
+- [x] Spec funcional creada/actualizada.
+- [x] Plan técnico creado/actualizado.
+- [x] Criterios de aceptación actualizados.
 - [x] README actualizado.
 - [x] Prompt maestro actualizado.
 - [x] Documentación IAM/FastAPI actualizada.
-- [x] Terminología actualizada.
+- [x] Terminología revisada; este cambio no altera términos funcionales.
 - [x] HISTORY actualizado.
 - [x] CHANGELOG actualizado.
-- [x] Descripción final del PR sincronizada.
+- [ ] Descripción final del PR debe reflejar el bootstrap por módulo y el nuevo smoke test.
