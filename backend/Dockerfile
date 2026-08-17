@@ -12,7 +12,8 @@ COPY alembic.ini ./alembic.ini
 COPY alembic ./alembic
 COPY scripts ./scripts
 COPY app ./app
+RUN chmod +x /app/scripts/start.sh
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.application:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/scripts/start.sh"]
