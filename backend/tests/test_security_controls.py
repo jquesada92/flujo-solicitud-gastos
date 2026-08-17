@@ -130,6 +130,31 @@ class SecurityControlTests(unittest.TestCase):
                 cors_allowed_origins='http://localhost:3000',
             )
 
+    def test_hosted_preview_is_hardened_but_not_production_authorization(self):
+        settings = Settings(
+            database_url='postgresql://example/db',
+            environment='preview',
+            render=True,
+            secret_key='s' * 40,
+            analytics_hash_key='a' * 40,
+            admin_password='A-secure-preview-password!',
+            cors_allowed_origins='https://preview.example.com',
+        )
+        self.assertTrue(settings.is_production)
+        self.assertFalse(settings.is_production_environment)
+
+    def test_production_environment_enables_production_authorization_policy(self):
+        settings = Settings(
+            database_url='postgresql://example/db',
+            environment='production',
+            secret_key='s' * 40,
+            analytics_hash_key='a' * 40,
+            admin_password='A-secure-production-password!',
+            cors_allowed_origins='https://app.example.com',
+        )
+        self.assertTrue(settings.is_production)
+        self.assertTrue(settings.is_production_environment)
+
 
 if __name__ == '__main__':
     unittest.main()
