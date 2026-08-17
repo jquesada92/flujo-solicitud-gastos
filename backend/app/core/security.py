@@ -1,6 +1,5 @@
 import hashlib
 import hmac
-import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -12,10 +11,19 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.entities import User
-from app.services.iam_service import has_permission
+from app.services.iam_service import effective_permission_codes, has_permission
 
 bearer = HTTPBearer(auto_error=False)
 password_hash = PasswordHash.recommended()
+
+# Temporary names used by the legacy monolithic frontend/routes. They resolve to
+# canonical IAM permission codes and never read the old can_* database flags.
+LEGACY_PERMISSION_ALIASES = {
+    'can_view': 'requests:read',
+    'can_request': 'requests:create',
+    'can_approve': 'requests:approve',
+    'can_configure': 'config:manage',
+}
 
 
 def session_is_idle(last_activity_at: datetime | None, now: datetime | None = None) -> bool:
@@ -121,6 +129,14 @@ def current_user(
             status_code=403,
             detail='Debes cambiar tu contraseña temporal antes de continuar',
         )
+
+    # Transitional compatibility only. Legacy code may still render or branch on
+    # these attributes, but their values are derived from IAM on every request.
+    permissions = effective_permission_codes(db, user.id)
+    user.can_view = 'requests:read' in permissions
+    user.can_request = 'requests:create' in permissions
+    user.can_approve = 'requests:approve' in permissions
+    user.can_configure = 'config:manage' in permissions
     return user
 
 
@@ -128,14 +144,16 @@ def require_permission(permission_code: str):
     """Authorize solely from effective permissions persisted in PostgreSQL.
 
     There is intentionally no administrator, role-name, position-name, email or
-    numeric-ID bypass. Roles and groups are data; permissions authorize actions.
+    numeric-ID bypass. Legacy can_* names are aliases only while old route code
+    is retired.
     """
+    canonical_code = LEGACY_PERMISSION_ALIASES.get(permission_code, permission_code)
 
     def dependency(
         user: User = Depends(current_user),
         db: Session = Depends(get_db),
     ) -> User:
-        if not has_permission(db, user.id, permission_code):
+        if not has_permission(db, user.id, canonical_code):
             raise HTTPException(status_code=403, detail='No tienes permiso para realizar esta acción')
         return user
 
