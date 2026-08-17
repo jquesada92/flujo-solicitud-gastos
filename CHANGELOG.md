@@ -11,9 +11,10 @@
 - Protección explícita de cuentas técnicas.
 - Pydantic Settings centralizado.
 - Argon2 mediante `pwdlib` con upgrade transparente de PBKDF2 legacy.
-- Alembic y migraciones IAM versionadas.
+- Alembic y migraciones versionadas con baseline explícito para bases nuevas.
 - Entry point Docker que migra/bootstrap antes de Uvicorn.
 - `FastAPI TestClient` para matriz de autorización IAM.
+- Test de topología que exige un solo head Alembic y la cadena esperada.
 - Servicios canónicos para resolución de aprobadores, documentos y votación.
 - `docs/IAM_MODEL.md` y `docs/FASTAPI_ARCHITECTURE.md`.
 - Spec/plan/checklist de `002-configurable-iam-fastapi-hardening`.
@@ -39,9 +40,12 @@
 - Backend mantiene autoridad sobre acciones aunque el frontend o campos legacy indiquen otra cosa.
 
 ### Migrations
+- `20260817_0000_application_baseline.py` define un baseline property-free para instalaciones limpias y conserva tablas productivas que ya existen.
 - `20260817_0001_iam_foundation.py` crea IAM y migra flags legacy a permisos como operación única de compatibilidad.
 - `20260817_0002_system_accounts.py` identifica cuentas técnicas existentes.
+- La cadena Alembic es lineal: `0000 → 0001 → 0002`.
 - `scripts/bootstrap_admin.py` crea/asocia idempotentemente la cuenta técnica fuera del lifespan.
+- El smoke test contra PostgreSQL/Neon real continúa siendo requisito previo al despliegue productivo; el CI actual valida topología, compilación y tests de aplicación.
 
 ### Compatibility / Technical debt
 - `UserRole`, `title` y `can_*` permanecen temporalmente como metadatos/puente para UI/router legacy; no son autoridad de acceso.
