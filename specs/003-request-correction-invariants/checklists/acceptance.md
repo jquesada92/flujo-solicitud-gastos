@@ -1,12 +1,25 @@
 # Criterios de aceptación — Correcciones de solicitudes
 
+**Constitución:** 2.3.2
+
 ## Tipo de solicitud
 
 - [x] Corregir una solicitud SIMPLE conserva `request_type=SIMPLE`.
 - [x] Corregir una solicitud MULTI_QUOTE conserva `request_type=MULTI_QUOTE`.
-- [x] El backend rechaza con 409 un intento de cambiar el tipo durante `resubmit`.
-- [x] El frontend restaura el tipo original al entrar en modo corrección.
+- [x] El backend rechaza con 409 un intento real de cambiar el tipo durante `resubmit`.
+- [x] El frontend deriva el tipo desde la solicitud al entrar en modo corrección.
 - [x] En una corrección MULTI_QUOTE la UI vuelve a mostrar el editor de múltiples cotizaciones.
+- [x] La pestaña SIMPLE/MULTI_QUOTE seleccionada antes de pulsar Corregir no determina el tipo del editor.
+- [x] Entrar en corrección fuerza un remount del formulario y descarta el estado de creación previo.
+- [x] Cambiar a otra solicitud en corrección vuelve a derivar el tipo desde esa solicitud.
+
+## Compatibilidad de datos históricos
+
+- [x] Un registro con `request_type=SIMPLE` y estado `QUOTATION_VOTING` se reconoce como MULTI_QUOTE.
+- [x] Un registro con `request_type=SIMPLE` y dos o más `quotation_options` se reconoce como MULTI_QUOTE.
+- [x] El endpoint canónico repara defensivamente `request_type` al corregir un registro legacy inconsistente.
+- [x] Existe Alembic `20260817_0003_backfill_multi_quote_request_type.py` para reparar filas históricas.
+- [x] La cadena Alembic queda `0000 → 0001 → 0002 → 0003` con un único head.
 
 ## Cotizaciones y evidencia
 
@@ -33,10 +46,12 @@
 - [x] Área + Categoría se validan antes de aplicar la corrección.
 - [x] Una solicitud CLOSED no puede corregirse.
 - [x] El backend mantiene el invariant aunque el frontend envíe un tipo incorrecto.
+- [x] El backend no depende de la pestaña visual para decidir SIMPLE/MULTI_QUOTE.
 
 ## Frontend legacy
 
-- [x] `vite.config.js` restaura estado MULTI_QUOTE durante dev/build.
+- [x] `vite.config.js` deriva el tipo inicial desde el draft/evidencia durable durante dev/build.
+- [x] `ExpenseForm` recibe una `key` de corrección para evitar heredar estado de la pestaña anterior.
 - [x] El transform considera evidencia existente.
 - [x] El transform falla explícitamente si los fragmentos legacy esperados desaparecen.
 - [ ] **Deuda:** retirar el transform al modularizar `ExpenseForm` fuera de `main.jsx`.
@@ -44,26 +59,25 @@
 ## Pruebas
 
 - [x] Existe test HTTP que corrige una MULTI_QUOTE y verifica que sigue siendo MULTI_QUOTE.
+- [x] Existe test HTTP que simula `request_type=SIMPLE` legacy con evidencia MULTI_QUOTE y verifica reparación.
 - [x] El test verifica preservación de attachment.
 - [x] El test verifica limpieza de votos.
 - [x] El test verifica reemplazo de invitación.
-- [x] El test verifica 409 al intentar MULTI_QUOTE → SIMPLE.
-- [x] Backend tests y frontend build del commit funcional pasaron antes del cierre documental final.
-- [x] CI run 387 sobre el head funcional/documental `d2d5c39` terminó con Backend, Frontend y Docker/smoke tests en success.
+- [x] El test verifica 409 al intentar MULTI_QUOTE → SIMPLE cuando el tipo canónico es múltiple.
+- [ ] Verificar manualmente: con pestaña **Solicitud sencilla** activa, corregir una MULTI_QUOTE debe abrir directamente el editor múltiple.
+- [ ] Todos los jobs del commit final de esta corrección deben quedar verdes antes de considerarla terminada.
 
 ## Documentación
 
-- [x] Constitución actualizada a 2.3.1.
-- [x] Spec funcional creada.
-- [x] Plan técnico creado.
+- [x] Constitución actualizada a 2.3.2.
+- [x] Spec funcional actualizada con aislamiento de estado y datos legacy.
+- [x] Plan técnico actualizado.
 - [x] Criterios de aceptación actualizados.
-- [x] README actualizado y declara Constitución 2.3.1.
-- [x] Prompt maestro actualizado.
-- [x] `docs/REQUEST_CORRECTIONS.md` agregado.
-- [x] Arquitectura FastAPI actualizada con la ruta canónica y el transform temporal.
-- [x] HISTORY actualizado.
-- [x] CHANGELOG actualizado.
-- [x] Índice documental actualizado y referencia la Constitución 2.3.1.
-- [x] Terminología actualizada para SIMPLE, MULTI_QUOTE y Corrección / Corregir y reenviar.
-- [x] Feature 002 spec/plan/checklist revisados para la Constitución vigente 2.3.1 y la relación con Feature 003.
-- [x] Descripción final del PR incluye la corrección, Feature 003 y la Constitución 2.3.1.
+- [ ] README actualizado a Constitución 2.3.2 y migración 0003.
+- [ ] Prompt maestro actualizado.
+- [ ] `docs/REQUEST_CORRECTIONS.md` actualizado.
+- [ ] Arquitectura FastAPI actualizada con migración 0003 cuando aplique.
+- [ ] HISTORY actualizado.
+- [ ] CHANGELOG actualizado.
+- [ ] Índice documental actualizado.
+- [ ] PR actualizado con la causa exacta del bug.
