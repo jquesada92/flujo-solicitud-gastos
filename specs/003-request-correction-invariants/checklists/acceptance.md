@@ -73,11 +73,13 @@
 - [x] Spec funcional actualizada con aislamiento de estado y datos legacy.
 - [x] Plan técnico actualizado.
 - [x] Criterios de aceptación actualizados.
-- [ ] README actualizado a Constitución 2.3.2 y migración 0003.
-- [ ] Prompt maestro actualizado.
-- [ ] `docs/REQUEST_CORRECTIONS.md` actualizado.
-- [ ] Arquitectura FastAPI actualizada con migración 0003 cuando aplique.
-- [ ] HISTORY actualizado.
-- [ ] CHANGELOG actualizado.
-- [ ] Índice documental actualizado.
+- [x] README actualizado a Constitución 2.3.2 y migración 0003.
+- [x] Prompt maestro actualizado.
+- [x] `docs/REQUEST_CORRECTIONS.md` actualizado.
+- [x] Arquitectura FastAPI actualizada con migración 0003 y aislamiento de estado.
+- [x] HISTORY actualizado.
+- [x] CHANGELOG actualizado.
+- [x] Índice documental actualizado.
+- [x] Terminología distingue selector de nueva solicitud y corrección.
+- [x] Feature 002 spec/plan/checklist sincronizados con Constitución 2.3.2 y Alembic 0003.
 - [ ] PR actualizado con la causa exacta del bug.
