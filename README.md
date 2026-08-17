@@ -10,7 +10,7 @@ El producto es **neutral respecto al tipo de organización**. Un PH, empresa, co
 - La estructura organizacional es **dato configurable**, no código.
 - `Usuario`, `Grupo`, `Rol`, `Permiso` y `Cargo` son conceptos separados.
 - Un cargo no concede permisos.
-- No existe un superusuario financiero implícito.
+- La cuenta técnica tiene política explícita por ambiente.
 - Área y Categoría son dimensiones independientes.
 - Documentos e historial forman parte del expediente auditable.
 - Migraciones son versionadas con Alembic y no se ejecutan dentro del lifespan de FastAPI.
@@ -25,16 +25,9 @@ El producto es **neutral respecto al tipo de organización**. Un PH, empresa, co
 - **Área**: unidad/departamento/función asociada al gasto.
 - **Categoría**: naturaleza del bien o servicio.
 
-Ejemplo de clasificación:
-
-```text
-Área: IT
-Categoría: Equipos
-```
-
 ## IAM configurable
 
-La autorización se calcula desde PostgreSQL:
+Para usuarios operativos:
 
 ```text
 Usuario
@@ -43,7 +36,7 @@ Usuario
   └─ Permisos directos
 ```
 
-Los permisos efectivos son la unión de esas fuentes. Si una capacidad no está permitida explícitamente, el resultado es DENY.
+Si una capacidad no está permitida explícitamente, el resultado es DENY.
 
 ### Permisos atómicos iniciales
 
@@ -57,16 +50,70 @@ Los permisos efectivos son la unión de esas fuentes. Si una capacidad no está 
 
 Los clientes pueden crear grupos, roles, cargos y asignaciones desde la interfaz; no pueden inventar permisos que el backend no implemente.
 
-### Cuenta técnica
+## Administrador del sistema por ambiente
 
-La cuenta creada por `ADMIN_*` es una cuenta de sistema protegida. Sus permisos efectivos máximos son:
+La cuenta creada por `ADMIN_*` se registra como `TECHNICAL_ADMIN` en `system_accounts`. Su comportamiento **no depende del email, cargo ni `UserRole.ADMIN`**.
+
+### Producción
+
+Con:
+
+```env
+ENVIRONMENT=production
+```
+
+sus permisos efectivos máximos son:
 
 ```text
 config:manage
 requests:read
 ```
 
-No puede crear, aprobar ni cerrar solicitudes, incluso si una asignación posterior intenta concederle esos permisos.
+En producción no puede:
+
+```text
+requests:create
+requests:approve
+requests:close
+```
+
+Aunque un rol, grupo o permiso directo intente concedérselos, el backend los filtra. Tampoco participa en poblaciones financieras de aprobación/votación.
+
+### Local / dev / test / staging / preview
+
+Con cualquier `ENVIRONMENT` diferente de `production`, la cuenta técnica recibe **todos los permisos atómicos activos** para poder probar el producto end-to-end con un solo usuario.
+
+Puede crear, consultar, aprobar, votar, subir/reemplazar factura, cerrar y administrar configuración. También puede entrar en poblaciones de aprobación/votación cuando corresponda.
+
+Ejemplos:
+
+```env
+ENVIRONMENT=development
+ENVIRONMENT=test
+ENVIRONMENT=preview
+```
+
+`RENDER=true` sigue activando validaciones fuertes de secretos/CORS, pero no convierte automáticamente un preview en producción para autorización. Solo `ENVIRONMENT=production` activa la segregación financiera.
+
+## Contrato del usuario autenticado
+
+El backend devuelve los permisos efectivos actuales en:
+
+```text
+permission_codes
+```
+
+Y durante la transición del frontend legacy también deriva:
+
+```text
+can_request   <- requests:create
+can_approve   <- requests:approve
+can_view      <- requests:read
+can_configure <- config:manage
+can_close     <- requests:close
+```
+
+Estos aliases son solo UX/compatibilidad. El backend siempre vuelve a validar el permiso canónico.
 
 ## Consola gráfica de Accesos
 
@@ -82,7 +129,7 @@ En **Configuración → Accesos** se administran:
 - roles directos;
 - permisos directos;
 - cargos de cada usuario;
-- permisos efectivos.
+- permisos efectivos y su origen.
 
 Ejemplo PH, configurado como datos:
 
@@ -131,7 +178,7 @@ backend/app/
 - `get_db()` entrega una sesión SQLAlchemy por request y la cierra siempre.
 - configuración centralizada con `pydantic-settings`.
 - `lifespan` no ejecuta DDL/backfills/seeds de negocio.
-- rutas nuevas con SQLAlchemy/filesystem síncrono se implementan con `def` para usar el threadpool de FastAPI.
+- SQLAlchemy/filesystem síncrono usa path operations `def`.
 - contratos sensibles usan response models explícitos.
 - tests HTTP usan `FastAPI TestClient`.
 
@@ -143,14 +190,14 @@ backend/app/
 - Argon2 para hashes nuevos mediante `pwdlib`.
 - hashes PBKDF2 legacy se migran automáticamente a Argon2 tras login exitoso.
 - rate limiting separado para read/write/upload/sensitive.
-- CORS explícito en producción.
+- CORS explícito en producción/runtime alojado.
 - documentos privados y validación de firma real de archivo.
-- autorización por permisos persistidos; no por emails/nombres de cargos/IDs mágicos.
-- cuenta técnica segregada del flujo financiero.
+- autorización por permisos persistidos y política técnica ambiental; no por emails/nombres de cargos/IDs mágicos.
+- cuenta técnica segregada del flujo financiero **solo en producción**, y elevada deliberadamente para pruebas fuera de producción.
 
 ## Base de datos y migraciones
 
-Alembic es la herramienta canónica. La cadena actual es lineal y se valida automáticamente en tests:
+Alembic es la herramienta canónica. La cadena actual es lineal:
 
 ```text
 backend/alembic/versions/
@@ -158,10 +205,6 @@ backend/alembic/versions/
 ├── 20260817_0001_iam_foundation.py
 └── 20260817_0002_system_accounts.py
 ```
-
-- `0000` define un baseline determinista y libre de dominio inmobiliario para una base PostgreSQL limpia; cuando encuentra tablas productivas existentes, las conserva.
-- `0001` crea/migra el IAM configurable.
-- `0002` identifica y protege las cuentas técnicas.
 
 El contenedor ejecuta antes de FastAPI:
 
@@ -171,23 +214,35 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
-El bootstrap se ejecuta como módulo Python desde la raíz `backend/`/`/app`, no como `python scripts/bootstrap_admin.py`. De esta forma `app` y `scripts` se resuelven de manera determinista en `sys.path` tanto localmente como dentro del contenedor.
-
-Esto evita DDL dentro del lifespan y no depende de una función `preDeployCommand` de pago en Render.
-
-> Para despliegues futuros con múltiples réplicas, las migraciones deben moverse a una etapa única de release/pre-deploy para evitar carreras.
-
-Antes de una migración productiva, crear snapshot/branch de respaldo en Neon. La topología Alembic se prueba en CI, pero una migración real contra Neon/PostgreSQL de preview sigue siendo un smoke test de despliegue separado.
+El bootstrap se ejecuta como módulo Python desde la raíz `backend/`/`/app`.
 
 ## Desarrollo local
 
-### Requisitos
+### Docker Compose
 
-- Python 3.12+
-- Node.js 20+
-- PostgreSQL/Neon
+```bash
+docker compose up --build
+```
 
-### Backend
+El valor por defecto de `ENVIRONMENT` es no productivo, por lo que el Administrador del sistema puede probar todas las capacidades disponibles localmente.
+
+Para comprobarlo:
+
+```text
+GET /api/iam/me/permissions
+```
+
+debe devolver los permisos activos del catálogo, por ejemplo:
+
+```text
+requests:read
+requests:create
+requests:approve
+requests:close
+config:manage
+```
+
+### Backend sin Docker
 
 ```bash
 cd backend
@@ -199,8 +254,6 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app --reload
 ```
 
-`uvicorn app.main:app --reload` continúa funcionando como alias de compatibilidad.
-
 ### Frontend
 
 ```bash
@@ -209,48 +262,25 @@ npm ci
 npm run dev
 ```
 
-### Docker Compose local
+### Portabilidad Windows → Linux
 
-El entorno local completo se inicia con:
+- `.gitattributes` fuerza `*.sh text eol=lf`.
+- El Dockerfile elimina defensivamente CRLF.
+- El frontend Compose espera `/api/health` antes de iniciar Nginx.
+- El comando canónico del bootstrap es `python -m scripts.bootstrap_admin`.
 
-```bash
-docker compose up --build
-```
-
-El frontend depende del `healthcheck` de `/api/health`, por lo que Nginx no debe arrancar hasta que FastAPI esté disponible.
-
-Los scripts `.sh` que se ejecutan dentro de contenedores Linux deben conservar finales de línea LF. El repositorio fuerza `*.sh text eol=lf` mediante `.gitattributes` y el `backend/Dockerfile` vuelve a normalizarlos durante el build para proteger también checkouts de Windows con CRLF.
-
-Si Docker muestra:
-
-```text
-exec /app/scripts/start.sh: no such file or directory
-```
-
-pero el Dockerfile sí copió el script, reconstruir primero con el código actualizado:
-
-```bash
-git pull
-docker compose down
-docker compose build --no-cache backend
-docker compose up
-```
-
-Si el bootstrap muestra `ModuleNotFoundError: No module named 'app'`, asegúrate de tener la versión que usa `python -m scripts.bootstrap_admin`; el comando antiguo ejecutado por ruta de archivo no es canónico.
-
-Para diagnosticar únicamente el backend:
+Si el backend falla:
 
 ```bash
 docker compose ps -a
 docker compose logs backend --tail=200
-docker compose up db backend --build
 ```
 
 No usar `docker compose down -v` salvo que se acepte eliminar los datos PostgreSQL locales.
 
 ## Variables principales
 
-Backend:
+### Producción
 
 ```env
 ENVIRONMENT=production
@@ -276,14 +306,30 @@ UPLOAD_DIR=/app/uploads
 MAX_UPLOAD_STORAGE_MB=450
 ```
 
+`render.yaml` productivo establece explícitamente `ENVIRONMENT=production`.
+
+### No producción
+
+Por ejemplo:
+
+```env
+ENVIRONMENT=development
+```
+
+o:
+
+```env
+ENVIRONMENT=test
+```
+
+No se debe usar `ENVIRONMENT=production` en un entorno donde se pretenda usar la cuenta técnica para pruebas financieras completas.
+
 Frontend:
 
 ```env
-VITE_API_URL=<RENDER_BACKEND_URL>
+VITE_API_URL=<BACKEND_URL>
 VITE_TIME_ZONE=America/Panama
 ```
-
-Las variables `VITE_*` son públicas porque quedan empaquetadas en el navegador.
 
 ## Clasificación Área + Categoría
 
@@ -297,8 +343,6 @@ Operaciones     ┘
 
 No se duplica la categoría `Equipos` por cada Área.
 
-Por compatibilidad histórica todavía existen nombres físicos legacy (`expense_type`, `expense_subcategory`, etc.). El contrato funcional nuevo es siempre Área + Categoría.
-
 ## Flujo de solicitudes
 
 ### Simple
@@ -307,19 +351,24 @@ Una solicitud simple contiene proveedor, monto y soporte/cotización. La creaci�
 
 ### Múltiples cotizaciones
 
-La población de votación se obtiene desde usuarios con `requests:approve`, excluyendo al solicitante y cuentas técnicas. Las invitaciones guardadas representan el snapshot de participantes de esa ronda.
+La población de votación se obtiene desde usuarios con `requests:approve`, excluyendo al solicitante.
 
-> La regla exacta futura de quorum/empate de cotizaciones es una decisión funcional separada. El refactor IAM no declara resuelta esa semántica.
+- Producción: las cuentas técnicas quedan fuera de permisos financieros.
+- No producción: la cuenta técnica puede participar para pruebas si no queda excluida por una regla propia del flujo, por ejemplo ser el mismo solicitante.
+
+Las invitaciones guardadas representan el snapshot de participantes de esa ronda.
 
 ### Aprobación
 
 La población canónica de aprobadores se obtiene desde `requests:approve`, no desde cargos como Presidente/Tesorero ni flags `can_approve`.
 
-> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.2.2.
+> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.3.0.
 
 ### Cierre
 
 Cerrar o reemplazar factura requiere `requests:close`. `APPROVED` no equivale a `CLOSED`.
+
+La cuenta técnica puede ejecutar cierre fuera de producción y recibe 403 en producción.
 
 ## Testing
 
@@ -328,22 +377,16 @@ cd backend
 python -m unittest discover -s tests -v
 ```
 
-Incluye pruebas HTTP IAM con `FastAPI TestClient`, topología Alembic y regresión de portabilidad Windows→Linux para `.gitattributes`, entrypoint shell y healthchecks de Docker Compose.
+La suite IAM verifica específicamente:
 
-```bash
-cd frontend
-npm run build
-```
+- cuenta técnica con todos los permisos activos en no-producción;
+- login no-productivo con `permission_codes` + aliases efectivos;
+- participación de cuenta técnica en población de aprobación fuera de producción;
+- restricción config/read en producción;
+- 403 de cierre en producción incluso con permiso financiero accidental;
+- exclusión de población de aprobación en producción.
 
-CI ejecuta:
-
-- Python compile;
-- backend tests;
-- frontend production build;
-- backend Docker build;
-- smoke test del entrypoint backend dentro de la imagen Linux;
-- smoke test de import de `scripts.bootstrap_admin` dentro de la imagen;
-- frontend Docker build.
+CI ejecuta además frontend build y construcción/smoke tests de imágenes Docker.
 
 ## Documentación
 
@@ -367,13 +410,11 @@ Documentos principales:
 - `CHANGELOG.md`
 - `PROMPT_RECONSTRUCCION.md`
 
-Un cambio de comportamiento sin su documentación correspondiente se considera incompleto.
-
 ## Deuda de transición conocida
 
-- `UserRole`, `title` y `can_*` permanecen temporalmente para compatibilidad con el frontend/router legacy; no autorizan.
-- `/api/users` legacy se mantiene detrás de `config:manage` mientras migra la UI operacional.
+- `UserRole`, `title` y `can_*` permanecen temporalmente para compatibilidad; no autorizan.
+- `/api/users` legacy continúa temporalmente.
 - `frontend/src/main.jsx` sigue siendo monolítico.
+- El monolito todavía contiene bypasses visuales legacy como `user.role === "ADMIN"` y `canClose={true}`; el backend no confía en ellos. Deben migrarse a `permission_codes`.
 - `domain-normalization.js` sigue como capa temporal.
-- partes no extraídas de `api/expenses.py` todavía contienen lógica legacy, pero las rutas canónicas críticas se registran antes y usan IAM.
-- quorum/mayoría de aprobación y reglas de empate de cotizaciones requieren specs funcionales separadas.
+- quorum/mayoría de aprobación y empate de cotizaciones requieren specs funcionales separadas.
