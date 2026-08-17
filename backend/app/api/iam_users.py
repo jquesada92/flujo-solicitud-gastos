@@ -22,7 +22,11 @@ from app.models.iam import (
 )
 from app.schemas.iam_user import IamUserCreate, IamUserOut, IamUserUpdate
 from app.services.email_service import send_user_invitation
-from app.services.iam_service import effective_permission_codes, is_system_account
+from app.services.iam_service import (
+    effective_permission_codes,
+    is_system_account,
+    permission_sources,
+)
 
 router = APIRouter(dependencies=[Depends(require_permission('config:manage'))])
 
@@ -75,6 +79,7 @@ def _out(db: Session, user: User) -> IamUserOut:
         position_ids=position_ids,
         direct_permission_codes=direct_permissions,
         effective_permission_codes=sorted(effective_permission_codes(db, user.id)),
+        permission_sources=permission_sources(db, user.id),
     )
 
 
