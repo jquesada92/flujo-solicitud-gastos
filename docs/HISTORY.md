@@ -86,6 +86,24 @@ Se adoptaron dos defensas permanentes:
 
 Además, Docker Compose local espera ahora el `healthcheck` del backend antes de iniciar Nginx. De esta forma, si Alembic/FastAPI falla, el error principal queda en el servicio backend y no aparece primero el error secundario `host not found in upstream "backend"`.
 
+### Bootstrap Python como módulo
+
+Después de corregir CRLF, la ejecución local expuso un segundo problema real:
+
+```text
+ModuleNotFoundError: No module named 'app'
+```
+
+Alembic ya había terminado correctamente. El fallo ocurría al ejecutar `python scripts/bootstrap_admin.py`, porque Python podía establecer `scripts/` como raíz de imports del proceso.
+
+Se cambió el contrato operativo a:
+
+```text
+python -m scripts.bootstrap_admin
+```
+
+`scripts` se convirtió en paquete importable mediante `scripts/__init__.py`. El CI ahora carga la imagen backend y verifica que `scripts.bootstrap_admin` pueda importarse con una configuración de base de datos de prueba. Esto evita depender implícitamente de `PYTHONPATH` o del modo en que se invoca un archivo Python.
+
 ---
 
 ## 2026-08-17 — Consola gráfica de Accesos
@@ -111,7 +129,7 @@ El refactor IAM/FastAPI no modifica silenciosamente semánticas de negocio no de
 
 Pendientes separados:
 
-- fórmula exacta del motor de aprobación para cumplir la Constitución 2.2.0;
+- fórmula exacta del motor de aprobación para cumplir la Constitución 2.2.2;
 - regla de quorum/empate de votación de cotizaciones;
 - retiro completo de `UserRole`, `can_*`, `/api/users` legacy y ramas legacy de `api/expenses.py`;
 - modularización completa de `frontend/src/main.jsx`.
