@@ -28,7 +28,7 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
-      - run: python -m compileall -q app
+      - run: python -m compileall -q app scripts
       - run: python -m unittest discover -s tests -v
 
   frontend:
@@ -61,10 +61,15 @@ jobs:
           tags: approval-backend:ci
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
-      - name: Smoke test backend entrypoint
+      - name: Smoke test backend entrypoint and bootstrap imports
         run: |
           docker run --rm --entrypoint /bin/sh approval-backend:ci -c \
             'test -x /app/scripts/start.sh && test "$(head -n 1 /app/scripts/start.sh)" = "#!/bin/sh"'
+          docker run --rm \
+            -e DATABASE_URL=sqlite:////tmp/ci.db \
+            --entrypoint python \
+            approval-backend:ci \
+            -c 'import app; import scripts.bootstrap_admin'
       - uses: docker/build-push-action@v6
         with:
           context: frontend
