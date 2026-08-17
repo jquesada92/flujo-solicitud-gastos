@@ -151,5 +151,5 @@
 - [x] HISTORY registra la decisión.
 - [x] CHANGELOG registra el cambio.
 - [x] Índice documental sincronizado.
-- [x] Terminología revisada; no cambia vocabulario canónico.
+- [x] Terminología actualizada para Cuenta técnica / Administrador del sistema.
 - [ ] Descripción final del PR debe quedar sincronizada.
