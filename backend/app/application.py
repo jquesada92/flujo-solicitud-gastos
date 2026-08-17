@@ -16,6 +16,7 @@ from app.api import (
     iam_users,
     quotation_actions,
     request_actions,
+    revision_actions,
     rules,
     users,
 )
@@ -95,6 +96,7 @@ def create_app() -> FastAPI:
     # Blocking SQLAlchemy/filesystem work lives in normal def routes so FastAPI
     # executes it in its threadpool instead of blocking the event loop.
     app.include_router(request_actions.router, prefix='/api/expenses', tags=['Expenses'])
+    app.include_router(revision_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(quotation_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(document_actions.router, prefix='/api/expenses', tags=['Documents'])
     app.include_router(financial_actions.router, prefix='/api/expenses', tags=['Expenses'])
