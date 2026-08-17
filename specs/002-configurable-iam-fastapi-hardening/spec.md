@@ -64,6 +64,10 @@ Como equipo de desarrollo quiero configuración centralizada, migraciones versio
 
 Como desarrollador en Windows quiero poder construir y ejecutar los contenedores Linux sin que los finales de línea CRLF rompan los scripts de entrada ni oculten el error real del backend detrás de un fallo de Nginx.
 
+### US-012 — Bootstrap importable
+
+Como desarrollador u operador quiero que el bootstrap técnico se ejecute con una raíz de imports estable para que pueda importar `app` tanto en desarrollo local como dentro de Docker sin depender de cómo Python calcule `sys.path` para un archivo ejecutado por ruta.
+
 ## Permisos atómicos iniciales
 
 | Código | Capacidad |
@@ -145,6 +149,8 @@ La pantalla **Configuración → Accesos** debe permitir:
 - Los scripts `.sh` que se ejecutan dentro de imágenes Linux deben materializarse con finales de línea LF.
 - `.gitattributes` debe forzar `*.sh text eol=lf`.
 - El backend Docker debe normalizar defensivamente cualquier CRLF antes de ejecutar el entrypoint.
+- El bootstrap técnico debe ejecutarse desde la raíz del backend como módulo: `python -m scripts.bootstrap_admin`.
+- `scripts` debe ser importable como paquete/módulo y el CI debe comprobar que `scripts.bootstrap_admin` puede importarse dentro de la imagen backend.
 - El frontend local debe esperar a que el backend supere `/api/health` antes de iniciar Nginx.
 - Si el backend falla en Alembic/bootstrap/Uvicorn, el error debe quedar visible como fallo del backend y no quedar oculto por un error secundario de resolución DNS de Nginx.
 
