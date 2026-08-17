@@ -10,12 +10,16 @@
 - [Feature 002 — IAM configurable + FastAPI](../specs/002-configurable-iam-fastapi-hardening/spec.md)
 - [Feature 002 — plan técnico](../specs/002-configurable-iam-fastapi-hardening/plan.md)
 - [Feature 002 — criterios](../specs/002-configurable-iam-fastapi-hardening/checklists/acceptance.md)
+- [Feature 003 — correcciones de solicitudes](../specs/003-request-correction-invariants/spec.md)
+- [Feature 003 — plan técnico](../specs/003-request-correction-invariants/plan.md)
+- [Feature 003 — criterios](../specs/003-request-correction-invariants/checklists/acceptance.md)
 
 ## Dominio funcional y seguridad
 
 - [Modelo IAM configurable](IAM_MODEL.md) — incluye política `TECHNICAL_ADMIN` por ambiente.
 - [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md) — incluye separación `is_production_environment` / endurecimiento de runtime.
 - [Modelo Área + Categoría](CLASSIFICATION_MODEL.md)
+- [Correcciones y reenvío](REQUEST_CORRECTIONS.md) — invariantes SIMPLE/MULTI_QUOTE y reinicio de rondas.
 - [Terminología funcional](TERMINOLOGY.md)
 - [Historial funcional y técnico](HISTORY.md)
 - [Changelog](../CHANGELOG.md)
@@ -47,6 +51,15 @@ ENVIRONMENT!=production
 Esto permite usar el Administrador del sistema para probar crear/aprobar/votar/cerrar en local/dev/test/staging/preview, manteniendo segregación financiera en producción.
 
 `RENDER=true` no sustituye a `ENVIRONMENT=production` para esta política; solo `ENVIRONMENT` decide la autorización funcional productiva.
+
+## Invariant de correcciones
+
+```text
+SIMPLE      → corrección → SIMPLE
+MULTI_QUOTE → corrección → MULTI_QUOTE
+```
+
+Una corrección MULTI_QUOTE conserva evidencia y opciones existentes, crea un `flow_id` nuevo y reinicia el estado vigente de votación. El backend rechaza cualquier intento de cambiar el tipo mediante `resubmit`.
 
 ## Modelo vigente
 
