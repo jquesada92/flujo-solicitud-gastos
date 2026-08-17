@@ -98,7 +98,7 @@
 - [x] `npm run build` forma parte de CI.
 - [x] Backend compile/tests forman parte de CI.
 - [x] Imágenes Docker se construyen en CI.
-- [ ] Todos los jobs del commit final del PR están verdes antes de marcarlo Ready for review.
+- [x] Todos los jobs del commit final del PR están verdes antes de marcarlo Ready for review.
 
 ## Documentación
 
