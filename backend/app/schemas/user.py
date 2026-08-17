@@ -87,6 +87,8 @@ class UserOut(BaseModel):
     can_approve: bool
     can_view: bool
     can_configure: bool
+    can_close: bool = False
+    permission_codes: list[str] = Field(default_factory=list)
     must_change_password: bool
 
     class Config:
