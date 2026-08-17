@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.3.0  
+**Versión:** 2.3.1  
 **Vigente desde:** 2026-08-17
 
 ## 1. Evolucionar, no reconstruir sin necesidad
@@ -139,7 +139,8 @@ El frontend puede ocultar o mostrar acciones por UX, pero el backend es la autor
 - acceso a documentos;
 - decisiones;
 - configuración IAM;
-- política ambiental de cuentas técnicas.
+- política ambiental de cuentas técnicas;
+- invariantes del tipo de solicitud durante una corrección.
 
 Una operación sensible debe declarar una dependencia de permiso explícita o pasar por un servicio que la aplique.
 
@@ -180,11 +181,28 @@ Los cambios futuros de membresías, roles y permisos deben incorporarse al model
 
 Los documentos son evidencia privada. Deben validarse por contenido real, almacenarse fuera del acceso público directo, descargarse con autorización backend, conservar versiones al sustituirse y registrar actor/fecha/motivo.
 
-## 12. Solicitudes y clasificación
+Una corrección no debe obligar a descartar o volver a cargar evidencia válida ya asociada a la solicitud únicamente porque el navegador no pueda prellenar un control de archivo.
+
+## 12. Solicitudes, clasificación y correcciones
 
 Cada solicitud se clasifica por **Área + Categoría**. La clasificación histórica no cambia retroactivamente porque un catálogo se renombre, desactive o cambie.
 
 La solicitud simple contiene una opción/cotización. `MULTI_QUOTE` mantiene la selección de cotización separada conceptualmente del proceso de aprobación.
+
+**Corregir / reenviar MUST conservar el `request_type` original.** Un valor por defecto del frontend, un campo legacy o un payload incorrecto no puede convertir silenciosamente una solicitud entre `SIMPLE` y `MULTI_QUOTE`.
+
+Reglas mínimas de corrección:
+
+- `SIMPLE → corrección → SIMPLE`;
+- `MULTI_QUOTE → corrección → MULTI_QUOTE`;
+- cambiar deliberadamente entre tipos requiere una operación funcional explícita distinta;
+- una corrección MULTI_QUOTE genera un `flow_id` nuevo;
+- los votos e invitaciones vigentes de la ronda anterior dejan de ser estado activo;
+- los eventos históricos previos se conservan;
+- los soportes existentes se conservan;
+- mientras no exista una especificación de edición estructural de rondas, la corrección MULTI_QUOTE conserva la cantidad de opciones existente y permite editar su contenido.
+
+El backend debe hacer cumplir estas reglas incluso si la UI falla al hidratar el formulario.
 
 ## 13. Participantes y decisiones
 
@@ -263,6 +281,8 @@ Los cambios incluyen pruebas proporcionales al riesgo. Para IAM son obligatorias
 - cambios de permisos efectivos sin reiniciar la app;
 - login/respuesta de usuario exponiendo permisos efectivos coherentes con el ambiente.
 
+Para correcciones son obligatorias pruebas que demuestren que `request_type` no cambia, que una MULTI_QUOTE reinicia su ronda y que evidencia existente no se pierde por la hidratación del formulario.
+
 Para portabilidad de contenedores deben existir controles de regresión que verifiquen la política LF de scripts, el mecanismo defensivo de normalización y que el módulo de bootstrap sea importable desde la imagen construida.
 
 CI debe ejecutar backend tests, compilación frontend, construcción de imágenes Docker y smoke tests del entrypoint/bootstrap backend.
@@ -305,6 +325,7 @@ Una feature está terminada cuando:
 - comportamiento implementado coincide con requisitos y criterios;
 - autorización no depende de nombres organizacionales hardcodeados;
 - la política de cuenta técnica está probada en producción y no producción;
+- invariantes de corrección están protegidos en backend y probados;
 - migraciones son versionadas y desplegables;
 - términos visibles coinciden con `docs/TERMINOLOGY.md`;
 - README/prompt no reconstruyen conceptos retirados;
