@@ -253,13 +253,15 @@ Mensajes y branding base deben ser neutrales respecto al tipo de organización.
 
 No uses `Base.metadata.create_all()` ni `migrate_schema()` en el lifespan productivo.
 
-Secuencia:
+Secuencia canónica desde la raíz del backend:
 
 ```text
 alembic upgrade head
-python scripts/bootstrap_admin.py
+python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
+
+No ejecutes el bootstrap canónico como `python scripts/bootstrap_admin.py`: al ejecutar un archivo por ruta Python puede usar `scripts/` como raíz de imports y romper `from app...`. Mantén `scripts` importable como módulo y valida ese import dentro de la imagen Docker.
 
 En Docker/Render económico puede ocurrir en el entrypoint antes de iniciar Uvicorn. En despliegues de múltiples réplicas usa una etapa única de release/pre-deploy.
 
@@ -294,6 +296,8 @@ CI debe ejecutar:
 - backend tests;
 - frontend build;
 - Docker backend;
+- smoke test del entrypoint Linux;
+- smoke test de import de `scripts.bootstrap_admin` dentro de la imagen backend;
 - Docker frontend.
 
 ## 17. Seguridad
