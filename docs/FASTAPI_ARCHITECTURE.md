@@ -86,7 +86,15 @@ Alembic es la autoridad para cambios de esquema. La topología actual es deliber
 
 `tests/test_migrations.py` exige un único head y la cadena anterior. Esto detecta errores de topología, pero no reemplaza un smoke test real de `alembic upgrade head` contra PostgreSQL/Neon de preview.
 
-El entrypoint Docker ejecuta `alembic upgrade head` y el bootstrap técnico antes de Uvicorn.
+El entrypoint Docker ejecuta:
+
+```text
+alembic upgrade head
+python -m scripts.bootstrap_admin
+uvicorn app.application:app
+```
+
+`scripts` es un paquete importable. El bootstrap se ejecuta como módulo desde `/app` para que `app` permanezca en la raíz de imports; no se ejecuta por ruta de archivo.
 
 Esto permite usar el patrón incluso en planes de Render que no incluyen una etapa pre-deploy separada. En despliegues con múltiples réplicas, la migración debe moverse a una etapa única para evitar carreras.
 
@@ -114,6 +122,13 @@ host not found in upstream "backend"
 ```
 
 `tests/test_container_portability.py` protege estas reglas de regresión.
+
+El job Docker de CI, además de construir la imagen, debe comprobar:
+
+- `start.sh` existe, es ejecutable y conserva `#!/bin/sh`;
+- `scripts.bootstrap_admin` se puede importar dentro de la imagen con una configuración de DB de prueba.
+
+Esto detecta errores de `sys.path` que un simple `docker build` no revela.
 
 ## Seguridad
 
