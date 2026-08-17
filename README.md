@@ -150,15 +150,18 @@ backend/app/
 
 ## Base de datos y migraciones
 
-Alembic es la herramienta canónica.
-
-Migraciones IAM actuales:
+Alembic es la herramienta canónica. La cadena actual es lineal y se valida automáticamente en tests:
 
 ```text
 backend/alembic/versions/
+├── 20260817_0000_application_baseline.py
 ├── 20260817_0001_iam_foundation.py
 └── 20260817_0002_system_accounts.py
 ```
+
+- `0000` define un baseline determinista y libre de dominio inmobiliario para una base PostgreSQL limpia; cuando encuentra tablas productivas existentes, las conserva.
+- `0001` crea/migra el IAM configurable.
+- `0002` identifica y protege las cuentas técnicas.
 
 El contenedor ejecuta antes de FastAPI:
 
@@ -172,7 +175,7 @@ Esto evita DDL dentro del lifespan y no depende de una función `preDeployComman
 
 > Para despliegues futuros con múltiples réplicas, las migraciones deben moverse a una etapa única de release/pre-deploy para evitar carreras.
 
-Antes de una migración productiva, crear snapshot/branch de respaldo en Neon.
+Antes de una migración productiva, crear snapshot/branch de respaldo en Neon. La topología Alembic se prueba en CI, pero una migración real contra Neon/PostgreSQL de preview sigue siendo un smoke test de despliegue separado.
 
 ## Desarrollo local
 
@@ -284,7 +287,7 @@ cd backend
 python -m unittest discover -s tests -v
 ```
 
-Incluye pruebas HTTP IAM con `FastAPI TestClient` y SQLite aislada.
+Incluye pruebas HTTP IAM con `FastAPI TestClient` y SQLite aislada, además de una prueba que exige un único head Alembic y la cadena `0000 → 0001 → 0002`.
 
 ```bash
 cd frontend
