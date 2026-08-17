@@ -249,7 +249,7 @@ Producción usa preferiblemente API HTTPS de Brevo. Mantén soporte console/SMTP
 
 Mensajes y branding base deben ser neutrales respecto al tipo de organización.
 
-## 15. Migraciones y despliegue
+## 15. Migraciones, Docker y despliegue
 
 No uses `Base.metadata.create_all()` ni `migrate_schema()` en el lifespan productivo.
 
@@ -262,6 +262,13 @@ uvicorn app.application:app
 ```
 
 En Docker/Render económico puede ocurrir en el entrypoint antes de iniciar Uvicorn. En despliegues de múltiples réplicas usa una etapa única de release/pre-deploy.
+
+Los scripts shell ejecutados dentro de imágenes Linux deben ser portables desde checkouts Windows:
+
+- fuerza `*.sh text eol=lf` en `.gitattributes`;
+- normaliza defensivamente CRLF dentro de la imagen antes de ejecutar el entrypoint;
+- no asumas que `depends_on` simple significa que el backend está listo: usa healthcheck cuando Nginx u otro consumidor depende de FastAPI;
+- si el backend falla durante Alembic/bootstrap/Uvicorn, deja visible ese error primario y evita que el frontend falle primero con `host not found in upstream`.
 
 Antes de migraciones destructivas crea snapshot/backup real.
 
@@ -278,6 +285,8 @@ Matriz IAM mínima:
 - Grupo→Rol→Permiso cambia acceso inmediatamente;
 - permiso directo es aditivo;
 - rol técnico no se edita desde UI.
+
+Incluye una prueba de regresión de portabilidad de contenedores que verifique la política LF, la normalización defensiva de scripts y la dependencia por healthcheck del frontend local.
 
 CI debe ejecutar:
 
