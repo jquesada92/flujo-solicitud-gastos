@@ -13,6 +13,9 @@
 - [Feature 003 — correcciones de solicitudes](../specs/003-request-correction-invariants/spec.md)
 - [Feature 003 — plan técnico](../specs/003-request-correction-invariants/plan.md)
 - [Feature 003 — criterios](../specs/003-request-correction-invariants/checklists/acceptance.md)
+- [Feature 004 — correo por ambiente](../specs/004-email-delivery-by-environment/spec.md)
+- [Feature 004 — plan técnico](../specs/004-email-delivery-by-environment/plan.md)
+- [Feature 004 — criterios](../specs/004-email-delivery-by-environment/checklists/acceptance.md)
 
 ## Dominio funcional y seguridad
 
@@ -20,6 +23,7 @@
 - [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md) — incluye separación `is_production_environment` / endurecimiento de runtime, rutas canónicas y Alembic `0003`.
 - [Modelo Área + Categoría](CLASSIFICATION_MODEL.md)
 - [Correcciones y reenvío](REQUEST_CORRECTIONS.md) — invariantes SIMPLE/MULTI_QUOTE, aislamiento del estado de pestañas, compatibilidad legacy y reinicio de rondas.
+- [Configuración de correo](EMAIL_CONFIGURATION.md) — Google SMTP en local/desarrollo y Brevo en producción.
 - [Terminología funcional](TERMINOLOGY.md)
 - [Historial funcional y técnico](HISTORY.md)
 - [Changelog](../CHANGELOG.md)
@@ -28,6 +32,7 @@
 
 - [README principal](../README.md)
 - [Prompt maestro de reconstrucción](../PROMPT_RECONSTRUCCION.md)
+- `backend/.env.example` — plantilla de variables local sin secretos reales.
 - `render.yaml` — declara explícitamente `ENVIRONMENT=production` para el servicio productivo.
 
 Contrato operativo backend:
@@ -45,6 +50,40 @@ Cadena Alembic actual:
 ```
 
 `0003` repara filas históricas MULTI_QUOTE que conservaron un `request_type=SIMPLE` incorrecto.
+
+## Política de correo por ambiente
+
+```text
+Producción
+Frontend: Vercel
+Backend:  Render
+Correo:   Brevo HTTPS API
+
+Local / development
+Frontend: localhost
+Backend:  FastAPI/Docker local
+Correo:   Google SMTP
+```
+
+Configuración local recomendada:
+
+```env
+EMAIL_MODE=smtp
+EMAIL_FROM=<CUENTA_GOOGLE>
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURITY=ssl
+SMTP_USER=<CUENTA_GOOGLE>
+SMTP_PASSWORD=<APP_PASSWORD_GOOGLE>
+```
+
+Diagnóstico local sin crear una solicitud:
+
+```bash
+docker compose exec backend python -m scripts.test_email --to destino@example.com
+```
+
+Las credenciales SMTP/Brevo pertenecen exclusivamente al backend y nunca al frontend/Vercel.
 
 ## Política ambiental de la cuenta técnica
 
