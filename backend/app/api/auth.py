@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import (
+    apply_effective_permissions_to_user,
     create_token,
     current_user,
     hash_password,
@@ -77,6 +78,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     user.last_activity_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)
+    apply_effective_permissions_to_user(db, user)
     return LoginResponse(access_token=create_token(user), user=UserOut.model_validate(user))
 
 
@@ -109,4 +111,5 @@ def change_password(
     user.last_activity_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)
+    apply_effective_permissions_to_user(db, user)
     return LoginResponse(access_token=create_token(user), user=UserOut.model_validate(user))
