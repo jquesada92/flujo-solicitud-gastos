@@ -61,12 +61,15 @@
 
 ## Migraciones / despliegue
 
+- [x] Existe baseline Alembic property-free para una base PostgreSQL limpia.
+- [x] La cadena Alembic es lineal: `0000 → 0001 → 0002`.
+- [x] Existe un test que exige un único head y la cadena esperada.
 - [x] Existen migraciones Alembic versionadas para IAM.
 - [x] Bootstrap del administrador técnico es idempotente y externo al lifespan.
 - [x] Docker ejecuta migraciones y bootstrap antes de iniciar Uvicorn.
 - [x] El despliegue no depende de `preDeployCommand` de un plan pago de Render.
 - [ ] Antes del despliegue productivo se crea snapshot/backup de Neon.
-- [ ] Se ejecuta smoke test real contra la rama de preview/producción.
+- [ ] Se ejecuta smoke test real de `alembic upgrade head` contra PostgreSQL/Neon de preview antes de producción.
 
 ## Solicitudes / aprobación
 
@@ -109,4 +112,4 @@
 - [x] Terminología actualizada.
 - [x] HISTORY actualizado.
 - [x] CHANGELOG actualizado.
-- [ ] Descripción final del PR sincronizada.
+- [x] Descripción final del PR sincronizada.
