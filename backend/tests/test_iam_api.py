@@ -1,16 +1,20 @@
 import os
 import unittest
 from datetime import datetime, timezone
+from types import SimpleNamespace
+from unittest.mock import patch
 
 os.environ.setdefault('DATABASE_URL', 'sqlite://')
 os.environ.setdefault('SECRET_KEY', 'unit-test-secret-key-at-least-32-characters')
 os.environ.setdefault('ANALYTICS_HASH_KEY', 'unit-test-analytics-key-at-least-32-characters')
+os.environ.setdefault('ENVIRONMENT', 'test')
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api import auth
 from app.application import create_app
 from app.core.database import Base, get_db
 from app.core.security import create_token, hash_password
@@ -23,6 +27,16 @@ from app.models.iam import (
     UserPermission,
     UserRoleAssignment,
 )
+from app.services.iam_service import users_with_permission
+
+
+ALL_PRODUCT_PERMISSIONS = {
+    'requests:read',
+    'requests:create',
+    'requests:approve',
+    'requests:close',
+    'config:manage',
+}
 
 
 class IamApiTests(unittest.TestCase):
@@ -52,6 +66,7 @@ class IamApiTests(unittest.TestCase):
         cls.engine.dispose()
 
     def setUp(self):
+        auth._login_attempts.clear()
         with self.Session() as db:
             for table in reversed(Base.metadata.sorted_tables):
                 db.execute(table.delete())
@@ -59,13 +74,7 @@ class IamApiTests(unittest.TestCase):
 
             permissions = {
                 code: Permission(code=code, name=code, active=True)
-                for code in (
-                    'requests:read',
-                    'requests:create',
-                    'requests:approve',
-                    'requests:close',
-                    'config:manage',
-                )
+                for code in ALL_PRODUCT_PERMISSIONS
             }
             db.add_all(permissions.values())
             db.flush()
@@ -116,29 +125,57 @@ class IamApiTests(unittest.TestCase):
     def auth(self, token: str) -> dict[str, str]:
         return {'Authorization': f'Bearer {token}'}
 
-    def test_system_admin_has_only_config_and_read(self):
+    def test_system_admin_has_all_active_permissions_outside_production(self):
         response = self.client.get('/api/iam/me/permissions', headers=self.auth(self.admin_token))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            set(response.json()['permission_codes']),
-            {'config:manage', 'requests:read'},
-        )
+        self.assertEqual(set(response.json()['permission_codes']), ALL_PRODUCT_PERMISSIONS)
+        for sources in response.json()['sources'].values():
+            self.assertIn('Acceso de prueba de cuenta técnica (no producción)', sources)
 
-    def test_system_account_financial_permissions_are_filtered_even_if_assigned(self):
+    def test_login_returns_full_non_production_capability_view(self):
+        response = self.client.post(
+            '/api/auth/login',
+            json={'email': 'admin@example.com', 'password': 'Test-password-123!'},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        user = response.json()['user']
+        self.assertEqual(set(user['permission_codes']), ALL_PRODUCT_PERMISSIONS)
+        self.assertTrue(user['can_request'])
+        self.assertTrue(user['can_approve'])
+        self.assertTrue(user['can_view'])
+        self.assertTrue(user['can_configure'])
+        self.assertTrue(user['can_close'])
+
+    def test_system_account_can_join_approval_population_outside_production(self):
+        with self.Session() as db:
+            users = users_with_permission(db, 'requests:approve')
+        self.assertIn(self.admin_id, {user.id for user in users})
+
+    def test_system_account_is_restricted_in_production_even_if_financial_permission_is_assigned(self):
         with self.Session() as db:
             close_permission = db.scalar(select(Permission).where(Permission.code == 'requests:close'))
             db.add(UserPermission(user_id=self.admin_id, permission_id=close_permission.id))
             db.commit()
 
-        effective = self.client.get('/api/iam/me/permissions', headers=self.auth(self.admin_token))
-        self.assertNotIn('requests:close', effective.json()['permission_codes'])
+        production = SimpleNamespace(is_production_environment=True)
+        with patch('app.services.iam_service.get_settings', return_value=production):
+            effective = self.client.get('/api/iam/me/permissions', headers=self.auth(self.admin_token))
+            self.assertEqual(
+                set(effective.json()['permission_codes']),
+                {'config:manage', 'requests:read'},
+            )
+            self.assertNotIn('requests:close', effective.json()['permission_codes'])
 
-        close = self.client.post(
-            '/api/expenses/REQ-DOES-NOT-MATTER/close',
-            headers=self.auth(self.admin_token),
-            files={'invoice': ('invoice.pdf', b'%PDF-1.7\n', 'application/pdf')},
-        )
-        self.assertEqual(close.status_code, 403)
+            close = self.client.post(
+                '/api/expenses/REQ-DOES-NOT-MATTER/close',
+                headers=self.auth(self.admin_token),
+                files={'invoice': ('invoice.pdf', b'%PDF-1.7\n', 'application/pdf')},
+            )
+            self.assertEqual(close.status_code, 403)
+
+            with self.Session() as db:
+                approvers = users_with_permission(db, 'requests:approve')
+            self.assertNotIn(self.admin_id, {user.id for user in approvers})
 
     def test_user_without_config_cannot_administer_iam(self):
         response = self.client.get('/api/iam/roles', headers=self.auth(self.user_token))
