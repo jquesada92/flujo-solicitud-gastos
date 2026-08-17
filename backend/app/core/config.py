@@ -49,8 +49,19 @@ class Settings(BaseSettings):
     admin_password: str = 'Admin123!'
 
     @property
+    def is_production_environment(self) -> bool:
+        """True only when business authorization must use production policy."""
+        return self.environment.strip().lower() == 'production'
+
+    @property
     def is_production(self) -> bool:
-        return self.environment.lower() == 'production' or self.render
+        """Security-hardening flag retained for hosted runtime validation.
+
+        Render preview/dev services still require strong secrets and explicit
+        CORS, but they do not inherit production-only segregation-of-duties
+        behavior unless ENVIRONMENT=production.
+        """
+        return self.is_production_environment or self.render
 
     @property
     def cors_origins(self) -> list[str]:
