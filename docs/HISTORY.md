@@ -1,5 +1,41 @@
 # Historial funcional y técnico
 
+## 2026-08-17 — Documentación como parte del Definition of Done
+
+### Decisión
+
+Se establece como regla transversal que ningún cambio funcional o técnico se considera terminado si deja desactualizadas las fuentes documentales afectadas.
+
+Se incorporan como artefactos obligatorios de gobierno:
+
+- `.specify/memory/constitution.md`;
+- especificaciones por feature en `specs/`;
+- planes técnicos;
+- criterios de aceptación;
+- `docs/DOCUMENTATION_POLICY.md`.
+
+Cada feature debe revisar además README, prompt maestro, terminología, historial y changelog según corresponda.
+
+### Motivo
+
+El proyecto está evolucionando desde un MVP con términos y estructuras legacy. Sin una regla explícita de sincronización, el código puede avanzar mientras prompts, README o criterios de aceptación continúan reconstruyendo comportamiento obsoleto.
+
+La discrepancia código-documentación pasa a considerarse un defecto de la feature.
+
+---
+
+## 2026-08-17 — Terminología Usuario / Usuarios
+
+### Decisión funcional
+
+El término canónico para el dominio de cuentas es **Usuario / Usuarios**.
+
+La interfaz no debe utilizar **Persona / Personas** como nombre del módulo de administración de cuentas.
+
+El backend ya utiliza `User` y `/api/users`, por lo que esta decisión alinea el lenguaje funcional con el contrato técnico existente.
+
+---
+
 ## 2026-08-17 — Clasificación Área + Categoría
 
 ### Decisión funcional
