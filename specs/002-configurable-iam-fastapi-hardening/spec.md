@@ -2,7 +2,8 @@
 
 **Feature:** 002-configurable-iam-fastapi-hardening  
 **Estado:** Implementación en PR #6  
-**Fecha:** 2026-08-17
+**Fecha:** 2026-08-17  
+**Constitución vigente:** 2.3.2
 
 ## Objetivo
 
@@ -215,7 +216,7 @@ Condiciones:
 1. no son fuente de autorización;
 2. los `can_*` que vea código legacy se derivan del IAM efectivo;
 3. las rutas canónicas se registran antes que las rutas legacy equivalentes;
-4. invariantes funcionales posteriores, como preservar `request_type` durante una corrección, se protegen también en backend;
+4. invariantes funcionales posteriores, como preservar el tipo canónico durante una corrección, se protegen también en backend;
 5. la deuda se documenta y retira gradualmente.
 
 ## Criterios funcionales clave de la política ambiental
@@ -228,7 +229,7 @@ Condiciones:
 
 ## Relación con Feature 003
 
-La política IAM de esta feature no define por sí sola la semántica de correcciones. La Feature `003-request-correction-invariants` añadió posteriormente la regla constitucional de que `Corregir / reenviar` preserva `SIMPLE` o `MULTI_QUOTE` y reinicia correctamente una ronda MULTI_QUOTE. La Constitución vigente es **2.3.1**.
+La política IAM de esta feature no define por sí sola la semántica de correcciones. Feature `003-request-correction-invariants` establece que `Corregir / reenviar` preserva el tipo canónico, que la pestaña de creación previa no puede influir en el editor, que una MULTI_QUOTE reinicia su ronda y que datos legacy inconsistentes se reparan mediante Alembic `0003`.
 
 ## Fuera de alcance de esta feature
 
@@ -244,4 +245,4 @@ La política IAM de esta feature no define por sí sola la semántica de correcc
 
 La votación `MULTI_QUOTE` mantiene la regla legacy de resolución al participar toda la población invitada y existir un ganador único. La semántica de quorum/empates de cotizaciones requiere una especificación funcional independiente.
 
-Asimismo, la regla de mayoría del motor de aprobación existente no se declara corregida por este PR; la Constitución vigente 2.3.1 sigue siendo la fuente de verdad funcional para la futura refactorización del motor de decisiones.
+Asimismo, la regla de mayoría del motor de aprobación existente no se declara corregida por este PR; la Constitución vigente 2.3.2 sigue siendo la fuente de verdad funcional para la futura refactorización del motor de decisiones.
