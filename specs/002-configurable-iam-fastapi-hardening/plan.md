@@ -61,14 +61,15 @@ Base `/api/iam`:
 - asignación grupo↔rol;
 - asignación grupo↔usuario;
 - roles/permisos directos de usuario;
-- permisos efectivos;
+- permisos efectivos y sus fuentes;
 - cargos/posiciones.
 
 Base `/api/iam/users`:
 
 - listado neutral de usuarios;
 - creación con grupos/roles/permisos/cargos opcionales;
-- actualización de atributos y asignaciones.
+- actualización de atributos y asignaciones;
+- permisos efectivos y fuentes de herencia por usuario.
 
 ## Rutas financieras canónicas
 
@@ -111,7 +112,17 @@ Producción valida secretos, CORS y credenciales necesarias.
 
 ## Migraciones y startup
 
-Alembic es la herramienta canónica.
+Alembic es la herramienta canónica. La cadena debe permanecer lineal:
+
+```text
+20260817_0000 application baseline
+        ↓
+20260817_0001 IAM foundation
+        ↓
+20260817_0002 system accounts
+```
+
+`0000` define el baseline property-free requerido para instalar el producto sobre una base PostgreSQL limpia y utiliza inspección para conservar tablas que ya existen en la base productiva actual.
 
 `FastAPI.lifespan` no crea tablas, no ejecuta ALTER TABLE y no hace backfills.
 
@@ -124,6 +135,10 @@ uvicorn app.application:app
 ```
 
 Esto mantiene la migración fuera del ciclo de vida FastAPI y funciona en planes de Render sin pre-deploy separado. Para despliegues con múltiples réplicas se debe mover la migración a una etapa única de release/pre-deploy para evitar carreras.
+
+`tests/test_migrations.py` debe fallar si existe más de un head o se rompe la cadena `0000 → 0001 → 0002`.
+
+La topología del script no sustituye una ejecución real: antes de producción se requiere snapshot y smoke test contra PostgreSQL/Neon de preview.
 
 ## Sync / async
 
@@ -175,19 +190,22 @@ Matriz mínima:
 - permiso directo es aditivo;
 - rol system-managed no editable.
 
+`tests/test_migrations.py` valida la topología Alembic sin afirmar que reemplaza un smoke test de PostgreSQL real.
+
 ## Despliegue
 
-1. Backup/snapshot de Neon.
+1. Crear backup/snapshot/branch de Neon.
 2. Construir backend actualizado.
-3. Ejecutar Alembic 0001 y 0002.
-4. Bootstrap técnico idempotente.
+3. En preview, ejecutar `alembic upgrade head` y comprobar `0000 → 0001 → 0002`.
+4. Ejecutar bootstrap técnico idempotente.
 5. Iniciar FastAPI.
 6. Verificar `/api/health`.
 7. Login administrador técnico.
 8. Verificar permisos efectivos: solo `config:manage`, `requests:read`.
 9. Configurar grupos/roles requeridos desde UI.
 10. Validar creación/aprobación/cierre con usuarios separados.
+11. Solo después repetir el procedimiento en producción.
 
 ## Rollback
 
-No depender únicamente de `alembic downgrade` para recuperar datos. Antes de migración productiva mantener snapshot/branch Neon. Si la migración falla después de escrituras de negocio, restaurar snapshot y versión previa del servicio.
+No depender únicamente de `alembic downgrade` para recuperar datos. Antes de migración productiva mantener snapshot/branch Neon. El baseline 0000 tiene downgrade deliberadamente no destructivo porque puede haberse aplicado sobre tablas preexistentes que Alembic no creó. Si la migración falla después de escrituras de negocio, restaurar snapshot y versión previa del servicio.
