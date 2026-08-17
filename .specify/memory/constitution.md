@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.3.1  
+**Versión:** 2.3.2  
 **Vigente desde:** 2026-08-17
 
 ## 1. Evolucionar, no reconstruir sin necesidad
@@ -191,6 +191,8 @@ La solicitud simple contiene una opción/cotización. `MULTI_QUOTE` mantiene la 
 
 **Corregir / reenviar MUST conservar el `request_type` original.** Un valor por defecto del frontend, un campo legacy o un payload incorrecto no puede convertir silenciosamente una solicitud entre `SIMPLE` y `MULTI_QUOTE`.
 
+La pestaña SIMPLE/MULTI_QUOTE usada para crear una solicitud nueva es **solo estado de creación**. Al entrar en modo corrección, ese estado previo MUST descartarse: el editor debe derivar y fijar su tipo desde la solicitud que se está corrigiendo. La pestaña que estaba seleccionada antes de pulsar **Corregir / reenviar** no puede influir en el editor.
+
 Reglas mínimas de corrección:
 
 - `SIMPLE → corrección → SIMPLE`;
@@ -201,6 +203,8 @@ Reglas mínimas de corrección:
 - los eventos históricos previos se conservan;
 - los soportes existentes se conservan;
 - mientras no exista una especificación de edición estructural de rondas, la corrección MULTI_QUOTE conserva la cantidad de opciones existente y permite editar su contenido.
+
+La persistencia también debe mantener este invariant. Si un registro legacy conserva `request_type=SIMPLE` pero existe evidencia durable inequívoca de flujo múltiple —por ejemplo dos o más `quotation_options` o estado `QUOTATION_VOTING`— el sistema debe tratarlo como `MULTI_QUOTE` y reparar el dato mediante migración versionada/compatibilidad segura.
 
 El backend debe hacer cumplir estas reglas incluso si la UI falla al hidratar el formulario.
 
@@ -281,7 +285,7 @@ Los cambios incluyen pruebas proporcionales al riesgo. Para IAM son obligatorias
 - cambios de permisos efectivos sin reiniciar la app;
 - login/respuesta de usuario exponiendo permisos efectivos coherentes con el ambiente.
 
-Para correcciones son obligatorias pruebas que demuestren que `request_type` no cambia, que una MULTI_QUOTE reinicia su ronda y que evidencia existente no se pierde por la hidratación del formulario.
+Para correcciones son obligatorias pruebas que demuestren que `request_type` no cambia, que una MULTI_QUOTE reinicia su ronda, que evidencia existente no se pierde por la hidratación del formulario, que el tipo del editor no depende de la pestaña seleccionada previamente y que un registro legacy con evidencia MULTI_QUOTE no se degrada por un default `SIMPLE` incorrecto.
 
 Para portabilidad de contenedores deben existir controles de regresión que verifiquen la política LF de scripts, el mecanismo defensivo de normalización y que el módulo de bootstrap sea importable desde la imagen construida.
 
@@ -326,6 +330,7 @@ Una feature está terminada cuando:
 - autorización no depende de nombres organizacionales hardcodeados;
 - la política de cuenta técnica está probada en producción y no producción;
 - invariantes de corrección están protegidos en backend y probados;
+- el editor de corrección deriva su tipo de la solicitud y no conserva la pestaña de creación previa;
 - migraciones son versionadas y desplegables;
 - términos visibles coinciden con `docs/TERMINOLOGY.md`;
 - README/prompt no reconstruyen conceptos retirados;
