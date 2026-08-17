@@ -243,6 +243,26 @@ class MultiQuoteRevisionTests(unittest.TestCase):
             self.assertEqual(len(invitations), 1)
             self.assertNotEqual(invitations[0].token, 'old-voting-token')
 
+    def test_legacy_simple_flag_is_inferred_as_multi_quote_from_durable_evidence(self):
+        with self.Session() as db:
+            expense = db.get(Expense, self.expense_id)
+            expense.request_type = 'SIMPLE'
+            db.commit()
+
+        response = self.client.put(
+            '/api/expenses/multi-revision-test/resubmit',
+            headers=self.auth(),
+            json=self.multi_payload(),
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload['request_type'], 'MULTI_QUOTE')
+        self.assertEqual(payload['status'], 'QUOTATION_VOTING')
+
+        with self.Session() as db:
+            stored = db.get(Expense, self.expense_id)
+            self.assertEqual(stored.request_type, 'MULTI_QUOTE')
+
     def test_revision_cannot_change_multi_quote_into_simple(self):
         payload = {
             'title': 'Intento de conversión',
