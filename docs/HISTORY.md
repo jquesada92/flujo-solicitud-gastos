@@ -1,5 +1,51 @@
 # Historial funcional y técnico
 
+## 2026-08-17 — Corrección MULTI_QUOTE preserva el tipo de solicitud
+
+### Incidente detectado
+
+Al seleccionar **Corregir / reenviar** sobre una solicitud en `QUOTATION_VOTING`, el formulario legacy se abría como **Solicitud sencilla**. La causa era que `ExpenseForm` inicializaba `requestType` en `SIMPLE` y, al hidratar un draft, no restauraba `draft.request_type` ni `draft.quotation_options`.
+
+El endpoint legacy de `resubmit` tampoco reconstruía correctamente una nueva ronda MULTI_QUOTE.
+
+### Decisión funcional
+
+Se establece como invariant:
+
+```text
+SIMPLE      → corrección → SIMPLE
+MULTI_QUOTE → corrección → MULTI_QUOTE
+```
+
+`Corregir / reenviar` no puede utilizarse para convertir el tipo de solicitud. Un intento de cambio de `request_type` es rechazado por backend con `409 Conflict`.
+
+### Comportamiento MULTI_QUOTE
+
+Una corrección:
+
+- restaura las opciones existentes en la UI;
+- conserva soportes existentes;
+- mantiene por ahora la cantidad de opciones;
+- permite corregir proveedor, monto, URL y observaciones;
+- genera un `flow_id` nuevo;
+- elimina el estado vigente de votos;
+- reemplaza las invitaciones de la ronda;
+- conserva eventos históricos;
+- resuelve la nueva población mediante `requests:approve`;
+- vuelve a `QUOTATION_VOTING`.
+
+### Implementación temporal frontend
+
+Mientras `ExpenseForm` siga dentro de `main.jsx`, `vite.config.js` aplica un transform de compatibilidad durante dev/build para restaurar correctamente el draft MULTI_QUOTE. El build falla si el transform no encuentra los fragmentos legacy esperados.
+
+Este transform no es arquitectura objetivo y debe retirarse al modularizar `ExpenseForm`.
+
+### Protección backend y pruebas
+
+Se añadió `api/revision_actions.py` como ruta canónica registrada antes de `expenses.py` legacy, y una suite `TestClient` que verifica preservación del tipo, evidencia, reinicio de votos/invitaciones y rechazo de MULTI_QUOTE → SIMPLE.
+
+---
+
 ## 2026-08-17 — Administrador del sistema con política por ambiente
 
 ### Decisión
@@ -149,10 +195,11 @@ La consola consume `/api/iam/*` y no depende de perfiles/cargos hardcodeados del
 
 Pendientes separados:
 
-- fórmula exacta del motor de aprobación para cumplir la Constitución 2.3.0;
+- fórmula exacta del motor de aprobación para cumplir la Constitución 2.3.1;
 - regla de quorum/empate de votación de cotizaciones;
+- edición estructural de una ronda MULTI_QUOTE corregida (agregar/eliminar opciones con evidencia/versionado explícito);
 - retiro completo de `UserRole`, `can_*`, `/api/users` legacy y ramas legacy de `api/expenses.py`;
-- modularización completa de `frontend/src/main.jsx`, incluyendo retiro de bypasses visuales de ADMIN y `canClose={true}`.
+- modularización completa de `frontend/src/main.jsx`, incluyendo retiro de bypasses visuales de ADMIN, `canClose={true}` y del transform temporal de correcciones.
 
 ---
 
