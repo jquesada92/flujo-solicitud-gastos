@@ -154,4 +154,5 @@
 - [x] CHANGELOG registra los cambios.
 - [x] Índice documental sincronizado.
 - [x] Terminología distingue selector de nueva solicitud y corrección.
+- [x] Política documental incluye fugas de estado UI con impacto funcional y reparaciones de datos legacy.
 - [ ] Descripción final del PR debe reflejar Constitución 2.3.2, estado aislado de correcciones y migración 0003.
