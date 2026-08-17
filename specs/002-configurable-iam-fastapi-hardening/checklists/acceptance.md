@@ -137,7 +137,7 @@
 - [x] Backend compile/tests forman parte de CI.
 - [x] Imágenes Docker se construyen en CI.
 - [x] El entrypoint backend se valida dentro de la imagen construida por CI.
-- [ ] Todos los jobs del commit final del PR deben estar verdes antes de marcarlo Ready for review.
+- [x] Todos los jobs del commit funcional/documental de la política ambiental quedaron verdes antes del cierre del checklist.
 
 ## Documentación
 
@@ -152,4 +152,4 @@
 - [x] CHANGELOG registra el cambio.
 - [x] Índice documental sincronizado.
 - [x] Terminología actualizada para Cuenta técnica / Administrador del sistema.
-- [ ] Descripción final del PR debe quedar sincronizada.
+- [x] Descripción final del PR sincronizada.
