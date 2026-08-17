@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-08-17 — Correcciones MULTI_QUOTE preservan el flujo
+
+### Fixed
+- **Corregir / reenviar** ya no degrada una solicitud `MULTI_QUOTE` a `SIMPLE` por el valor por defecto del formulario.
+- El frontend restaura `request_type`, opciones de cotización y soportes existentes al hidratar una corrección.
+- El backend canónico rechaza con `409` cualquier intento de cambiar el `request_type` durante `resubmit`.
+- Una corrección MULTI_QUOTE reinicia correctamente la ronda: nuevo `flow_id`, votos vigentes limpiados, invitaciones reemplazadas y estado `QUOTATION_VOTING`.
+- Los attachments existentes permanecen asociados a sus opciones.
+
+### Added
+- `backend/app/api/revision_actions.py` como ruta canónica de correcciones registrada antes del router legacy.
+- `backend/tests/test_multi_quote_revision.py` con regresión HTTP de preservación de tipo/evidencia/ronda.
+- `frontend/vite.config.js` con transform temporal y estricto para hidratar correctamente `ExpenseForm` mientras siga en el monolito.
+- `specs/003-request-correction-invariants/`.
+- `docs/REQUEST_CORRECTIONS.md`.
+
+### Behavior
+- `SIMPLE → corrección → SIMPLE`.
+- `MULTI_QUOTE → corrección → MULTI_QUOTE`.
+- Durante esta feature una MULTI_QUOTE corregida conserva la misma cantidad de opciones; se pueden editar proveedor, monto, URL y observaciones.
+- Cambiar deliberadamente SIMPLE ↔ MULTI_QUOTE queda fuera de `Corregir / reenviar`.
+
+### Compatibility / Technical debt
+- El transform Vite es temporal y debe retirarse cuando `ExpenseForm` salga de `frontend/src/main.jsx`.
+- Editar estructuralmente una ronda (agregar/eliminar opciones con evidencia/versionado explícito) requiere una feature separada.
+
+---
+
 ## 2026-08-17 — IAM configurable + FastAPI hardening
 
 ### Added
