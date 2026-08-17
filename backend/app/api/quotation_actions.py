@@ -6,26 +6,20 @@ from app.core.database import get_db
 from app.core.security import require_permission
 from app.models.entities import Expense, QuotationVotingInvitation, User
 from app.schemas.expense import ExpenseOut
+from app.schemas.quotation import QuotationVoteRequest
 from app.services.iam_service import has_permission
 from app.services.quotation_service import cast_quotation_vote
 
 router = APIRouter()
 
 
-class QuotationVoteRequest:
-    pass
-
-
 @router.post('/{request_id}/quotation-vote', response_model=ExpenseOut)
 def vote_quotation(
     request_id: str,
-    payload: dict,
+    payload: QuotationVoteRequest,
     db: Session = Depends(get_db),
     user: User = Depends(require_permission('requests:approve')),
 ):
-    option_id = payload.get('quotation_option_id')
-    if not isinstance(option_id, int):
-        raise HTTPException(status_code=422, detail='Debes seleccionar una cotización válida')
     expense = db.scalar(
         select(Expense)
         .where(or_(Expense.request_id == request_id, Expense.display_id == request_id))
@@ -38,18 +32,15 @@ def vote_quotation(
     )
     if not expense:
         raise HTTPException(status_code=404, detail='Solicitud no encontrada')
-    return cast_quotation_vote(db, expense, user, option_id)
+    return cast_quotation_vote(db, expense, user, payload.quotation_option_id)
 
 
 @router.post('/quotation-vote-email/{token}')
 def decide_email_quotation_vote(
     token: str,
-    payload: dict,
+    payload: QuotationVoteRequest,
     db: Session = Depends(get_db),
 ):
-    option_id = payload.get('quotation_option_id')
-    if not isinstance(option_id, int):
-        raise HTTPException(status_code=422, detail='Debes seleccionar una cotización válida')
     invitation = db.scalar(select(QuotationVotingInvitation).where(
         QuotationVotingInvitation.token == token,
     ))
@@ -68,9 +59,9 @@ def decide_email_quotation_vote(
             selectinload(Expense.attachments),
         )
     )
-    result = cast_quotation_vote(db, expense, user, option_id)
+    result = cast_quotation_vote(db, expense, user, payload.quotation_option_id)
     return {
         'status': result.status.value,
         'display_id': result.display_id,
-        'quotation_option_id': option_id,
+        'quotation_option_id': payload.quotation_option_id,
     }
