@@ -63,3 +63,4 @@ class IamUserOut(BaseModel):
     position_ids: list[int] = Field(default_factory=list)
     direct_permission_codes: list[str] = Field(default_factory=list)
     effective_permission_codes: list[str] = Field(default_factory=list)
+    permission_sources: dict[str, list[str]] = Field(default_factory=dict)
