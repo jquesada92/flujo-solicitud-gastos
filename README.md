@@ -311,7 +311,7 @@ La población de votación se obtiene desde usuarios con `requests:approve`, exc
 
 La población canónica de aprobadores se obtiene desde `requests:approve`, no desde cargos como Presidente/Tesorero ni flags `can_approve`.
 
-> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.2.0.
+> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.2.1.
 
 ### Cierre
 
@@ -324,7 +324,7 @@ cd backend
 python -m unittest discover -s tests -v
 ```
 
-Incluye pruebas HTTP IAM con `FastAPI TestClient` y SQLite aislada, además de una prueba que exige un único head Alembic y la cadena `0000 → 0001 → 0002`.
+Incluye pruebas HTTP IAM con `FastAPI TestClient`, topología Alembic y regresión de portabilidad Windows→Linux para `.gitattributes`, entrypoint shell y healthchecks de Docker Compose.
 
 ```bash
 cd frontend
@@ -337,6 +337,7 @@ CI ejecuta:
 - backend tests;
 - frontend production build;
 - backend Docker build;
+- smoke test del entrypoint backend dentro de la imagen Linux;
 - frontend Docker build.
 
 ## Documentación
