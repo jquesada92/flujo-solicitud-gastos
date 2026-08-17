@@ -4,7 +4,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import approvals, areas, audit, auth, expenses, financial_actions, iam, rules, users
+from app.api import approvals, areas, audit, auth, expenses, financial_actions, iam, iam_users, rules, users
 from app.core.config import get_settings
 from app.core.rate_limit import authenticated_subject, consume_user_request, policy_for_request
 from app.core.security import require_permission
@@ -92,7 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(
         users.router,
         prefix='/api/users',
-        tags=['Users'],
+        tags=['Users (legacy compatibility)'],
         dependencies=[Depends(require_permission('config:manage'))],
     )
     app.include_router(areas.router, prefix='/api/areas', tags=['Areas'])
@@ -102,6 +102,7 @@ def create_app() -> FastAPI:
         tags=['Audit'],
         dependencies=[Depends(require_permission('config:manage'))],
     )
+    app.include_router(iam_users.router, prefix='/api/iam/users', tags=['Access Management'])
     app.include_router(iam.router, prefix='/api/iam', tags=['Access Management'])
 
     @app.get('/api/health')
