@@ -69,6 +69,23 @@ El CI valida código y topología Alembic; antes del despliegue productivo conti
 
 Se evaluó `preDeployCommand`. Aunque Render lo recomienda para migraciones, está asociado a servicios pagos. Para mantener compatibilidad con un despliegue económico, el contenedor ejecuta Alembic + bootstrap antes de `uvicorn` mediante `scripts/start.sh`. En un futuro despliegue con múltiples réplicas, la migración debe moverse a una etapa única de release/pre-deploy.
 
+### Compatibilidad de scripts entre Windows y Linux
+
+Durante una ejecución local desde Windows, Docker reportó:
+
+```text
+exec /app/scripts/start.sh: no such file or directory
+```
+
+El archivo estaba presente; el problema era compatible con una materialización CRLF del script, que convierte el shebang Linux en `/bin/sh\r`.
+
+Se adoptaron dos defensas permanentes:
+
+1. `.gitattributes` fuerza `*.sh` a `eol=lf`.
+2. `backend/Dockerfile` elimina cualquier `\r` de los scripts shell durante el build antes de hacerlos ejecutables.
+
+Además, Docker Compose local espera ahora el `healthcheck` del backend antes de iniciar Nginx. De esta forma, si Alembic/FastAPI falla, el error principal queda en el servicio backend y no aparece primero el error secundario `host not found in upstream "backend"`.
+
 ---
 
 ## 2026-08-17 — Consola gráfica de Accesos
