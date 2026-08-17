@@ -127,6 +127,8 @@
 - [x] Test producción verifica que un `requests:close` directo accidental es filtrado.
 - [x] Test producción verifica 403 en endpoint de cierre.
 - [x] Test producción verifica exclusión de población de aprobación.
+- [x] Test Settings verifica que preview alojado puede ser hardened sin activar autorización productiva.
+- [x] Test Settings verifica que `ENVIRONMENT=production` sí activa la política productiva.
 
 ## Calidad
 
@@ -143,9 +145,11 @@
 - [x] Spec funcional actualizada.
 - [x] Plan técnico actualizado.
 - [x] Criterios de aceptación actualizados.
-- [ ] README debe reflejar la nueva política ambiental.
-- [ ] Prompt maestro debe reflejar la nueva política ambiental.
-- [ ] Documentación IAM/FastAPI debe reflejar la nueva política ambiental.
-- [ ] HISTORY debe registrar la decisión.
-- [ ] CHANGELOG debe registrar el cambio.
-- [ ] Índice documental/PR deben quedar sincronizados.
+- [x] README refleja la nueva política ambiental.
+- [x] Prompt maestro refleja la nueva política ambiental.
+- [x] Documentación IAM/FastAPI refleja la nueva política ambiental.
+- [x] HISTORY registra la decisión.
+- [x] CHANGELOG registra el cambio.
+- [x] Índice documental sincronizado.
+- [x] Terminología revisada; no cambia vocabulario canónico.
+- [ ] Descripción final del PR debe quedar sincronizada.
