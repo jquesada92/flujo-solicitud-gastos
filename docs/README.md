@@ -3,7 +3,7 @@
 ## Gobierno y especificaciones
 
 - [Constitución del proyecto](../.specify/memory/constitution.md) — versión vigente 2.3.2.
-- [Política de sincronización documental](DOCUMENTATION_POLICY.md)
+- [Política de sincronización documental](DOCUMENTATION_POLICY.md) — los defectos de estado UI que pueden cambiar semántica de negocio se tratan como cambios funcionales.
 - [Feature 001 — normalización de dominio](../specs/001-domain-normalization/spec.md)
 - [Feature 001 — plan técnico](../specs/001-domain-normalization/plan.md)
 - [Feature 001 — criterios](../specs/001-domain-normalization/checklists/acceptance.md)
