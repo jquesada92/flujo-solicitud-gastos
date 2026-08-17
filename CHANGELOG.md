@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-08-17 — Correo por ambiente: Google SMTP local / Brevo producción
+
+### Changed
+- Desarrollo local pasa a documentarse con `EMAIL_MODE=smtp` para enviar correos reales mediante Gmail/Google Workspace.
+- Producción conserva `EMAIL_MODE=brevo` en el backend desplegado en Render.
+- Las credenciales de correo permanecen exclusivamente en backend; Vercel/frontend no recibe `SMTP_PASSWORD` ni `BREVO_API_KEY`.
+
+### Added
+- `docs/EMAIL_CONFIGURATION.md` con matriz de ambientes, configuración SMTP y diagnóstico.
+- `specs/004-email-delivery-by-environment/` con spec, plan técnico y criterios de aceptación.
+- `python -m scripts.test_email --to <correo>` para probar el transporte configurado sin depender del workflow de solicitudes.
+
+### Local configuration
+- Google SMTP recomendado: `smtp.gmail.com`, puerto `465`, `ssl`.
+- Alternativa: puerto `587`, `starttls`.
+- `SMTP_PASSWORD` se documenta como App Password de Google; nunca se versiona.
+
+### Diagnostics
+- `EMAIL_MODE=console` se reconoce explícitamente como modo sin entrega real.
+- La entrega de correo se puede validar por separado antes de probar SIMPLE o MULTI_QUOTE.
+
+---
+
 ## 2026-08-17 — Correcciones MULTI_QUOTE preservan el flujo
 
 ### Fixed
