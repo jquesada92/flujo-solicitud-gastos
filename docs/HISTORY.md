@@ -1,5 +1,46 @@
 # Historial funcional y técnico
 
+## 2026-08-17 — Administrador del sistema con política por ambiente
+
+### Decisión
+
+Se ajusta la política de `TECHNICAL_ADMIN` para separar claramente pruebas y producción.
+
+```text
+ENVIRONMENT=production
+→ config:manage + requests:read
+
+ENVIRONMENT!=production
+→ todos los permisos atómicos activos
+```
+
+En local, dev, test, staging y preview la cuenta técnica puede crear, aprobar, votar, cerrar y configurar para validar el producto end-to-end. También puede aparecer en poblaciones de aprobación/votación.
+
+En producción mantiene segregación estricta: no puede crear, aprobar ni cerrar, aunque reciba accidentalmente un permiso financiero mediante rol, grupo o asignación directa.
+
+### Motivo
+
+La restricción productiva era correcta para segregación de funciones, pero impedía utilizar la única cuenta técnica para probar todos los recorridos en ambientes no productivos. Crear cuentas auxiliares obligatorias solo para testing aumentaba fricción sin aportar seguridad real fuera de producción.
+
+La excepción se implementa como política `SystemAccount + ENVIRONMENT`; no se basa en email, nombre, cargo ni `UserRole.ADMIN`.
+
+### Distinción de Settings
+
+Se separan:
+
+- `is_production_environment`: únicamente `ENVIRONMENT=production`, utilizado por autorización funcional;
+- `is_production`: producción o runtime alojado que requiere endurecimiento de secretos/CORS.
+
+Así un preview alojado puede conservar seguridad de configuración y al mismo tiempo permitir pruebas funcionales completas.
+
+### Contrato de sesión
+
+El backend pasa a exponer `permission_codes` efectivos y `can_close` en `UserOut`. Los aliases legacy `can_request`, `can_approve`, `can_view`, `can_configure` y `can_close` se derivan del IAM al login y en requests autenticados.
+
+Se documenta como deuda que el frontend monolítico todavía contiene bypasses visuales legacy (`user.role === "ADMIN"`, `canClose={true}`); el backend no confía en ellos.
+
+---
+
 ## 2026-08-17 — IAM configurable y segregación de la cuenta técnica
 
 ### Decisión
@@ -25,16 +66,11 @@ Los Grupos, Roles, Cargos, membresías y asignaciones son configurables desde la
 
 ### Cuenta técnica
 
-La cuenta de bootstrap del administrador del sistema queda identificada mediante `system_accounts` y restringida defensivamente a:
-
-- `config:manage`;
-- `requests:read`.
-
-No puede crear, aprobar ni cerrar solicitudes aunque se le asigne accidentalmente un permiso financiero.
+La cuenta de bootstrap del administrador del sistema queda identificada mediante `system_accounts`. La restricción config/read se aplica específicamente en producción; fuera de producción la política posterior permite acceso completo de prueba.
 
 ### Motivo
 
-El administrador técnico de la plataforma no debe formar parte del proceso financiero. Además, el producto debe soportar empresas con estructuras distintas sin despliegues de código.
+El administrador técnico de la plataforma no debe formar parte del proceso financiero productivo. Además, el producto debe soportar empresas con estructuras distintas sin despliegues de código.
 
 ---
 
@@ -67,7 +103,7 @@ El CI valida código y topología Alembic; antes del despliegue productivo conti
 
 ### Despliegue Render
 
-Se evaluó `preDeployCommand`. Aunque Render lo recomienda para migraciones, está asociado a servicios pagos. Para mantener compatibilidad con un despliegue económico, el contenedor ejecuta Alembic + bootstrap antes de `uvicorn` mediante `scripts/start.sh`. En un futuro despliegue con múltiples réplicas, la migración debe moverse a una etapa única de release/pre-deploy.
+Se evaluó `preDeployCommand`. Para mantener compatibilidad con un despliegue económico, el contenedor ejecuta Alembic + bootstrap antes de `uvicorn` mediante `scripts/start.sh`. En múltiples réplicas, la migración debe moverse a una etapa única de release/pre-deploy.
 
 ### Compatibilidad de scripts entre Windows y Linux
 
@@ -77,24 +113,19 @@ Durante una ejecución local desde Windows, Docker reportó:
 exec /app/scripts/start.sh: no such file or directory
 ```
 
-El archivo estaba presente; el problema era compatible con una materialización CRLF del script, que convierte el shebang Linux en `/bin/sh\r`.
-
-Se adoptaron dos defensas permanentes:
+Se adoptaron defensas permanentes:
 
 1. `.gitattributes` fuerza `*.sh` a `eol=lf`.
-2. `backend/Dockerfile` elimina cualquier `\r` de los scripts shell durante el build antes de hacerlos ejecutables.
-
-Además, Docker Compose local espera ahora el `healthcheck` del backend antes de iniciar Nginx. De esta forma, si Alembic/FastAPI falla, el error principal queda en el servicio backend y no aparece primero el error secundario `host not found in upstream "backend"`.
+2. `backend/Dockerfile` elimina cualquier `\r` durante el build.
+3. Docker Compose espera el `healthcheck` del backend antes de iniciar Nginx.
 
 ### Bootstrap Python como módulo
 
-Después de corregir CRLF, la ejecución local expuso un segundo problema real:
+Después de corregir CRLF, la ejecución local expuso:
 
 ```text
 ModuleNotFoundError: No module named 'app'
 ```
-
-Alembic ya había terminado correctamente. El fallo ocurría al ejecutar `python scripts/bootstrap_admin.py`, porque Python podía establecer `scripts/` como raíz de imports del proceso.
 
 Se cambió el contrato operativo a:
 
@@ -102,61 +133,32 @@ Se cambió el contrato operativo a:
 python -m scripts.bootstrap_admin
 ```
 
-`scripts` se convirtió en paquete importable mediante `scripts/__init__.py`. El CI ahora carga la imagen backend y verifica que `scripts.bootstrap_admin` pueda importarse con una configuración de base de datos de prueba. Esto evita depender implícitamente de `PYTHONPATH` o del modo en que se invoca un archivo Python.
+`scripts` se convirtió en paquete importable y CI verifica el import dentro de la imagen backend.
 
 ---
 
 ## 2026-08-17 — Consola gráfica de Accesos
 
-Se agrega una consola modular `Configuración → Accesos` para administrar:
+Se agrega una consola modular `Configuración → Accesos` para administrar Usuarios, Grupos, Roles, Permisos, Cargos, membresías, roles/permisos directos y permisos efectivos.
 
-- Usuarios;
-- Grupos;
-- Roles;
-- Permisos;
-- Cargos;
-- membresías;
-- roles/permisos directos;
-- permisos efectivos.
-
-La consola consume `/api/iam/*` y no depende de los perfiles/cargos hardcodeados del frontend monolítico.
+La consola consume `/api/iam/*` y no depende de perfiles/cargos hardcodeados del frontend monolítico.
 
 ---
 
 ## 2026-08-17 — Deuda funcional mantenida explícitamente
 
-El refactor IAM/FastAPI no modifica silenciosamente semánticas de negocio no definidas para esta feature.
-
 Pendientes separados:
 
-- fórmula exacta del motor de aprobación para cumplir la Constitución 2.2.2;
+- fórmula exacta del motor de aprobación para cumplir la Constitución 2.3.0;
 - regla de quorum/empate de votación de cotizaciones;
 - retiro completo de `UserRole`, `can_*`, `/api/users` legacy y ramas legacy de `api/expenses.py`;
-- modularización completa de `frontend/src/main.jsx`.
+- modularización completa de `frontend/src/main.jsx`, incluyendo retiro de bypasses visuales de ADMIN y `canClose={true}`.
 
 ---
 
 ## 2026-08-17 — Documentación como parte del Definition of Done
 
-### Decisión
-
-Se establece como regla transversal que ningún cambio funcional o técnico se considera terminado si deja desactualizadas las fuentes documentales afectadas.
-
-Se incorporan como artefactos obligatorios de gobierno:
-
-- `.specify/memory/constitution.md`;
-- especificaciones por feature en `specs/`;
-- planes técnicos;
-- criterios de aceptación;
-- `docs/DOCUMENTATION_POLICY.md`.
-
-Cada feature debe revisar además README, prompt maestro, terminología, historial y changelog según corresponda.
-
-### Motivo
-
-El proyecto está evolucionando desde un MVP con términos y estructuras legacy. Sin una regla explícita de sincronización, el código puede avanzar mientras prompts, README o criterios de aceptación continúan reconstruyendo comportamiento obsoleto.
-
-La discrepancia código-documentación pasa a considerarse un defecto de la feature.
+Se establece que ningún cambio funcional o técnico se considera terminado si deja desactualizadas las fuentes documentales afectadas. Se incorporan Constitución, specs, planes, criterios, README, prompt maestro, docs, HISTORY y CHANGELOG como artefactos gobernados.
 
 ---
 
@@ -168,21 +170,12 @@ El término canónico para el dominio de cuentas es **Usuario / Usuarios**. La U
 
 ## 2026-08-17 — Clasificación Área + Categoría
 
-### Decisión funcional
-
 - **Área**: parte de la organización asociada al gasto.
 - **Categoría**: naturaleza del bien o servicio adquirido.
 
 Área y Categoría son catálogos independientes y una Categoría puede estar disponible para múltiples Áreas.
 
-### Compatibilidad histórica
-
-- `expenses.expense_type` → Área;
-- `expenses.expense_subcategory` → Categoría;
-- `expense_categories` → almacenamiento legacy de Áreas;
-- `expense_subcategories` → puente de compatibilidad;
-- `expense_category_catalog` → catálogo canónico de Categorías;
-- `expense_area_categories` → relaciones canónicas.
+Compatibilidad histórica: `expenses.expense_type` → Área; `expenses.expense_subcategory` → Categoría; tablas legacy permanecen como puente temporal.
 
 ---
 
