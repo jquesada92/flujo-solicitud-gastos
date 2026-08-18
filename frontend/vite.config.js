@@ -81,11 +81,16 @@ function replaceResourceActionColumn(source) {
 }
 
 function injectClosureDelegationButton(source) {
-  return replaceRequired(
-    source,
-    '<div className="row-actions">\n                        {x.can_correct && <button',
-    '<div className="row-actions">\n                        {x.can_delegate_close && <ClosureDelegationButton expense={x} api={api} onChanged={onChanged} />}\n                        {x.can_correct && <button',
-    "closure delegation action",
+  const pattern = /(<div className="row-actions">\s*)(\{x\.can_correct\s*&&\s*<button)/g;
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length !== 1) {
+    throw new Error(
+      `Legacy main.jsx closure delegation extraction expected 1 row action anchor, found ${matches.length}`,
+    );
+  }
+  return source.replace(
+    pattern,
+    '$1{x.can_delegate_close && <ClosureDelegationButton expense={x} api={api} onChanged={onChanged} />}\n                        $2',
   );
 }
 
