@@ -17,6 +17,7 @@ cancellation_actions.py → cancelación
 quotation_actions.py    → votación
 document_actions.py     → documentos
 financial_actions.py    → factura / cierre
+my_actions.py           → acciones contextuales del usuario
 tracking.py             → dashboard y seguimiento compartido
 position_access.py      → herencia Cargo → Rol
 ```
@@ -32,6 +33,8 @@ services/  reglas reutilizables y lógica de negocio
 models/    persistencia SQLAlchemy
 core/      configuración, DB, seguridad, rate limiting
 ```
+
+`pending_action_service.py` pertenece a `services/` porque resuelve una regla reutilizable del producto: combinar capacidad IAM con asignación y estado concreto del workflow para determinar qué debe hacer el usuario actual.
 
 ## Dependencia de DB
 
@@ -152,7 +155,96 @@ Ambos requieren `requests:read`, cuya resolución incluye el baseline para usuar
 
 El listado no filtra por `UserRole.REQUESTER` ni por `requested_by`. Esto permite que todos los usuarios activos den seguimiento a solicitudes de la organización.
 
-La lectura compartida no concede acciones mutables. El dashboard calcula `pending_my_action` solo desde capacidades ejecutables (`requests:approve`, `requests:close`) e invitaciones/asignaciones vigentes.
+La lectura compartida no concede acciones mutables.
+
+### Resolver de acciones personales
+
+`pending_action_service.py` calcula acciones de workflow del usuario actual combinando permiso efectivo + asignación concreta + estado.
+
+Códigos vigentes:
+
+```text
+APPROVAL_DECISION
+QUOTATION_VOTE
+CORRECT_REQUEST
+CLOSE_REQUEST
+```
+
+Reglas:
+
+```text
+APPROVAL_DECISION
+= requests:approve
++ Approval.PENDING asignado al email actual
++ Expense.PENDING_APPROVAL
+
+QUOTATION_VOTE
+= requests:approve
++ QuotationVotingInvitation para user.id
++ Expense.QUOTATION_VOTING
++ sin QuotationVote del usuario
+
+CORRECT_REQUEST
+= requests:create
++ Expense.NEEDS_REVISION
++ requested_by == current_user.email
+
+CLOSE_REQUEST
+= requests:close
++ Expense.APPROVED
+```
+
+Esto evita una inferencia incorrecta del tipo:
+
+```text
+requests:approve → todas las solicitudes pendientes requieren mi acción
+```
+
+`pending_my_action` cuenta acciones concretas. `pending_items` incluye códigos de acción para que la UI pueda explicar qué se espera del usuario.
+
+## API contextual de acciones del usuario
+
+`my_actions.py` se registra antes de `tracking.py`/`expenses.py` legacy y expone:
+
+```text
+GET  /api/expenses/{request_id}/my-actions
+POST /api/expenses/{request_id}/approval-decision
+```
+
+### GET `my-actions`
+
+Requiere `requests:read` y recarga:
+
+- solicitud;
+- soportes generales;
+- opciones de cotización;
+- soportes por opción;
+- estado vigente.
+
+Después llama nuevamente a `pending_actions_by_expense(..., expense_ids=[id])` y devuelve solo acciones actualmente ejecutables por el usuario autenticado.
+
+Esta revalidación es deliberada porque una tarjeta del dashboard puede quedar obsoleta si el usuario responde desde correo, otra pestaña o sesión antes de abrirla.
+
+### POST `approval-decision`
+
+Requiere `requests:approve` y permite registrar una decisión contextual sin entregar al frontend el token bearer de los enlaces de correo.
+
+La ruta:
+
+1. localiza y bloquea la solicitud;
+2. niega autoaprobación;
+3. localiza `Approval.PENDING` asignado al email del usuario actual;
+4. reutiliza `approval_engine.apply_decision()`;
+5. mantiene las mismas reglas para aprobar, rechazar y solicitar corrección.
+
+Votación y cierre reutilizan respectivamente:
+
+```text
+POST /api/expenses/{request_id}/quotation-vote
+POST /api/expenses/{request_id}/close
+```
+
+La corrección abre el editor canónico de Solicitudes para mantener los invariants de Feature 003.
 
 ## Cancelación por recurso
 
@@ -222,6 +314,8 @@ El login aplica esta decoración inmediatamente. `current_user()` la recalcula e
 
 `can_cancel` no forma parte de estos aliases ni de `permission_codes`: es una capacidad por recurso calculada en el contrato de solicitud.
 
+Las acciones del dashboard tampoco son permisos nuevos. Son tareas contextuales derivadas de permisos existentes + asignación/estado y se resuelven mediante `pending_action_service.py`.
+
 ## Invariant de correcciones
 
 `revision_actions.py` protege una regla de negocio que no puede depender del estado React ni de la pestaña SIMPLE/MULTI_QUOTE seleccionada en el formulario de creación.
@@ -286,6 +380,8 @@ Topología lineal:
 - excluye cuentas técnicas de la asignación organizacional migrada;
 - deja de depender de esa información legacy una vez finalizado el upgrade.
 
+El modal contextual de Feature 005 no agrega migración adicional.
+
 `tests/test_migrations.py` exige `0004` como único head.
 
 El entrypoint Docker ejecuta:
@@ -303,7 +399,7 @@ uvicorn app.application:app
 - `.gitattributes` fuerza `*.sh text eol=lf`.
 - `backend/Dockerfile` elimina `\r` defensivamente.
 - Docker Compose espera `/api/health` antes de iniciar Nginx.
-- CI valida `start.sh` real e `import scripts.bootstrap_admin` dentro de la imagen.
+- CI valida `start.sh` real e `import scripts.bootstrap_admin` dentro de la imagen cuando existe cuota de Actions.
 
 ## Password hashing
 
@@ -319,7 +415,7 @@ Autenticación usa `LoginResponse`/`TokenResponse`. `UserOut` incluye `permissio
 
 `PositionOut` incluye `role_ids` para administrar la herencia Cargo → Rol.
 
-Al crear endpoints nuevos se debe declarar `response_model` salvo streaming/file o razón documentada.
+Los endpoints contextuales de `my_actions.py` usan payloads JSON específicos de la bandeja personal; deben formalizarse en schemas Pydantic si el contrato crece o se reutiliza fuera del dashboard.
 
 ## Testing
 
@@ -337,11 +433,24 @@ Al crear endpoints nuevos se debe declarar `response_model` salvo streaming/file
 
 `tests/test_request_cancellation.py` verifica la regla de cancelación por propietario/cuenta técnica.
 
+`tests/test_pending_actions.py` verifica:
+
+- aprobación pendiente asignada → `APPROVAL_DECISION`;
+- decisión autenticada por request sin token bearer de correo;
+- invitación MULTI_QUOTE → `QUOTATION_VOTE`;
+- solicitud propia `NEEDS_REVISION` → `CORRECT_REQUEST`;
+- usuario `requests:close` + `APPROVED` → `CLOSE_REQUEST`;
+- acciones desaparecen cuando dejan de estar vigentes.
+
+`tests/test_frontend_dashboard_contract.py` verifica el contrato del componente modular del dashboard y la revalidación posterior a mutaciones.
+
 `tests/test_multi_quote_revision.py` verifica el invariant de correcciones.
 
 `tests/test_migrations.py` verifica topología Alembic hasta `0004` y el contrato de compatibilidad de la migración de Cargos.
 
 `tests/test_container_portability.py` verifica defensas de portabilidad local.
+
+Mientras la cuota de GitHub Actions esté agotada, la suite backend, `npm run build` y Docker build/smoke deben ejecutarse localmente antes de merge.
 
 ## Producción vs preview
 
@@ -376,8 +485,12 @@ El backend no confía en esos valores y deben retirarse progresivamente.
 
 ### Transform temporal del frontend
 
-Mientras `ExpenseForm` siga definido también dentro del monolito, `frontend/vite.config.js` importa `./expense-form.jsx` y elimina la definición legacy completa durante dev/build.
+`frontend/vite.config.js` realiza actualmente tres compatibilidades controladas:
 
-Mientras `ExpenseTable` conserve el guard legacy de cancelación, el transform sustituye esa condición por `x.can_cancel`.
+1. importa `expense-form.jsx` y elimina la definición legacy completa de `ExpenseForm`;
+2. importa `home-dashboard.jsx` y elimina la definición legacy completa de `HomeDashboard` entre `function HomeDashboard` y `function App()`;
+3. sustituye el guard legacy de cancelación de `ExpenseTable` por `x.can_cancel`.
+
+Para `ExpenseForm` y `HomeDashboard` se reemplazan funciones completas, no handlers internos por coincidencias de whitespace. Esto reduce el riesgo de que un cambio visual vuelva a activar comportamiento legacy silenciosamente.
 
 Estas transformaciones son deuda temporal. Deben retirarse cuando `main.jsx` importe directamente los componentes modulares y la visibilidad de acciones se cubra con tests frontend normales.
