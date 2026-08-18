@@ -19,6 +19,7 @@ from app.models.entities import (
     User,
 )
 from app.schemas.expense import ExpenseOut
+from app.services.closure_service import can_delegate_closure, can_manage_closure
 from app.services.iam_service import is_system_account
 from app.services.pending_action_service import pending_actions_by_expense
 
@@ -34,8 +35,7 @@ def list_trackable_expenses(
 
     Read access is a product baseline. Organizational roles or requester identity
     must not reduce the set of requests visible for follow-up. Mutating
-    capabilities such as cancellation/correction are returned per request and
-    remain backend-authoritative.
+    capabilities are calculated per request and remain backend-authoritative.
     """
     open_statuses = (
         ExpenseStatus.SUBMITTED,
@@ -128,6 +128,13 @@ def list_trackable_expenses(
                 user,
                 system_admin=system_admin,
             ),
+            'can_close': can_manage_closure(
+                db,
+                expense,
+                user,
+                system_admin=system_admin,
+            ),
+            'can_delegate_close': can_delegate_closure(expense, user),
         })
         if lifecycle_at and (
             not event or lifecycle_at.replace(tzinfo=None) > event.occurred_at.replace(tzinfo=None)
