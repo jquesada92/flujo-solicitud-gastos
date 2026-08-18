@@ -104,13 +104,15 @@ Durante corrección se oculta el selector de tipo y se muestra un indicador de s
 
 ## Integración temporal con main.jsx
 
-`main.jsx` todavía contiene la función legacy por deuda de modularización histórica. En vez de parchear múltiples condiciones internas, `vite.config.js` hace una sola transformación estructural:
+`main.jsx` todavía contiene la función legacy por deuda de modularización histórica. `vite.config.js` aplica una extracción estructural mínima:
 
 1. importa `ExpenseForm` desde `./expense-form.jsx`;
 2. elimina del bundle la definición legacy comprendida entre `function ExpenseForm` y `function ClosurePanel`;
-3. mantiene una `key` por solicitud/flujo para forzar remount al cambiar de corrección.
+3. no modifica el punto de montaje JSX ni depende de indentación, saltos de línea o cadenas exactas del `<ExpenseForm>`.
 
-El build falla si no puede aislar esa frontera, evitando una degradación silenciosa al formulario viejo.
+El componente modular ya rehidrata su estado cuando cambian `draft.request_id` o `draft.flow_id`, por lo que no requiere que Vite inyecte una `key` por reemplazo textual.
+
+El build falla si no puede aislar la frontera completa de la definición legacy. CI inspecciona además el `dist/` generado para confirmar que contiene las marcas inequívocas del formulario modular.
 
 ## Motivo de conservar cantidad de opciones
 
@@ -126,9 +128,10 @@ Eliminar o reordenar opciones con evidencia asociada requiere semántica explíc
 - `effectiveRequestType` gobierne render y payload;
 - `QUOTATION_VOTING` y dos/más opciones infieran MULTI_QUOTE;
 - se restauren opciones y soportes existentes;
-- `vite.config.js` retire el ExpenseForm legacy del bundle e importe el modular.
+- `vite.config.js` retire el ExpenseForm legacy del bundle e importe el modular;
+- no exista nuevamente un parche textual del punto de montaje.
 
-El job frontend ejecuta `npm run build`, por lo que una extracción inválida o JSX inválido falla CI.
+El job frontend ejecuta `npm run build` e inspecciona el bundle resultante; una extracción inválida, JSX inválido o ausencia del formulario modular falla CI.
 
 La prueba manual de regresión debe comenzar explícitamente con **Solicitud sencilla** seleccionada, pulsar **Corregir / reenviar** sobre una MULTI_QUOTE y verificar que el formulario visible contiene **Opciones para votación** y no los campos de solicitud sencilla.
 
