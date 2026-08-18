@@ -91,15 +91,18 @@ def pending_actions_by_expense(
         for expense_id in db.scalars(quotation_votes).all():
             _append(actions, expense_id, QUOTATION_VOTE)
 
-    if has_permission(db, user.id, 'requests:create'):
-        corrections = select(Expense.id).where(
-            Expense.status == ExpenseStatus.NEEDS_REVISION,
-            func.lower(Expense.requested_by) == user.email.lower(),
-        )
-        if scoped_ids is not None:
-            corrections = corrections.where(Expense.id.in_(scoped_ids))
-        for expense_id in db.scalars(corrections).all():
-            _append(actions, expense_id, CORRECT_REQUEST)
+    # A revision request creates a task for the original requester. It is not a
+    # generic requests:create task for every creator-capable user. The protected
+    # system administrator can still correct from the request list as a resource
+    # capability, but the personal dashboard task belongs to the requester.
+    corrections = select(Expense.id).where(
+        Expense.status == ExpenseStatus.NEEDS_REVISION,
+        func.lower(Expense.requested_by) == user.email.lower(),
+    )
+    if scoped_ids is not None:
+        corrections = corrections.where(Expense.id.in_(scoped_ids))
+    for expense_id in db.scalars(corrections).all():
+        _append(actions, expense_id, CORRECT_REQUEST)
 
     if has_permission(db, user.id, 'requests:close'):
         closures = select(Expense.id).where(Expense.status == ExpenseStatus.APPROVED)
