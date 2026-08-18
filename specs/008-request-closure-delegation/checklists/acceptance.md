@@ -84,4 +84,4 @@
 - [x] Feature 005 revisada para `CLOSE_REQUEST` por propiedad/delegación.
 - [x] HISTORY actualizado.
 - [x] CHANGELOG actualizado.
-- [ ] PR #9 actualizado.
+- [x] PR #9 actualizado.
