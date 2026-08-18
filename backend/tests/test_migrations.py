@@ -33,7 +33,7 @@ class MigrationTopologyTests(unittest.TestCase):
         self.assertIn('access_profiles', migration)
         self.assertIn("('can_approve', 'requests:approve')", migration)
         self.assertIn('user_positions', migration)
-        self.assertIn('Runtime authorization does not read legacy profile names', migration)
+        self.assertIn('authorization does not read legacy profile names', migration)
 
 
 if __name__ == '__main__':
