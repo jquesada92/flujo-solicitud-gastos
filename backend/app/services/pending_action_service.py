@@ -1,8 +1,9 @@
 from collections import defaultdict
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.models.closure import ExpenseClosureDelegation
 from app.models.entities import (
     Approval,
     ApprovalStatus,
@@ -42,9 +43,9 @@ def pending_actions_by_expense(
     """Resolve the mutable workflow actions currently assigned to one user.
 
     This is the backend source of truth for Dashboard -> Acciones pendientes.
-    It intentionally resolves concrete workflow assignments in addition to IAM:
-    a user may have ``requests:approve`` without having a pending approval or
-    quotation invitation for a particular request.
+    Approval/voting require both IAM permission and workflow assignment. Closure
+    is different: it is a per-request responsibility of the requester or their
+    active delegate, not a generic ``requests:close`` entitlement.
     """
     scoped_ids = None if expense_ids is None else list(dict.fromkeys(expense_ids))
     if scoped_ids == []:
@@ -104,12 +105,28 @@ def pending_actions_by_expense(
     for expense_id in db.scalars(corrections).all():
         _append(actions, expense_id, CORRECT_REQUEST)
 
-    if has_permission(db, user.id, 'requests:close'):
-        closures = select(Expense.id).where(Expense.status == ExpenseStatus.APPROVED)
-        if scoped_ids is not None:
-            closures = closures.where(Expense.id.in_(scoped_ids))
-        for expense_id in db.scalars(closures).all():
-            _append(actions, expense_id, CLOSE_REQUEST)
+    # Closing an approved request belongs to its original requester or to the
+    # current active delegate explicitly chosen by that requester. The technical
+    # administrator can execute closure as an administrative exception from the
+    # request list, but does not receive every organization's closure as a task.
+    delegated_expense = exists(
+        select(ExpenseClosureDelegation.id).where(
+            ExpenseClosureDelegation.expense_id == Expense.id,
+            ExpenseClosureDelegation.delegate_user_id == user.id,
+            ExpenseClosureDelegation.revoked_at.is_(None),
+        )
+    )
+    closures = select(Expense.id).where(
+        Expense.status == ExpenseStatus.APPROVED,
+        or_(
+            func.lower(Expense.requested_by) == user.email.lower(),
+            delegated_expense,
+        ),
+    )
+    if scoped_ids is not None:
+        closures = closures.where(Expense.id.in_(scoped_ids))
+    for expense_id in db.scalars(closures).all():
+        _append(actions, expense_id, CLOSE_REQUEST)
 
     return {
         expense_id: sorted(codes, key=ACTION_ORDER.index)
