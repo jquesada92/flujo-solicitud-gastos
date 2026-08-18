@@ -24,6 +24,7 @@ from app.api import (
 from app.core.config import get_settings
 from app.core.rate_limit import authenticated_subject, consume_user_request, policy_for_request
 from app.core.security import require_permission
+from app.services.legacy_iam_bridge import register_legacy_iam_bridge
 
 
 @asynccontextmanager
@@ -36,6 +37,7 @@ async def lifespan(_: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    register_legacy_iam_bridge()
     app = FastAPI(
         title='Approval Workflow API',
         version='0.2.0',
