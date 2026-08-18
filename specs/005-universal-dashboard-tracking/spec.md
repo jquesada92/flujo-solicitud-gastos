@@ -7,7 +7,7 @@
 
 Todo usuario activo y autenticado debe poder entrar al producto y entender el estado general de las solicitudes sin depender de su rol, grupo, cargo o de haber creado personalmente la solicitud.
 
-La visibilidad de seguimiento es una capacidad base del producto. Las acciones mutables continúan controladas por permisos configurables.
+La visibilidad de seguimiento es una capacidad base del producto. Las acciones mutables continúan controladas por permisos configurables o reglas explícitas de propiedad de la solicitud.
 
 ## Historia principal
 
@@ -64,6 +64,8 @@ Un usuario que solo tenga el baseline puede consultar, pero no puede:
 - subir factura/cerrar sin `requests:close`;
 - administrar configuración sin `config:manage`.
 
+La cancelación no se concede por `requests:create`: se rige por F-005-07.
+
 ### F-005-05 — Dashboard compartido + acciones personales
 
 El dashboard muestra métricas generales de la organización para todos los usuarios activos.
@@ -78,6 +80,33 @@ Un usuario de solo lectura debe ver las métricas generales y `0` acciones perso
 ### F-005-06 — Usuarios inactivos
 
 Un usuario inactivo no puede iniciar sesión ni usar el baseline.
+
+### F-005-07 — Cancelación de una solicitud abierta
+
+Una solicitud abierta solo puede ser cancelada por:
+
+1. el **solicitante original** de esa solicitud; o
+2. el **Administrador del sistema**, identificado canónicamente mediante `system_accounts`.
+
+Ningún rol, grupo, cargo o permiso configurable —incluidos `requests:create`, `requests:approve` y `config:manage`— amplía por sí mismo la facultad de cancelar solicitudes ajenas.
+
+Se consideran abiertas para cancelación:
+
+- `QUOTATION_VOTING`;
+- `SUBMITTED`;
+- `PENDING_APPROVAL`;
+- `NEEDS_REVISION`;
+- `APPROVED` mientras todavía no esté cerrada.
+
+No pueden cancelarse:
+
+- `CLOSED`;
+- `CANCELLED`;
+- `REJECTED`.
+
+La cancelación requiere motivo, registra `cancelled_at`, `cancelled_by` y `cancellation_reason`, y expira aprobaciones abiertas asociadas.
+
+El listado de solicitudes debe exponer una capacidad calculada `can_cancel` para que la interfaz muestre **Cancelar solicitud** solo cuando el backend autorice esa acción. La UI no debe inferir cancelación desde `can_request` ni desde una lista local de cargos/roles.
 
 ## Alcance de seguimiento
 
@@ -101,6 +130,8 @@ can_view = requests:read
 
 pero `can_view` no es autoridad; el backend resuelve el baseline.
 
+Para cancelación, la tabla debe usar exclusivamente `can_cancel` retornado por el backend. Esto permite que una solicitud `QUOTATION_VOTING` pueda cancelarse por su solicitante o por el Administrador del sistema sin habilitar la acción para los demás usuarios que solo la observan.
+
 En la consola IAM, los permisos efectivos deben mostrar que `requests:read` proviene de:
 
 ```text
@@ -112,6 +143,8 @@ aunque el usuario no tenga un rol o permiso directo de consulta.
 ## Seguridad
 
 La visibilidad universal aplica dentro del contexto organizacional actual del producto. No autoriza acceso anónimo ni acceso de usuarios inactivos.
+
+La lectura compartida no puede convertir acciones de propietario en acciones globales. En particular, un usuario que pueda ver una solicitud ajena o tenga `requests:create` no puede cancelarla por ese hecho.
 
 Una futura implementación multi-tenant debe preservar aislamiento entre organizaciones; el baseline no implica lectura entre tenants.
 
