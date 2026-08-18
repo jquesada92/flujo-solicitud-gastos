@@ -1,291 +1,538 @@
 # Flujo de Control de Gastos
 
-Aplicación web para solicitar, evaluar, aprobar y documentar gastos con evidencia verificable de cada decisión.
+> Constitución vigente: **2.3.3**.
 
-## Contexto y propósito
+Aplicación web para solicitar, evaluar, aprobar, ejecutar y documentar gastos con trazabilidad y evidencia verificable.
 
-El control de gastos es un punto sensible tanto en organizaciones empresariales —por ejemplo, operaciones logísticas 3PL— como en la administración de una propiedad horizontal. Cuando las solicitudes, evaluaciones y aprobaciones dependen de conversaciones informales o documentos físicos, resulta difícil demostrar quién tomó una decisión, cuándo la tomó y qué alternativas tenía disponibles.
+El producto es **neutral respecto al tipo de organización**. Un PH, empresa, comité o área de negocio puede configurar su estructura sin modificar el código.
 
-Este proyecto busca convertir el proceso completo en un expediente digital, trazable y auditable. Cada gasto debe conservar la solicitud original, las opciones de productos y proveedores, las cotizaciones evaluadas, las decisiones de la junta directiva y la documentación final.
+## Principios del producto
 
-La aplicación permite reducir problemas como:
+- Backend FastAPI es la autoridad final.
+- La estructura organizacional es **dato configurable**, no código.
+- `Usuario`, `Grupo`, `Rol`, `Permiso` y `Cargo` son conceptos separados.
+- Un cargo no concede permisos.
+- La cuenta técnica tiene política explícita por ambiente.
+- Área y Categoría son dimensiones independientes.
+- Una corrección nunca cambia silenciosamente el tipo de solicitud.
+- La pestaña seleccionada antes de corregir nunca determina el tipo del editor.
+- Documentos e historial forman parte del expediente auditable.
+- Migraciones son versionadas con Alembic y no se ejecutan dentro del lifespan de FastAPI.
 
-- dificultad para confirmar quién aprobó o rechazó una solicitud;
-- falta de fecha, hora, comentarios o justificación de las decisiones;
-- poca visibilidad sobre los proveedores y productos evaluados;
-- riesgo de conflictos de interés o análisis insuficiente;
-- documentación dispersa entre correos, mensajes y archivos físicos;
-- demoras para localizar facturas, cotizaciones o actas de años anteriores;
-- controversias que no pueden resolverse objetivamente por falta de evidencia.
+## Terminología
 
-El propósito no es únicamente agilizar aprobaciones. El sistema debe funcionar como una fuente confiable de evidencia que permita reconstruir qué ocurrió, quién participó, qué información estaba disponible y cómo se llegó al resultado final.
+- **Usuario**: cuenta que interactúa con el sistema.
+- **Grupo**: conjunto configurable de usuarios.
+- **Rol**: conjunto configurable de permisos.
+- **Permiso**: capacidad atómica del producto.
+- **Cargo / Posición**: metadato organizacional descriptivo; no autoriza.
+- **Área**: unidad/departamento/función asociada al gasto.
+- **Categoría**: naturaleza del bien o servicio.
 
-## Objetivos
+## IAM configurable
 
-- Registrar la fecha, hora y responsable de cada solicitud y decisión.
-- Evidenciar aprobaciones, rechazos y solicitudes de corrección.
-- Documentar la evaluación de múltiples opciones cuando corresponda.
-- Centralizar cotizaciones, facturas, actas y documentos relacionados.
-- Facilitar auditorías y consultas históricas sin depender de archivos físicos.
-- Mantener un historial íntegro que no pueda modificarse silenciosamente.
-- Aplicar permisos y políticas de aprobación de manera consistente.
+Para usuarios operativos:
 
-## Arquitectura actual
+```text
+Usuario
+  ├─ Grupos ──> Roles ──> Permisos
+  ├─ Roles directos ──> Permisos
+  └─ Permisos directos
+```
+
+Si una capacidad no está permitida explícitamente, el resultado es DENY.
+
+### Permisos atómicos iniciales
+
+| Código | Capacidad |
+| --- | --- |
+| `requests:read` | Consultar solicitudes/documentos autorizados |
+| `requests:create` | Crear/corregir solicitudes y cargar soportes |
+| `requests:approve` | Participar en votaciones y decisiones |
+| `requests:close` | Subir/reemplazar factura y cerrar |
+| `config:manage` | Administrar configuración e IAM |
+
+Los clientes pueden crear grupos, roles, cargos y asignaciones desde la interfaz; no pueden inventar permisos que el backend no implemente.
+
+## Administrador del sistema por ambiente
+
+La cuenta creada por `ADMIN_*` se registra como `TECHNICAL_ADMIN` en `system_accounts`. Su comportamiento **no depende del email, cargo ni `UserRole.ADMIN`**.
+
+### Producción
+
+Con:
+
+```env
+ENVIRONMENT=production
+```
+
+sus permisos efectivos máximos son:
+
+```text
+config:manage
+requests:read
+```
+
+En producción no puede:
+
+```text
+requests:create
+requests:approve
+requests:close
+```
+
+Aunque un rol, grupo o permiso directo intente concedérselos, el backend los filtra. Tampoco participa en poblaciones financieras de aprobación/votación.
+
+### Local / dev / test / staging / preview
+
+Con cualquier `ENVIRONMENT` diferente de `production`, la cuenta técnica recibe **todos los permisos atómicos activos** para poder probar el producto end-to-end con un solo usuario.
+
+Puede crear, consultar, aprobar, votar, subir/reemplazar factura, cerrar y administrar configuración. También puede entrar en poblaciones de aprobación/votación cuando corresponda.
+
+Ejemplos:
+
+```env
+ENVIRONMENT=development
+ENVIRONMENT=test
+ENVIRONMENT=preview
+```
+
+`RENDER=true` sigue activando validaciones fuertes de secretos/CORS, pero no convierte automáticamente un preview en producción para autorización. Solo `ENVIRONMENT=production` activa la segregación financiera.
+
+## Contrato del usuario autenticado
+
+El backend devuelve los permisos efectivos actuales en:
+
+```text
+permission_codes
+```
+
+Y durante la transición del frontend legacy también deriva:
+
+```text
+can_request   <- requests:create
+can_approve   <- requests:approve
+can_view      <- requests:read
+can_configure <- config:manage
+can_close     <- requests:close
+```
+
+Estos aliases son solo UX/compatibilidad. El backend siempre vuelve a validar el permiso canónico.
+
+## Consola gráfica de Accesos
+
+En **Configuración → Accesos** se administran:
+
+- usuarios;
+- grupos;
+- roles;
+- permisos;
+- cargos;
+- miembros de grupos;
+- roles de grupos;
+- roles directos;
+- permisos directos;
+- cargos de cada usuario;
+- permisos efectivos y su origen.
+
+Ejemplo PH, configurado como datos:
+
+```text
+Grupo: Administración PH
+  Rol: Gestión de solicitudes
+    requests:create
+    requests:close
+    requests:read
+
+Grupo: Junta Directiva
+  Rol: Aprobador
+    requests:approve
+    requests:read
+```
+
+Una empresa puede reemplazar estos grupos por Procurement, Finance, IT, Executive Committee o cualquier estructura propia sin cambiar el código.
+
+## Arquitectura
 
 ```mermaid
 flowchart LR
-    U[Usuario] --> V[Frontend React + Vite<br/>Vercel]
-    V -->|HTTPS / API JSON| R[Backend FastAPI<br/>Render]
-    R --> N[(PostgreSQL<br/>Neon)]
-    R --> D[(Disco persistente<br/>Render)]
-    R -->|API HTTPS| B[Brevo<br/>Correo]
+    U[Usuario] --> F[React + Vite / Vercel]
+    F -->|HTTPS JSON| A[FastAPI / Render]
+    A --> D[(PostgreSQL / Neon)]
+    A --> S[(Disco privado Render)]
+    A --> E[Brevo API]
 ```
 
-| Componente | Implementación actual | Responsabilidad |
-| --- | --- | --- |
-| Frontend | React con Vite en Vercel | Interfaz, navegación, formularios y comunicación con la API. |
-| Backend | FastAPI con SQLAlchemy en un contenedor Docker de Render | Reglas de negocio, autenticación, autorización, auditoría y acceso a datos. |
-| Base de datos | PostgreSQL en Neon | Usuarios, solicitudes, decisiones, políticas y eventos históricos. |
-| Documentos | Disco persistente privado de Render | Cotizaciones, facturas y demás archivos adjuntos. |
-| Correo | API HTTPS de Brevo | Invitaciones, solicitudes de aprobación, votaciones y notificaciones. |
-| Autenticación | JWT firmado por el backend | Sesiones con vencimiento absoluto, inactividad y revocación por usuario. |
+Backend:
 
-Vercel entrega únicamente el frontend. El navegador llama directamente a la URL pública del backend indicada por `VITE_API_URL`. Render procesa la solicitud, valida la sesión y los permisos, consulta Neon y accede al disco privado cuando se requiere un documento. Los archivos no se publican como contenido estático: el backend autoriza cada descarga.
+```text
+backend/app/
+├── api/          # HTTP / APIRouter
+├── core/         # Settings, DB, security, rate limit
+├── models/       # SQLAlchemy
+├── schemas/      # Pydantic
+├── services/     # lógica reutilizable
+├── application.py
+└── main.py       # alias de compatibilidad
+```
 
-## Tipos de usuario
+Frontend relevante para solicitudes:
 
-- **Administrador del sistema:** cuenta técnica inicial creada con las variables `ADMIN_*`. Administra el sistema, pero no representa al administrador operativo de la propiedad horizontal.
-- **Administrador de la PH:** usuario operativo creado desde el portal y asignado al perfil correspondiente.
-- **Miembros de junta directiva:** presidente, vicepresidente, tesorero, vocal u otros perfiles configurados.
-- **Solicitantes y demás usuarios:** sus permisos dependen de los perfiles asignados desde el portal.
+```text
+frontend/src/
+├── expense-form.jsx       # formulario canónico SIMPLE / MULTI_QUOTE
+├── main.jsx               # shell legacy aún pendiente de modularización total
+└── domain-normalization.js
+```
 
-La presidencia y tesorería no se configuran con correos fijos en variables de entorno. Los miembros, cargos y políticas de aprobación se administran desde el portal web. El flujo no requiere construir apartamentos, asignar unidades ni clasificar usuarios como propietarios.
+### FastAPI
 
-## Reglas principales
-
-- La cédula se normaliza y debe ser única entre los usuarios.
-- Las personas se pueden buscar por cédula, nombre, apellido o correo electrónico.
-- Las aprobaciones se asignan por perfiles y políticas configurables, no por direcciones de correo codificadas.
-- Los eventos de aprobación son de solo anexado para preservar la auditoría.
-- Las aprobaciones pendientes no expiran por tiempo; permanecen vigentes hasta recibir respuesta o hasta que el flujo sea invalidado.
+- `APIRouter` separa dominios/capacidades.
+- `get_db()` entrega una sesión SQLAlchemy por request y la cierra siempre.
+- configuración centralizada con `pydantic-settings`.
+- `lifespan` no ejecuta DDL/backfills/seeds de negocio.
+- SQLAlchemy/filesystem síncrono usa path operations `def`.
+- contratos sensibles usan response models explícitos.
+- tests HTTP usan `FastAPI TestClient`.
 
 ## Seguridad
 
-- JWT con vencimiento absoluto configurable mediante `TOKEN_EXPIRE_MINUTES`.
-- Cierre de sesión tras `SESSION_IDLE_MINUTES` minutos sin actividad humana. El frontend informa actividad mediante `POST /api/auth/activity`; el polling no mantiene viva la sesión.
-- Revocación de sesiones mediante una versión de sesión almacenada por usuario.
-- Bloqueo temporal por intentos fallidos de inicio de sesión.
-- Límites separados para lecturas, escrituras, cargas y acciones sensibles.
-- Validación del contenido real de archivos PDF, JPEG, PNG y WEBP.
-- CORS restringido, CSP y encabezados de seguridad en producción.
-- Secretos y contraseñas fuera del repositorio.
+- JWT firmado con expiración absoluta.
+- inactividad de sesión configurable.
+- revocación mediante `session_version`.
+- Argon2 para hashes nuevos mediante `pwdlib`.
+- hashes PBKDF2 legacy se migran automáticamente a Argon2 tras login exitoso.
+- rate limiting separado para read/write/upload/sensitive.
+- CORS explícito en producción/runtime alojado.
+- documentos privados y validación de firma real de archivo.
+- autorización por permisos persistidos y política técnica ambiental; no por emails/nombres de cargos/IDs mágicos.
+- cuenta técnica segregada del flujo financiero **solo en producción**, y elevada deliberadamente para pruebas fuera de producción.
 
-Valores iniciales recomendados:
+## Base de datos y migraciones
 
-```env
-TOKEN_EXPIRE_MINUTES=480
-SESSION_IDLE_MINUTES=30
-USER_READ_RATE_LIMIT=120
-USER_WRITE_RATE_LIMIT=30
-USER_UPLOAD_RATE_LIMIT=6
-USER_SENSITIVE_RATE_LIMIT=10
+Alembic es la herramienta canónica. La cadena actual es lineal:
+
+```text
+backend/alembic/versions/
+├── 20260817_0000_application_baseline.py
+├── 20260817_0001_iam_foundation.py
+├── 20260817_0002_system_accounts.py
+└── 20260817_0003_backfill_multi_quote_request_type.py
 ```
 
-Los límites se expresan por usuario y por minuto. Deben ajustarse usando métricas reales antes de aumentarlos.
+`0003` repara solicitudes históricas que tengan evidencia durable de múltiples cotizaciones pero conserven accidentalmente `request_type=SIMPLE`.
 
-## Correo con Brevo
+El contenedor ejecuta antes de FastAPI:
 
-En producción se usa la API HTTPS de Brevo, por lo que no es necesario configurar un puerto SMTP en Render.
-
-```env
-EMAIL_MODE=brevo
-BREVO_API_KEY=< CLAVE API DE BREVO >
-BREVO_SENDER_NAME=< NOMBRE VISIBLE DEL REMITENTE >
-EMAIL_FROM=< CORREO VERIFICADO EN BREVO >
+```text
+alembic upgrade head
+python -m scripts.bootstrap_admin
+uvicorn app.application:app
 ```
 
-El correo de `EMAIL_FROM` debe estar verificado en Brevo. SMTP puede conservarse como opción local; Brevo ofrece `smtp-relay.brevo.com` y el puerto `587`, pero no es la opción recomendada cuando Render bloquea conexiones SMTP salientes.
+El bootstrap se ejecuta como módulo Python desde la raíz `backend/`/`/app`.
 
 ## Desarrollo local
 
-### Requisitos
+### Docker Compose
 
-- Python 3.12 o compatible.
-- Node.js 20 o compatible.
-- PostgreSQL o una cadena de conexión de Neon.
+```bash
+docker compose up --build
+```
 
-### Backend
+Docker Compose publica el frontend Nginx en:
 
-```powershell
+```text
+http://localhost:3000
+```
+
+Por ese motivo, Compose fuerza por defecto el `PUBLIC_URL` del backend a `http://localhost:3000` para que los enlaces incluidos en correos de aprobación/votación sean alcanzables. El `.env` de la raíz puede personalizarlo con:
+
+```env
+LOCAL_PUBLIC_URL=http://localhost:3000
+LOCAL_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
+```
+
+`localhost:5173` corresponde al servidor de desarrollo de Vite cuando se ejecuta directamente con `npm run dev`; no debe aparecer en correos mientras solo esté levantado Docker Compose.
+
+El valor por defecto de `ENVIRONMENT` es no productivo, por lo que el Administrador del sistema puede probar todas las capacidades disponibles localmente.
+
+Para comprobarlo:
+
+```text
+GET /api/iam/me/permissions
+```
+
+debe devolver los permisos activos del catálogo, por ejemplo:
+
+```text
+requests:read
+requests:create
+requests:approve
+requests:close
+config:manage
+```
+
+### Correo local con Google SMTP
+
+El entorno local debe usar correo real mediante Gmail/Google Workspace SMTP. Copia `backend/.env.example` como `backend/.env` y completa:
+
+```env
+ENVIRONMENT=development
+EMAIL_MODE=smtp
+EMAIL_FROM=<TU_CUENTA_GOOGLE>
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURITY=ssl
+SMTP_USER=<TU_CUENTA_GOOGLE>
+SMTP_PASSWORD=<APP_PASSWORD_DE_GOOGLE>
+```
+
+Alternativa soportada:
+
+```env
+SMTP_PORT=587
+SMTP_SECURITY=starttls
+```
+
+Para cuentas Google con Verificación en 2 pasos, usa una **App Password**; no guardes la contraseña normal de Google ni la App Password en Git.
+
+Prueba el transporte antes de crear una solicitud:
+
+```bash
+docker compose exec backend python -m scripts.test_email --to destino@example.com
+```
+
+Si el comando termina correctamente, Google aceptó el correo. Luego prueba el flujo SIMPLE/MULTI_QUOTE. Bajo Docker Compose, un link nuevo de aprobación/votación debe comenzar por `http://localhost:3000/email-action/`. Ver `docs/EMAIL_CONFIGURATION.md` y `specs/004-email-delivery-by-environment/`.
+
+### Backend sin Docker
+
+```bash
 cd backend
 python -m venv .venv
-.venv\Scripts\Activate.ps1
+# activar .venv
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+alembic upgrade head
+python -m scripts.bootstrap_admin
+uvicorn app.application:app --reload
 ```
 
 ### Frontend
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-Copia la plantilla del sistema que vas a ejecutar y reemplaza únicamente sus marcadores. Nunca uses claves reales en archivos versionados.
+### Portabilidad Windows → Linux
 
-| Sistema | Plantilla canónica | Archivo local no versionado |
-| --- | --- | --- |
-| Backend FastAPI | `backend/.env.example` | `backend/.env` |
-| Backend de preview | `backend/.env.preview.example` | `backend/.env.preview` |
-| Frontend React + Vite | `frontend/.env.example` | `frontend/.env` |
-| Infraestructura Docker Compose | `.env.example` | `.env` |
-| Infraestructura preview | `.env.preview.example` | `.env.preview` |
+- `.gitattributes` fuerza `*.sh text eol=lf`.
+- El Dockerfile elimina defensivamente CRLF.
+- El frontend Compose espera `/api/health` antes de iniciar Nginx.
+- El comando canónico del bootstrap es `python -m scripts.bootstrap_admin`.
 
-Las variables privadas pertenecen al backend. El frontend acepta únicamente variables públicas con prefijo `VITE_*`.
+Si el backend falla:
 
-## Variables de Render
+```bash
+docker compose ps -a
+docker compose logs backend --tail=200
+```
 
-Estas variables pertenecen al backend. Las credenciales deben configurarse únicamente en Render y nunca copiarse al frontend ni guardarse en el repositorio.
+No usar `docker compose down -v` salvo que se acepte eliminar los datos PostgreSQL locales.
 
-La plantilla canónica es `backend/.env.example`; en Render configura su variante de producción directamente en el panel.
+## Variables principales
+
+### Producción
 
 ```env
 ENVIRONMENT=production
-DATABASE_URL=< URL DE CONEXION DE NEON >
-PUBLIC_URL=< URL PUBLICA DEL FRONTEND EN VERCEL >
-CORS_ALLOWED_ORIGINS=< URL PUBLICA DEL FRONTEND EN VERCEL >
-
-SECRET_KEY=< SECRETO ALEATORIO LARGO >
-ANALYTICS_HASH_KEY=< OTRA CLAVE ALEATORIA LARGA >
+DATABASE_URL=<NEON_URL>
+SECRET_KEY=<32+ RANDOM CHARS>
+ANALYTICS_HASH_KEY=<DIFFERENT 32+ RANDOM CHARS>
+PUBLIC_URL=<VERCEL_URL>
+CORS_ALLOWED_ORIGINS=<VERCEL_URL>
 TOKEN_EXPIRE_MINUTES=480
 SESSION_IDLE_MINUTES=30
-# Variable heredada observada en Render; el backend actual no la consume.
-APPROVAL_LINK_HOURS=< NO APLICA EN EL FLUJO ACTUAL >
-
-USER_READ_RATE_LIMIT=120
-USER_WRITE_RATE_LIMIT=30
-USER_UPLOAD_RATE_LIMIT=6
-USER_SENSITIVE_RATE_LIMIT=10
 APP_TIME_ZONE=America/Panama
 
 EMAIL_MODE=brevo
-BREVO_API_KEY=< CLAVE API DE BREVO >
-BREVO_SENDER_NAME=< NOMBRE VISIBLE DEL REMITENTE >
-EMAIL_FROM=< CORREO VERIFICADO EN BREVO >
+BREVO_API_KEY=<SECRET>
+BREVO_SENDER_NAME=Gestión de Solicitudes
+EMAIL_FROM=<VERIFIED_EMAIL>
 
 ADMIN_NAME=Administrador del sistema
-ADMIN_EMAIL=< CORREO DEL ADMINISTRADOR DEL SISTEMA >
-ADMIN_PASSWORD=< CONTRASENA SEGURA DE AL MENOS 12 CARACTERES >
+ADMIN_EMAIL=<TECHNICAL_ADMIN_EMAIL>
+ADMIN_PASSWORD=<12+ SECURE CHARS>
 
 UPLOAD_DIR=/app/uploads
 MAX_UPLOAD_STORAGE_MB=450
 ```
 
-| Variable | Propósito | ¿Es secreta? |
-| --- | --- | --- |
-| `ENVIRONMENT` | Activa las validaciones y medidas correspondientes a producción. | No |
-| `DATABASE_URL` | Cadena privada de conexión de SQLAlchemy a PostgreSQL en Neon. | Sí |
-| `PUBLIC_URL` | URL pública del frontend usada para construir enlaces enviados por correo. | No |
-| `CORS_ALLOWED_ORIGINS` | Lista de orígenes web autorizados para llamar a la API; en producción debe contener la URL HTTPS de Vercel. | No |
-| `SECRET_KEY` | Firma y valida los JWT. Debe ser larga, aleatoria y diferente en cada entorno. | Sí |
-| `ANALYTICS_HASH_KEY` | Genera identificadores seudónimos sin exponer directamente la identidad de los usuarios. Debe ser distinta de `SECRET_KEY`. | Sí |
-| `TOKEN_EXPIRE_MINUTES` | Duración absoluta máxima del JWT. El valor actual recomendado es 480 minutos. | No |
-| `SESSION_IDLE_MINUTES` | Tiempo máximo sin actividad humana antes de cerrar la sesión. El valor actual es 30 minutos. | No |
-| `APPROVAL_LINK_HOURS` | Variable heredada visible en Render, pero no es consumida por el backend actual. Las aprobaciones pendientes no vencen por horas; se invalidan al decidirse o cuando el flujo deja de ser vigente. Puede eliminarse de Render. | No |
-| `USER_READ_RATE_LIMIT` | Máximo de lecturas por usuario y minuto. | No |
-| `USER_WRITE_RATE_LIMIT` | Máximo de escrituras por usuario y minuto. | No |
-| `USER_UPLOAD_RATE_LIMIT` | Máximo de cargas de archivos por usuario y minuto. | No |
-| `USER_SENSITIVE_RATE_LIMIT` | Máximo de acciones sensibles por usuario y minuto. | No |
-| `APP_TIME_ZONE` | Zona horaria utilizada por el backend para presentar información temporal. | No |
-| `EMAIL_MODE` | Selecciona el adaptador de correo: `brevo` en producción, `console` en desarrollo o `smtp` como alternativa. | No |
-| `BREVO_API_KEY` | Credencial para consumir la API de Brevo. | Sí |
-| `BREVO_SENDER_NAME` | Nombre visible del remitente. | No |
-| `EMAIL_FROM` | Dirección remitente verificada en Brevo. | Normalmente no, aunque debe controlarse su modificación |
-| `ADMIN_NAME` | Nombre de la cuenta técnica inicial. | No |
-| `ADMIN_EMAIL` | Correo de inicio de sesión del administrador técnico. | Dato sensible |
-| `ADMIN_PASSWORD` | Contraseña inicial del administrador técnico. | Sí |
-| `UPLOAD_DIR` | Ruta privada del disco persistente donde se almacenan documentos. | No |
-| `MAX_UPLOAD_STORAGE_MB` | Cuota total que la aplicación puede ocupar dentro de `UPLOAD_DIR`; no es el límite individual de cada archivo. | No |
+Las variables Brevo viven únicamente en el backend/Render. No colocar `BREVO_API_KEY` ni secretos SMTP en Vercel/Vite.
 
-No configures `TREASURER_EMAIL`, `PRESIDENT_EMAIL` ni variables SMTP si `EMAIL_MODE=brevo`.
+`render.yaml` productivo establece explícitamente `ENVIRONMENT=production`.
 
-La lista observada en Render coincide con las variables anteriores, con dos consideraciones:
+### No producción
 
-- `APPROVAL_LINK_HOURS` está configurada, pero actualmente no tiene efecto y puede eliminarse.
-- `ENVIRONMENT` no aparece en la captura. En Render, el backend también reconoce la variable de plataforma `RENDER=true` para aplicar las validaciones de producción; por eso `ENVIRONMENT=production` es recomendable para expresar la intención, pero no es imprescindible en ese proveedor.
-
-## Variables de Vercel
-
-Según la configuración actual mostrada en Vercel, ambas variables aplican a los entornos **Production** y **Preview**:
-
-La plantilla canónica es `frontend/.env.example`.
+Por ejemplo:
 
 ```env
-VITE_API_URL=< URL PUBLICA DEL BACKEND EN RENDER >
+ENVIRONMENT=development
+```
+
+o:
+
+```env
+ENVIRONMENT=test
+```
+
+No se debe usar `ENVIRONMENT=production` en un entorno donde se pretenda usar la cuenta técnica para pruebas financieras completas.
+
+Frontend:
+
+```env
+VITE_API_URL=<BACKEND_URL>
 VITE_TIME_ZONE=America/Panama
 ```
 
-| Variable | Valor esperado | Explicación |
-| --- | --- | --- |
-| `VITE_API_URL` | La URL HTTPS pública de Render, sin una ruta privada ni credenciales. | Indica al navegador dónde está la API. Aunque Vercel la muestre como `Sensitive`, Vite incorpora las variables `VITE_*` al paquete del frontend y su valor puede ser inspeccionado por cualquier usuario. No es un secreto. |
-| `VITE_TIME_ZONE` | `America/Panama` | Controla la zona horaria utilizada para mostrar fechas y horas en la interfaz. |
+## Clasificación Área + Categoría
 
-Las variables de Vite se leen durante la compilación. Después de modificar cualquiera de estas variables en Vercel es necesario volver a desplegar el frontend. Cambiar una variable de Render también requiere reiniciar o desplegar nuevamente el servicio para que el backend lea el valor nuevo.
+Área y Categoría son catálogos independientes con relación configurable N:M.
 
-## Orden recomendado de despliegue
+```text
+Administración ─┐
+IT              ├── Equipos
+Operaciones     ┘
+```
 
-1. Publica primero el backend actualizado en Render.
-2. Confirma que abre el puerto asignado por Render y que el endpoint de salud responde.
-3. Ejecuta o deja completar las migraciones.
-4. Publica el frontend en Vercel con la URL correcta del backend.
-5. Comprueba el inicio de sesión, `POST /api/auth/activity`, la búsqueda de personas y un envío real de correo.
+No se duplica la categoría `Equipos` por cada Área.
 
-Si Render queda en `Waiting for application startup` o muestra `No open ports detected`, revisa el error anterior en el log. Normalmente la aplicación no abrió el puerto porque falló una migración o una conexión con PostgreSQL. No termines sesiones de Neon sin identificar primero el proceso y su consulta.
+## Flujo de solicitudes
 
-## Reiniciar Neon desde cero
+### Simple
 
-El reinicio elimina datos y debe hacerse solamente de forma explícita:
+Una solicitud simple contiene proveedor, monto y soporte/cotización. La creación requiere `requests:create`.
 
-1. Crea una rama de respaldo en Neon.
-2. Detén temporalmente el backend o evita nuevos accesos.
-3. Confirma que Render ya contiene la versión nueva del código.
-4. Vacía el esquema de la rama de producción y ejecuta las migraciones o la inicialización.
-5. Verifica que se creó solamente el administrador técnico definido por `ADMIN_*`.
-6. Crea desde el portal el administrador de la PH, los perfiles y los miembros de junta.
-7. Comprueba la cédula única, los permisos y las políticas de aprobación.
+### Múltiples cotizaciones
 
-Vaciar Neon no elimina los archivos del disco persistente de Render. Para reiniciar completamente el entorno también debe vaciarse por separado el contenido de `/app/uploads`, conservando el directorio montado.
+La población de votación se obtiene desde usuarios con `requests:approve`, excluyendo al solicitante.
 
-## Endpoints destacados
+- Producción: las cuentas técnicas quedan fuera de permisos financieros.
+- No producción: la cuenta técnica puede participar para pruebas si no queda excluida por una regla propia del flujo, por ejemplo ser el mismo solicitante.
 
-- `POST /api/auth/login`: inicio de sesión.
-- `POST /api/auth/activity`: registra actividad humana y renueva la sesión activa.
-- `GET /api/users`: listado y búsqueda por cédula, nombre o correo.
-- Rutas de organigrama: perfiles, cargos y miembros de junta.
-- Rutas de solicitudes: creación, consulta, adjuntos y seguimiento.
-- Rutas de aprobación: decisiones mediante sesión o enlace seguro.
+Las invitaciones guardadas representan el snapshot de participantes de esa ronda.
 
-La documentación interactiva está disponible en `/api/docs` cuando la configuración del entorno la habilita.
+### Corrección y reenvío
 
-## Verificación
+`Corregir / reenviar` **preserva siempre el tipo original/canónico**:
+
+```text
+SIMPLE      -> SIMPLE
+MULTI_QUOTE -> MULTI_QUOTE
+```
+
+La pestaña que estaba seleccionada antes de pulsar **Corregir / reenviar** no participa en esa decisión. Si la pantalla estaba en **Solicitud sencilla** y se corrige una MULTI_QUOTE, el editor debe abrir directamente como MULTI_QUOTE.
+
+El formulario canónico vive en `frontend/src/expense-form.jsx`. Durante corrección calcula el tipo efectivo exclusivamente desde la solicitud/evidencia durable; la pestaña solo aplica a nuevas solicitudes.
+
+Para compatibilidad histórica se considera MULTI_QUOTE cuando:
+
+```text
+request_type == MULTI_QUOTE
+OR status == QUOTATION_VOTING
+OR quotation_options >= 2
+```
+
+Alembic `0003` persiste la reparación de esas filas legacy.
+
+Cuando se corrige una MULTI_QUOTE:
+
+- se muestra `Tipo de solicitud: Múltiples cotizaciones` como dato de solo lectura;
+- el layout visible es **Opciones para votación**, no el formulario SIMPLE;
+- se restauran las cotizaciones existentes;
+- proveedor, monto, URL y observaciones se editan dentro de cada opción;
+- los soportes existentes se conservan y se indican como soporte existente;
+- por ahora se mantiene la misma cantidad de opciones;
+- se genera un `flow_id` nuevo;
+- votos e invitaciones vigentes de la ronda anterior se reinician;
+- los eventos históricos se conservan;
+- la solicitud vuelve a `QUOTATION_VOTING`.
+
+Mientras `main.jsx` conserve la definición histórica de `ExpenseForm`, `frontend/vite.config.js` hace una única extracción estructural durante dev/build: importa `./expense-form.jsx` y elimina la función legacy completa del bundle. Ya no parchea granularmente condiciones internas del formulario. El build falla si esa frontera deja de encontrarse. Ver `docs/REQUEST_CORRECTIONS.md` y `specs/003-request-correction-invariants/`.
+
+### Aprobación
+
+La población canónica de aprobadores se obtiene desde `requests:approve`, no desde cargos como Presidente/Tesorero ni flags `can_approve`.
+
+> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.3.3.
+
+### Cierre
+
+Cerrar o reemplazar factura requiere `requests:close`. `APPROVED` no equivale a `CLOSED`.
+
+La cuenta técnica puede ejecutar cierre fuera de producción y recibe 403 en producción.
+
+## Testing
 
 ```bash
 cd backend
-pytest
+python -m unittest discover -s tests -v
 ```
 
-```bash
-cd frontend
-npm run build
+La suite IAM verifica específicamente:
+
+- cuenta técnica con todos los permisos activos en no-producción;
+- login no-productivo con `permission_codes` + aliases efectivos;
+- participación de cuenta técnica en población de aprobación fuera de producción;
+- restricción config/read en producción;
+- 403 de cierre en producción incluso con permiso financiero accidental;
+- exclusión de población de aprobación en producción.
+
+La suite de correcciones verifica además que una MULTI_QUOTE no pueda degradarse a SIMPLE, que un registro legacy con flag SIMPLE pero evidencia múltiple sea reparado, que conserve evidencia, que reinicie votos/invitaciones y que el frontend modular use el tipo efectivo para render y payload.
+
+Prueba manual específica:
+
+```text
+1. dejar seleccionada Solicitud sencilla;
+2. pulsar Corregir / reenviar en una MULTI_QUOTE;
+3. verificar Tipo de solicitud: Múltiples cotizaciones;
+4. verificar Opciones para votación con las cotizaciones existentes;
+5. verificar que no aparezca el formulario sencillo como estructura principal.
 ```
 
-Antes de producción prueba también:
+CI ejecuta además frontend build y construcción/smoke tests de imágenes Docker.
 
-- expiración por 30 minutos de inactividad;
-- renovación con actividad humana;
-- límites de solicitudes;
-- rechazo de una cédula duplicada;
-- creación de miembros de junta sin apartamentos ni roles de propiedad;
-- envío mediante Brevo;
-- carga y descarga autorizada de adjuntos.
+## Documentación
+
+Orden de autoridad:
+
+1. `.specify/memory/constitution.md`
+2. `specs/*/spec.md`
+3. criterios de aceptación
+4. `specs/*/plan.md`
+5. código
+6. README/prompts/docs derivados
+
+Documentos principales:
+
+- `docs/DOCUMENTATION_POLICY.md`
+- `docs/TERMINOLOGY.md`
+- `docs/CLASSIFICATION_MODEL.md`
+- `docs/IAM_MODEL.md`
+- `docs/FASTAPI_ARCHITECTURE.md`
+- `docs/REQUEST_CORRECTIONS.md`
+- `docs/EMAIL_CONFIGURATION.md`
+- `docs/HISTORY.md`
+- `CHANGELOG.md`
+- `PROMPT_RECONSTRUCCION.md`
+
+## Deuda de transición conocida
+
+- `UserRole`, `title` y `can_*` permanecen temporalmente para compatibilidad; no autorizan.
+- `/api/users` legacy continúa temporalmente.
+- `frontend/src/main.jsx` sigue siendo monolítico en otras áreas.
+- El monolito todavía contiene bypasses visuales legacy como `user.role === "ADMIN"` y `canClose={true}`; el backend no confía en ellos. Deben migrarse a `permission_codes`.
+- `modularExpenseFormPlugin` sigue temporalmente mientras `main.jsx` conserve la definición legacy; debe retirarse cuando el shell importe directamente `expense-form.jsx`.
+- `domain-normalization.js` sigue como capa temporal.
+- quorum/mayoría de aprobación y empate de cotizaciones requieren specs funcionales separadas.

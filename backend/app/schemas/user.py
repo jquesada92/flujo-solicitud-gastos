@@ -1,51 +1,12 @@
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
-from app.models.entities import OwnershipRole, PersonType, UserRole
+from app.models.entities import UserRole
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
-
-
-class UserApartmentWrite(BaseModel):
-    apartment_number: str
-    ownership_role: OwnershipRole
-
-    @field_validator('apartment_number')
-    @classmethod
-    def valid_apartment(cls, value: str) -> str:
-        value = value.strip().upper()
-        if not __import__('re').fullmatch(r'(?:[6-9]|1[0-9]|2[01])[A-H]', value):
-            raise ValueError('El apartamento debe estar entre 6A y 21H')
-        return value
-
-
-class UserApartmentOut(UserApartmentWrite):
-    id: int
-    class Config:
-        from_attributes = True
-
-
-class ApartmentResidentOut(BaseModel):
-    identity_document: str
-    full_name: str
-    email: str
-    ownership_role: OwnershipRole
-
-
-class ApartmentOut(BaseModel):
-    apartment_number: str
-    floor: int
-    letter: str
-    is_rental: bool
-    residents: list[ApartmentResidentOut]
-
-
-class ApartmentUpdate(BaseModel):
-    is_rental: bool | None = None
-    owner_identity_document: str | None = None
-    co_owner_identity_document: str | None = None
 
 
 class UserCreate(BaseModel):
@@ -58,6 +19,7 @@ class UserCreate(BaseModel):
     phone: str | None = Field(default=None, min_length=7, max_length=30)
     title: str = Field(min_length=2, max_length=70)
     active: bool = True
+
     @field_validator('middle_name', 'second_last_name', 'phone', mode='before')
     @classmethod
     def empty_optional_fields(cls, value):
@@ -73,25 +35,13 @@ class UserUpdate(BaseModel):
     second_last_name: str | None = Field(default=None, max_length=70)
     email: EmailStr | None = None
     phone: str | None = Field(default=None, min_length=7, max_length=30)
-    person_type: PersonType | None = None
     title: str | None = Field(default=None, min_length=2, max_length=70)
     active: bool | None = None
-    apartment_number: str | None = Field(default=None, min_length=1, max_length=30)
-    apartments: list[UserApartmentWrite] | None = Field(default=None, min_length=1, max_length=20)
 
     @field_validator('middle_name', 'second_last_name', 'phone', mode='before')
     @classmethod
     def empty_optional_fields(cls, value):
         return value if value is not None and str(value).strip() else None
-
-    @field_validator('apartments')
-    @classmethod
-    def unique_updated_apartments(cls, value):
-        if value is not None:
-            numbers = [item.apartment_number for item in value]
-            if len(numbers) != len(set(numbers)):
-                raise ValueError('No puedes registrar el mismo apartamento dos veces')
-        return value
 
 
 class UserBulkUpdateItem(UserUpdate):
@@ -124,13 +74,10 @@ class UserOut(BaseModel):
     identity_document: str | None
     analytics_id: str | None
     phone: str | None
-    person_type: PersonType | None
-    apartment_number: str | None
     first_name: str | None
     middle_name: str | None
     last_name: str | None
     second_last_name: str | None
-    apartments: list[UserApartmentOut] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     role: UserRole
@@ -140,6 +87,8 @@ class UserOut(BaseModel):
     can_approve: bool
     can_view: bool
     can_configure: bool
+    can_close: bool = False
+    permission_codes: list[str] = Field(default_factory=list)
     must_change_password: bool
 
     class Config:

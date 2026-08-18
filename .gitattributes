@@ -1,2 +1,8 @@
-# Auto detect text files and perform LF normalization
+# Normalize repository text files and force Unix line endings for Linux entrypoints.
 * text=auto
+
+# Shell scripts execute inside Linux containers. CRLF changes the shebang to
+# /bin/sh\r and Docker reports the misleading "no such file or directory".
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.conf text eol=lf

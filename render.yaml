@@ -7,6 +7,9 @@ services:
     autoDeploy: false
     healthCheckPath: /api/health
     envVars:
+      # Production authorization policy is activated explicitly by this value.
+      # Preview/test services must use a non-production ENVIRONMENT value if the
+      # technical system account needs full end-to-end testing permissions.
       - key: ENVIRONMENT
         value: production
       - key: DATABASE_URL
@@ -54,7 +57,7 @@ services:
       - key: BREVO_API_KEY
         sync: false
       - key: BREVO_SENDER_NAME
-        value: PH · Gestión de Gastos
+        value: Gestión de Solicitudes
       - key: UPLOAD_DIR
         value: /app/uploads
       - key: MAX_UPLOAD_STORAGE_MB

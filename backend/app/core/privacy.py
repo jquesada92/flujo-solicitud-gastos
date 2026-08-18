@@ -2,7 +2,7 @@ import hashlib
 import hmac
 import os
 
-from app.models.entities import PersonType, User, UserRole
+from app.models.entities import User, UserRole
 
 
 def analytics_identifier(identity_document: str | None, fallback: str) -> str:
@@ -12,7 +12,8 @@ def analytics_identifier(identity_document: str | None, fallback: str) -> str:
 
 
 def can_view_personal_data(user: User) -> bool:
-    return user.role == UserRole.ADMIN or user.person_type == PersonType.ADMINISTRATOR
+    """Keep personal-data access independent from property/person classifications."""
+    return user.role == UserRole.ADMIN or user.can_configure or user.title == 'ADMINISTRADORA'
 
 
 def mask_email(value: str | None) -> str | None:

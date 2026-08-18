@@ -6,16 +6,16 @@ from unittest.mock import patch
 
 import jwt
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 os.environ.setdefault('DATABASE_URL', 'sqlite://')
 os.environ.setdefault('SECRET_KEY', 'unit-test-secret-key-at-least-32-characters')
+os.environ.setdefault('ANALYTICS_HASH_KEY', 'unit-test-analytics-key-at-least-32-characters')
 
 from app.api import auth
 from app.api.approvals import _ensure_link_is_current
 from app.api.expenses import _validate_file_content
-from app.models.entities import ApprovalStatus, ExpenseStatus
-from app.services import email_service
-from app.services.approval_engine import apply_decision
+from app.core.config import Settings, get_settings
 from app.core.rate_limit import (
     READ_POLICY,
     SENSITIVE_POLICY,
@@ -25,8 +25,10 @@ from app.core.rate_limit import (
     consume_user_request,
     policy_for_request,
 )
-from app.core.security import SECRET_KEY, create_token, session_is_idle
-from app.main import validate_runtime_security
+from app.core.security import create_token, hash_password, session_is_idle, verify_password
+from app.models.entities import ApprovalStatus, ExpenseStatus
+from app.services import email_service
+from app.services.approval_engine import apply_decision
 
 
 class SecurityControlTests(unittest.TestCase):
@@ -36,8 +38,14 @@ class SecurityControlTests(unittest.TestCase):
 
     def test_jwt_contains_session_version(self):
         token = create_token(SimpleNamespace(id=7, session_version=3))
-        payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+        payload = jwt.decode(token, get_settings().secret_key, algorithms=['HS256'])
         self.assertEqual(payload['sv'], 3)
+
+    def test_new_passwords_use_argon2(self):
+        encoded = hash_password('A-secure-test-password!')
+        self.assertTrue(encoded.startswith('$argon2'))
+        self.assertTrue(verify_password('A-secure-test-password!', encoded))
+        self.assertFalse(verify_password('wrong-password', encoded))
 
     def test_login_rate_limit_blocks_after_maximum(self):
         key = '127.0.0.1:user@example.com'
@@ -94,6 +102,7 @@ class SecurityControlTests(unittest.TestCase):
         self.assertEqual(policy_for_request('POST', '/api/expenses'), WRITE_POLICY)
         self.assertEqual(policy_for_request('POST', '/api/expenses/x/attachments'), UPLOAD_POLICY)
         self.assertEqual(policy_for_request('POST', '/api/approvals/token'), SENSITIVE_POLICY)
+        self.assertEqual(policy_for_request('POST', '/api/iam/groups'), SENSITIVE_POLICY)
 
     def test_brevo_email_uses_https_api(self):
         response = unittest.mock.MagicMock()
@@ -110,17 +119,41 @@ class SecurityControlTests(unittest.TestCase):
         self.assertIn('verified@example.com', payload)
         self.assertNotIn('test-api-key', payload)
 
-    def test_production_rejects_development_secrets(self):
-        values = {
-            'ENVIRONMENT': 'production',
-            'SECRET_KEY': 'development-only-change-me',
-            'ANALYTICS_HASH_KEY': '',
-            'ADMIN_PASSWORD': 'Admin123!',
-            'CORS_ALLOWED_ORIGINS': 'http://localhost:3000',
-        }
-        with patch.dict(os.environ, values, clear=False):
-            with self.assertRaises(RuntimeError):
-                validate_runtime_security()
+    def test_production_settings_reject_development_secrets(self):
+        with self.assertRaises(ValidationError):
+            Settings(
+                database_url='postgresql://example/db',
+                environment='production',
+                secret_key='development-only-change-me',
+                analytics_hash_key='',
+                admin_password='Admin123!',
+                cors_allowed_origins='http://localhost:3000',
+            )
+
+    def test_hosted_preview_is_hardened_but_not_production_authorization(self):
+        settings = Settings(
+            database_url='postgresql://example/db',
+            environment='preview',
+            render=True,
+            secret_key='s' * 40,
+            analytics_hash_key='a' * 40,
+            admin_password='A-secure-preview-password!',
+            cors_allowed_origins='https://preview.example.com',
+        )
+        self.assertTrue(settings.is_production)
+        self.assertFalse(settings.is_production_environment)
+
+    def test_production_environment_enables_production_authorization_policy(self):
+        settings = Settings(
+            database_url='postgresql://example/db',
+            environment='production',
+            secret_key='s' * 40,
+            analytics_hash_key='a' * 40,
+            admin_password='A-secure-production-password!',
+            cors_allowed_origins='https://app.example.com',
+        )
+        self.assertTrue(settings.is_production)
+        self.assertTrue(settings.is_production_environment)
 
 
 if __name__ == '__main__':

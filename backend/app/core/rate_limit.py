@@ -1,5 +1,4 @@
 import math
-import os
 import threading
 import time
 from collections import deque
@@ -7,7 +6,8 @@ from typing import NamedTuple
 
 import jwt
 
-from app.core.security import SECRET_KEY
+from app.core.config import get_settings
+
 
 class RatePolicy(NamedTuple):
     name: str
@@ -15,10 +15,11 @@ class RatePolicy(NamedTuple):
     window_seconds: int
 
 
-READ_POLICY = RatePolicy('read', int(os.getenv('USER_READ_RATE_LIMIT', '120')), 60)
-WRITE_POLICY = RatePolicy('write', int(os.getenv('USER_WRITE_RATE_LIMIT', '30')), 60)
-UPLOAD_POLICY = RatePolicy('upload', int(os.getenv('USER_UPLOAD_RATE_LIMIT', '6')), 60)
-SENSITIVE_POLICY = RatePolicy('sensitive', int(os.getenv('USER_SENSITIVE_RATE_LIMIT', '10')), 60)
+settings = get_settings()
+READ_POLICY = RatePolicy('read', settings.user_read_rate_limit, 60)
+WRITE_POLICY = RatePolicy('write', settings.user_write_rate_limit, 60)
+UPLOAD_POLICY = RatePolicy('upload', settings.user_upload_rate_limit, 60)
+SENSITIVE_POLICY = RatePolicy('sensitive', settings.user_sensitive_rate_limit, 60)
 
 _requests: dict[str, deque[float]] = {}
 _lock = threading.Lock()
@@ -29,7 +30,7 @@ def authenticated_subject(authorization: str | None) -> str | None:
         return None
     try:
         token = authorization.split(None, 1)[1]
-        payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+        payload = jwt.decode(token, get_settings().secret_key, algorithms=['HS256'])
         return str(int(payload['sub']))
     except (jwt.PyJWTError, KeyError, ValueError, IndexError):
         return None
@@ -39,15 +40,14 @@ def policy_for_request(method: str, path: str) -> RatePolicy:
     method = method.upper()
     if method in ('GET', 'HEAD'):
         return READ_POLICY
-    if '/attachments' in path:
+    if '/attachments' in path or path.endswith('/close') or path.endswith('/invoice'):
         return UPLOAD_POLICY
     sensitive = (
         path.startswith('/api/approvals/'),
-        path.endswith('/close'),
         path.endswith('/change-password'),
         path.endswith('/regenerate-password'),
         path.endswith('/bulk'),
-        path.endswith('/board'),
+        path.startswith('/api/iam/'),
     )
     return SENSITIVE_POLICY if any(sensitive) else WRITE_POLICY
 
