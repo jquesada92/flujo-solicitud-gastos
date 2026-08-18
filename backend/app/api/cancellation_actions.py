@@ -2,7 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
@@ -27,7 +27,13 @@ class CancellationRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=1000)
 
 
-def can_cancel_expense(db: Session, expense: Expense, user: User) -> bool:
+def can_cancel_expense(
+    db: Session,
+    expense: Expense,
+    user: User,
+    *,
+    system_admin: bool | None = None,
+) -> bool:
     """Cancellation is identity-based, not granted by requests:create.
 
     Only the original requester or the protected technical system account may
@@ -38,7 +44,8 @@ def can_cancel_expense(db: Session, expense: Expense, user: User) -> bool:
         return False
     requester = (expense.requested_by or '').strip().lower()
     actor = (user.email or '').strip().lower()
-    return requester == actor or is_system_account(db, user.id)
+    technical_admin = is_system_account(db, user.id) if system_admin is None else system_admin
+    return requester == actor or technical_admin
 
 
 @router.post('/{request_id}/cancel', response_model=ExpenseOut)
