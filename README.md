@@ -15,6 +15,7 @@ El producto es **neutral respecto al tipo de organización**. Un PH, empresa, co
 - Un Grupo puede heredar Roles y sus miembros reciben esos permisos.
 - Todo usuario activo puede entrar a Inicio y dar seguimiento a las solicitudes mediante el baseline `requests:read`.
 - Ver una solicitud ajena no concede acciones sobre ella.
+- Las filas de **Inicio → Acciones pendientes** abren una acción contextual del usuario; **Ver todas** navega a Solicitudes.
 - Solo el solicitante original o el Administrador del sistema pueden cancelar una solicitud abierta.
 - La cuenta técnica tiene política explícita por ambiente.
 - Área y Categoría son dimensiones independientes.
@@ -77,6 +78,8 @@ Los clientes pueden crear grupos, roles, cargos y asignaciones desde la interfaz
 
 La cancelación de una solicitud abierta **no se deriva de `requests:create`**. Es una regla de propiedad del recurso: únicamente el solicitante original o la cuenta protegida de Administrador del sistema pueden ejecutarla.
 
+Los códigos del dashboard `APPROVAL_DECISION`, `QUOTATION_VOTE`, `CORRECT_REQUEST` y `CLOSE_REQUEST` tampoco son nuevos permisos IAM. Son tareas contextuales calculadas desde permiso efectivo + asignación + estado actual.
+
 ## Administrador del sistema por ambiente
 
 La cuenta creada por `ADMIN_*` se registra como `TECHNICAL_ADMIN` en `system_accounts`. Su comportamiento **no depende del email, cargo ni `UserRole.ADMIN`**.
@@ -104,7 +107,7 @@ requests:approve
 requests:close
 ```
 
-Aunque un rol, grupo, cargo o permiso directo intente concedérselos, el backend los filtra. Tampoco participa en poblaciones financieras de aprobación/votación.
+Aunque un rol, grupo, cargo o permiso directo intente concedérselos, el backend los filtra. Tampoco participa en poblaciones financieras de aprobación/votación ni recibe esas acciones en su bandeja personal.
 
 Como excepción explícita de administración del ciclo de vida, el Administrador del sistema **sí puede cancelar una solicitud abierta**. Esta facultad se valida mediante `system_accounts`; no equivale a conceder `requests:create`, `requests:approve` ni `requests:close`.
 
@@ -133,7 +136,52 @@ Todo usuario activo y autenticado puede:
 - abrir **Solicitudes**;
 - consultar solicitudes creadas por otros usuarios para dar seguimiento.
 
-El baseline no concede creación, aprobación, cierre ni configuración. Las acciones personales del dashboard se calculan con permisos accionables reales.
+El baseline no concede creación, aprobación, cierre ni configuración.
+
+### Acciones pendientes del usuario
+
+El dashboard no deduce acciones únicamente desde el estado de la solicitud. `pending_action_service.py` combina permiso efectivo + asignación/estado concreto.
+
+```text
+APPROVAL_DECISION
+= requests:approve + Approval.PENDING asignado al usuario
+
+QUOTATION_VOTE
+= requests:approve + invitación vigente + sin voto
+
+CORRECT_REQUEST
+= requests:create + solicitud propia NEEDS_REVISION
+
+CLOSE_REQUEST
+= requests:close + solicitud APPROVED
+```
+
+`GET /api/expenses/dashboard` devuelve los códigos en cada `pending_item`.
+
+Al seleccionar una fila de **Acciones pendientes**, el frontend abre un modal y revalida:
+
+```text
+GET /api/expenses/{request_id}/my-actions
+```
+
+El modal muestra únicamente controles que siguen vigentes para ese usuario:
+
+- aprobar / rechazar / solicitar corrección;
+- votar una cotización revisando sus soportes;
+- subir factura y cerrar;
+- abrir una solicitud propia para corregir / reenviar.
+
+**Ver todas** sigue navegando a la pantalla de Solicitudes.
+
+Después de registrar una acción, el dashboard y el detalle contextual se recargan. Si la tarea ya fue respondida desde correo, otra pestaña o una sesión distinta, el modal puede informar que ya no quedan acciones pendientes.
+
+La aprobación desde el modal usa:
+
+```text
+POST /api/expenses/{request_id}/approval-decision
+```
+
+y no expone al frontend el token bearer de los links de correo.
 
 El listado canónico `GET /api/expenses` devuelve además `can_cancel` por solicitud. La UI usa ese valor para mostrar u ocultar **Cancelar solicitud** y no intenta inferir la autorización desde roles, cargos o `can_request`.
 
@@ -156,6 +204,8 @@ can_close     <- requests:close
 ```
 
 Estos aliases son solo UX/compatibilidad. El backend siempre vuelve a validar el permiso canónico o la regla de propiedad aplicable al recurso.
+
+Las acciones contextuales del dashboard no forman parte de `permission_codes`.
 
 ## Consola gráfica de Accesos
 
@@ -232,6 +282,8 @@ Frontend relevante para solicitudes/accesos:
 ```text
 frontend/src/
 ├── expense-form.jsx       # formulario canónico SIMPLE / MULTI_QUOTE
+├── home-dashboard.jsx     # dashboard + modal de acciones personales
+├── home-dashboard.css     # estilos del modal contextual
 ├── iam-admin.jsx          # consola IAM canónica
 ├── main.jsx               # shell legacy aún pendiente de modularización total
 └── domain-normalization.js
@@ -247,7 +299,7 @@ frontend/src/
 - contratos sensibles usan response models explícitos.
 - tests HTTP usan `FastAPI TestClient`.
 
-Rutas canónicas actualmente registradas antes de compatibilidad legacy incluyen creación, corrección, cancelación, documentos, acciones financieras, seguimiento y herencia de Roles por Cargo.
+Rutas canónicas actualmente registradas antes de compatibilidad legacy incluyen creación, corrección, cancelación, documentos, acciones financieras, acciones contextuales del usuario, seguimiento y herencia de Roles por Cargo.
 
 ## Seguridad
 
@@ -263,6 +315,7 @@ Rutas canónicas actualmente registradas antes de compatibilidad legacy incluyen
 - `Cargo → Rol → Permiso` es válido; `if cargo == 'TESORERO'` no lo es.
 - cuenta técnica segregada del flujo financiero en producción, con la excepción explícita de cancelación administrativa de solicitudes abiertas.
 - un usuario con `requests:create` no puede cancelar por ese hecho una solicitud creada por otro usuario.
+- el modal de acciones vuelve a autorizar en backend antes de cada mutación y no confía en una tarjeta que pudo quedar obsoleta.
 
 ## Base de datos y migraciones
 
@@ -282,6 +335,8 @@ backend/alembic/versions/
 `0004` agrega `position_roles` y convierte una sola vez la configuración legacy de Cargos/Perfiles (`access_profiles` + `users.title`) a IAM canónico. Los `can_*` se usan únicamente como entrada histórica de migración; runtime sigue consultando Roles/Permisos persistidos.
 
 La migración preserva, entre otros, los cargos existentes configurados con `can_approve=true` convirtiéndolos en Roles con `requests:approve` y asignando los usuarios actuales al Cargo canónico correspondiente.
+
+El modal contextual y `pending_action_service.py` no requieren una migración adicional.
 
 El contenedor ejecuta antes de FastAPI:
 
@@ -457,7 +512,7 @@ VITE_API_URL=<BACKEND_URL>
 VITE_TIME_ZONE=America/Panama
 ```
 
-No existe una variable de entorno especial para Cargo/Grupo → Rol; estas relaciones viven en PostgreSQL y se administran desde la aplicación.
+No existe una variable de entorno especial para Cargo/Grupo → Rol ni para el modal de acciones; esas reglas viven en backend/PostgreSQL y en el bundle normal del frontend.
 
 ## Clasificación Área + Categoría
 
@@ -494,6 +549,21 @@ Cargo → Rol
 - No producción: la cuenta técnica puede participar para pruebas si no queda excluida por una regla propia del flujo, por ejemplo ser el mismo solicitante.
 
 Las invitaciones guardadas representan el snapshot de participantes de esa ronda.
+
+### Acciones pendientes desde Inicio
+
+La bandeja de Inicio presenta tareas concretas del usuario actual.
+
+Al hacer clic en una fila se abre un modal contextual, no la lista genérica de Solicitudes. Según el workflow puede mostrar:
+
+```text
+Responder aprobación
+Votar cotización
+Subir factura y cerrar
+Corregir y reenviar
+```
+
+La acción se vuelve a consultar en backend al abrir el modal y después de cada decisión.
 
 ### Seguimiento y cancelación
 
@@ -563,7 +633,7 @@ Cuando se corrige una MULTI_QUOTE:
 - los eventos históricos se conservan;
 - la solicitud vuelve a `QUOTATION_VOTING`.
 
-Mientras `main.jsx` conserve la definición histórica de `ExpenseForm`, `frontend/vite.config.js` hace una extracción estructural durante dev/build: importa `./expense-form.jsx` y elimina la función legacy completa del bundle. El mismo transform sustituye el guard legacy de cancelación por `x.can_cancel` usando un patrón semántico validado. El build falla si esas fronteras dejan de encontrarse. Ver `docs/REQUEST_CORRECTIONS.md` y `specs/003-request-correction-invariants/`.
+Mientras `main.jsx` conserve las definiciones históricas de `ExpenseForm` y `HomeDashboard`, `frontend/vite.config.js` hace extracciones estructurales durante dev/build: importa los componentes modulares y elimina las funciones legacy completas del bundle. El mismo transform sustituye el guard legacy de cancelación por `x.can_cancel`. Ver `docs/REQUEST_CORRECTIONS.md`, `docs/REQUEST_TRACKING.md` y sus specs.
 
 ### Aprobación
 
@@ -603,6 +673,16 @@ La suite IAM verifica específicamente:
 
 La suite de seguimiento verifica que cualquier usuario activo reciba `requests:read`, pueda ver solicitudes ajenas y cargar el dashboard sin adquirir permisos mutables.
 
+`test_pending_actions.py` verifica:
+
+- aprobación pendiente asignada → `APPROVAL_DECISION`;
+- decisión autenticada desde el modal sin token de correo;
+- invitación MULTI_QUOTE → `QUOTATION_VOTE`;
+- solicitud propia `NEEDS_REVISION` → `CORRECT_REQUEST`;
+- solicitud `APPROVED` → `CLOSE_REQUEST` solo para usuario con `requests:close`.
+
+`test_frontend_dashboard_contract.py` protege click de fila → modal, los cuatro tipos de acción y la revalidación posterior a una mutación.
+
 La suite de cancelación verifica:
 
 - `can_cancel=true` para el solicitante de una solicitud abierta;
@@ -613,6 +693,18 @@ La suite de cancelación verifica:
 - rechazo de cancelación de una solicitud cerrada.
 
 La suite de correcciones verifica además que una MULTI_QUOTE no pueda degradarse a SIMPLE, que un registro legacy con flag SIMPLE pero evidencia múltiple sea reparado, que conserve evidencia, que reinicie votos/invitaciones y que el frontend modular use el tipo efectivo para render y payload.
+
+Prueba manual específica de acciones pendientes:
+
+```text
+1. iniciar sesión con un usuario que tenga una aprobación PENDING asignada;
+2. Inicio → Acciones pendientes → seleccionar la solicitud;
+3. verificar que se abre un modal y NO se navega inmediatamente a Solicitudes;
+4. verificar Responder aprobación con Rechazar / Solicitar corrección / Aprobar;
+5. registrar una decisión y comprobar que dashboard + modal se refrescan;
+6. repetir con una invitación MULTI_QUOTE y verificar selección/voto;
+7. repetir con usuario requests:close y verificar factura/cierre.
+```
 
 Prueba manual específica de herencia de aprobación:
 
@@ -645,7 +737,20 @@ Prueba manual específica de cancelación:
 5. cancelar indicando motivo y comprobar estado CANCELLED.
 ```
 
-CI ejecuta además frontend build y construcción/smoke tests de imágenes Docker.
+GitHub Actions normalmente ejecuta backend, frontend y Docker, pero la cuenta alcanzó su cuota de Actions durante este PR. Mientras no se restablezca la cuota, ejecutar localmente:
+
+```bash
+cd backend
+python -m unittest discover -s tests -v
+
+cd ../frontend
+npm ci
+npm run build
+
+cd ..
+docker compose build --no-cache
+docker compose up -d
+```
 
 ## Documentación
 
@@ -681,6 +786,6 @@ Documentos principales:
 - `/api/users` legacy continúa temporalmente.
 - `frontend/src/main.jsx` sigue siendo monolítico en otras áreas.
 - El monolito todavía contiene bypasses visuales legacy como `user.role === "ADMIN"` y `canClose={true}`; el backend no confía en ellos. Deben migrarse a `permission_codes`/capacidades por recurso.
-- `modularExpenseFormPlugin` sigue temporalmente mientras `main.jsx` conserve la definición legacy; también adapta el guard de cancelación a `can_cancel`. Debe retirarse cuando el shell importe componentes canónicos directamente.
+- `vite.config.js` elimina temporalmente las implementaciones legacy completas de `ExpenseForm` y `HomeDashboard`, e integra el guard `can_cancel`. Debe retirarse cuando el shell importe componentes canónicos directamente.
 - `domain-normalization.js` sigue como capa temporal.
 - quorum/mayoría de aprobación y empate de cotizaciones requieren specs funcionales separadas.
