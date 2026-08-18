@@ -68,8 +68,10 @@
 - [x] El test verifica 409 al intentar MULTI_QUOTE → SIMPLE cuando el tipo canónico es múltiple.
 - [x] Existe `test_frontend_revision_contract.py` para verificar el formulario modular y su integración de build.
 - [x] CI del head modular pasó Backend, Frontend build y Docker images en run `32088911340`.
+- [x] CI verifica el artefacto `dist/` y falla si el bundle no contiene `Tipo de solicitud:` y `Opciones para votación` del formulario modular.
 - [ ] Verificar manualmente: con pestaña **Solicitud sencilla** activa, corregir una MULTI_QUOTE debe mostrar **Tipo de solicitud: Múltiples cotizaciones** y **Opciones para votación**.
 - [ ] Verificar manualmente que no aparezcan los campos SIMPLE `Monto (USD)`, `Proveedor`, `URL del producto o servicio` y soporte único fuera de las tarjetas de cotización.
+- [ ] Verificar en el entorno local que el commit/branch ejecutado coincide con el head que contiene `frontend/src/expense-form.jsx`; una captura sin la línea `Tipo de solicitud:` indica bundle legacy o checkout desactualizado.
 
 ## Documentación
 
