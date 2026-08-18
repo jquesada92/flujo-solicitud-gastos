@@ -1,6 +1,6 @@
 # Criterios de aceptación — Correcciones de solicitudes
 
-**Constitución:** 2.3.2
+**Constitución:** 2.3.3
 
 ## Tipo de solicitud
 
@@ -12,6 +12,9 @@
 - [x] La pestaña SIMPLE/MULTI_QUOTE seleccionada antes de pulsar Corregir no determina el tipo del editor.
 - [x] Entrar en corrección fuerza un remount del formulario y descarta el estado de creación previo.
 - [x] Cambiar a otra solicitud en corrección vuelve a derivar el tipo desde esa solicitud.
+- [x] Durante una corrección existe un `effectiveRequestType` autoritativo derivado del draft.
+- [x] Render, validación y payload de corrección usan `effectiveRequestType`, no el estado React de la pestaña.
+- [x] El tipo de solicitud se muestra como información de solo lectura durante la corrección.
 
 ## Compatibilidad de datos históricos
 
@@ -52,8 +55,10 @@
 
 - [x] `vite.config.js` deriva el tipo inicial desde el draft/evidencia durable durante dev/build.
 - [x] `ExpenseForm` recibe una `key` de corrección para evitar heredar estado de la pestaña anterior.
+- [x] `effectiveRequestType` gobierna el editor cuando existe `draft`.
 - [x] El transform considera evidencia existente.
 - [x] El transform falla explícitamente si los fragmentos legacy esperados desaparecen.
+- [x] Existe test de regresión que verifica el contrato `effectiveRequestType` en el transform.
 - [ ] **Deuda:** retirar el transform al modularizar `ExpenseForm` fuera de `main.jsx`.
 
 ## Pruebas
@@ -64,23 +69,19 @@
 - [x] El test verifica limpieza de votos.
 - [x] El test verifica reemplazo de invitación.
 - [x] El test verifica 409 al intentar MULTI_QUOTE → SIMPLE cuando el tipo canónico es múltiple.
-- [x] Backend tests, frontend build y Docker/smoke del head funcional quedaron verdes en CI run 481.
-- [ ] Verificar manualmente: con pestaña **Solicitud sencilla** activa, corregir una MULTI_QUOTE debe abrir directamente el editor múltiple.
+- [x] Existe `test_frontend_revision_contract.py` para impedir que render/payload vuelvan a usar `requestType` durante corrección.
+- [ ] Verificar CI del head que contiene `effectiveRequestType` + test de contrato frontend.
+- [ ] Verificar manualmente: con pestaña **Solicitud sencilla** activa, corregir una MULTI_QUOTE debe abrir directamente el editor múltiple y mostrar `Tipo de solicitud: Múltiples cotizaciones`.
 
 ## Documentación
 
-- [x] Constitución actualizada a 2.3.2.
-- [x] Spec funcional actualizada con aislamiento de estado y datos legacy.
-- [x] Plan técnico actualizado.
+- [x] Constitución 2.3.3 revisada; el invariant existente sigue vigente sin requerir una nueva regla constitucional.
+- [x] Spec funcional actualizada con `effectiveRequestType` autoritativo.
+- [x] Plan técnico revisado; la estrategia sigue siendo compatibilidad Vite temporal hasta modularizar el formulario.
 - [x] Criterios de aceptación actualizados.
-- [x] README actualizado a Constitución 2.3.2 y migración 0003.
-- [x] Prompt maestro actualizado.
+- [x] README revisado; ya establece que la pestaña previa no participa en corrección.
+- [x] Prompt maestro revisado; ya exige derivar el tipo desde la solicitud seleccionada.
 - [x] `docs/REQUEST_CORRECTIONS.md` actualizado.
-- [x] Arquitectura FastAPI actualizada con migración 0003 y aislamiento de estado.
-- [x] Política documental clasifica fugas de estado UI con impacto de negocio como cambios funcionales.
 - [x] HISTORY actualizado.
 - [x] CHANGELOG actualizado.
-- [x] Índice documental actualizado.
-- [x] Terminología distingue selector de nueva solicitud y corrección.
-- [x] Feature 002 spec/plan/checklist sincronizados con Constitución 2.3.2 y Alembic 0003.
-- [ ] PR actualizado con la causa exacta del bug.
+- [ ] PR actualizado con la reproducción visual más reciente y la defensa `effectiveRequestType`.
