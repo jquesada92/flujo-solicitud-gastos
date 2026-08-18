@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-08-18 — Modal contextual para Acciones pendientes
+
+### Added
+- `backend/app/services/pending_action_service.py` para resolver tareas concretas del usuario desde permiso efectivo + asignación + estado.
+- Códigos contextuales `APPROVAL_DECISION`, `QUOTATION_VOTE`, `CORRECT_REQUEST` y `CLOSE_REQUEST`; no son permisos IAM nuevos.
+- `backend/app/api/my_actions.py` con `GET /api/expenses/{request_id}/my-actions` y `POST /api/expenses/{request_id}/approval-decision`.
+- `frontend/src/home-dashboard.jsx` como Dashboard modular con modal de acciones.
+- `frontend/src/home-dashboard.css` para el modal responsive.
+- `backend/tests/test_pending_actions.py`.
+- `backend/tests/test_frontend_dashboard_contract.py`.
+
+### Changed
+- **Inicio → Acciones pendientes** deja de navegar genéricamente a Solicitudes al seleccionar una fila.
+- Seleccionar una fila abre un modal y vuelve a consultar al backend las acciones todavía vigentes para el usuario autenticado.
+- **Ver todas** conserva navegación a Solicitudes.
+- `pending_my_action` cuenta acciones concretas y `pending_items` devuelve sus códigos.
+- El modal permite, según el workflow, Aprobar/Rechazar/Solicitar corrección, votar una cotización, subir factura/cerrar o abrir una solicitud propia para corregir y reenviar.
+- Después de cada mutación se recargan dashboard + `my-actions` para evitar controles obsoletos.
+- `vite.config.js` importa el `HomeDashboard` modular y elimina la definición legacy completa entre `function HomeDashboard` y `function App()` durante build.
+
+### Security
+- Las acciones del Dashboard requieren capacidad IAM y asignación concreta; `requests:approve` por sí solo no convierte todas las solicitudes pendientes en tareas personales.
+- La aprobación contextual no expone el token bearer usado por los enlaces de correo.
+- El backend vuelve a validar la acción aunque la tarjeta del Dashboard haya quedado desactualizada por otra sesión/canal.
+
+### Testing / CI
+- La cuota de GitHub Actions se agotó durante el PR; los runs bloqueados no se consideran CI verde.
+- Hasta recuperar cuota, suite backend, `npm run build` y Docker build/smoke son gates locales obligatorios antes de merge/deploy.
+
+### Migrations
+- Este modal/contextual resolver no agrega migración.
+- La rama conserva `0004` de Feature 006 como head Alembic.
+
+---
+
 ## 2026-08-18 — Permisos heredados por Cargo y Grupo
 
 ### Added
