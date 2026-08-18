@@ -1,6 +1,6 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.3.3**.
+> Constitución vigente: **2.4.0**.
 
 Aplicación web para solicitar, evaluar, aprobar, ejecutar y documentar gastos con trazabilidad y evidencia verificable.
 
@@ -12,6 +12,9 @@ El producto es **neutral respecto al tipo de organización**. Un PH, empresa, co
 - La estructura organizacional es **dato configurable**, no código.
 - `Usuario`, `Grupo`, `Rol`, `Permiso` y `Cargo` son conceptos separados.
 - Un cargo no concede permisos.
+- Todo usuario activo puede entrar a Inicio y dar seguimiento a las solicitudes mediante el baseline `requests:read`.
+- Ver una solicitud ajena no concede acciones sobre ella.
+- Solo el solicitante original o el Administrador del sistema pueden cancelar una solicitud abierta.
 - La cuenta técnica tiene política explícita por ambiente.
 - Área y Categoría son dimensiones independientes.
 - Una corrección nunca cambia silenciosamente el tipo de solicitud.
@@ -31,28 +34,31 @@ El producto es **neutral respecto al tipo de organización**. Un PH, empresa, co
 
 ## IAM configurable
 
-Para usuarios operativos:
+Para usuarios operativos activos:
 
 ```text
 Usuario
+  ├─ Baseline del producto: requests:read
   ├─ Grupos ──> Roles ──> Permisos
   ├─ Roles directos ──> Permisos
   └─ Permisos directos
 ```
 
-Si una capacidad no está permitida explícitamente, el resultado es DENY.
+`requests:read` es una capacidad base no revocable mientras el usuario esté activo. Para las demás capacidades, si no existe ALLOW explícito, el resultado es DENY.
 
 ### Permisos atómicos iniciales
 
 | Código | Capacidad |
 | --- | --- |
-| `requests:read` | Consultar solicitudes/documentos autorizados |
+| `requests:read` | Consultar solicitudes/documentos autorizados; baseline para usuarios activos |
 | `requests:create` | Crear/corregir solicitudes y cargar soportes |
 | `requests:approve` | Participar en votaciones y decisiones |
 | `requests:close` | Subir/reemplazar factura y cerrar |
 | `config:manage` | Administrar configuración e IAM |
 
 Los clientes pueden crear grupos, roles, cargos y asignaciones desde la interfaz; no pueden inventar permisos que el backend no implemente.
+
+La cancelación de una solicitud abierta **no se deriva de `requests:create`**. Es una regla de propiedad del recurso: únicamente el solicitante original o la cuenta protegida de Administrador del sistema pueden ejecutarla.
 
 ## Administrador del sistema por ambiente
 
@@ -66,7 +72,7 @@ Con:
 ENVIRONMENT=production
 ```
 
-sus permisos efectivos máximos son:
+sus permisos IAM efectivos máximos son:
 
 ```text
 config:manage
@@ -83,6 +89,8 @@ requests:close
 
 Aunque un rol, grupo o permiso directo intente concedérselos, el backend los filtra. Tampoco participa en poblaciones financieras de aprobación/votación.
 
+Como excepción explícita de administración del ciclo de vida, el Administrador del sistema **sí puede cancelar una solicitud abierta**. Esta facultad se valida mediante `system_accounts`; no equivale a conceder `requests:create`, `requests:approve` ni `requests:close`.
+
 ### Local / dev / test / staging / preview
 
 Con cualquier `ENVIRONMENT` diferente de `production`, la cuenta técnica recibe **todos los permisos atómicos activos** para poder probar el producto end-to-end con un solo usuario.
@@ -98,6 +106,19 @@ ENVIRONMENT=preview
 ```
 
 `RENDER=true` sigue activando validaciones fuertes de secretos/CORS, pero no convierte automáticamente un preview en producción para autorización. Solo `ENVIRONMENT=production` activa la segregación financiera.
+
+## Seguimiento universal
+
+Todo usuario activo y autenticado puede:
+
+- abrir **Inicio / Dashboard**;
+- ver métricas generales de solicitudes;
+- abrir **Solicitudes**;
+- consultar solicitudes creadas por otros usuarios para dar seguimiento.
+
+El baseline no concede creación, aprobación, cierre ni configuración. Las acciones personales del dashboard se calculan con permisos accionables reales.
+
+El listado canónico `GET /api/expenses` devuelve además `can_cancel` por solicitud. La UI usa ese valor para mostrar u ocultar **Cancelar solicitud** y no intenta inferir la autorización desde roles, cargos o `can_request`.
 
 ## Contrato del usuario autenticado
 
@@ -117,7 +138,7 @@ can_configure <- config:manage
 can_close     <- requests:close
 ```
 
-Estos aliases son solo UX/compatibilidad. El backend siempre vuelve a validar el permiso canónico.
+Estos aliases son solo UX/compatibilidad. El backend siempre vuelve a validar el permiso canónico o la regla de propiedad aplicable al recurso.
 
 ## Consola gráfica de Accesos
 
@@ -195,6 +216,8 @@ frontend/src/
 - contratos sensibles usan response models explícitos.
 - tests HTTP usan `FastAPI TestClient`.
 
+Rutas canónicas actualmente registradas antes de `expenses.py` legacy incluyen creación, corrección, cancelación, documentos, acciones financieras y seguimiento.
+
 ## Seguridad
 
 - JWT firmado con expiración absoluta.
@@ -205,8 +228,9 @@ frontend/src/
 - rate limiting separado para read/write/upload/sensitive.
 - CORS explícito en producción/runtime alojado.
 - documentos privados y validación de firma real de archivo.
-- autorización por permisos persistidos y política técnica ambiental; no por emails/nombres de cargos/IDs mágicos.
-- cuenta técnica segregada del flujo financiero **solo en producción**, y elevada deliberadamente para pruebas fuera de producción.
+- autorización por permisos persistidos, capacidades base, propiedad del recurso y política técnica ambiental; no por emails hardcodeados/nombres de cargos/IDs mágicos.
+- cuenta técnica segregada del flujo financiero en producción, con la excepción explícita de cancelación administrativa de solicitudes abiertas.
+- un usuario con `requests:create` no puede cancelar por ese hecho una solicitud creada por otro usuario.
 
 ## Base de datos y migraciones
 
@@ -221,6 +245,8 @@ backend/alembic/versions/
 ```
 
 `0003` repara solicitudes históricas que tengan evidencia durable de múltiples cotizaciones pero conserven accidentalmente `request_type=SIMPLE`.
+
+La feature de seguimiento/cancelación actual **no agrega migración de esquema**.
 
 El contenedor ejecuta antes de FastAPI:
 
@@ -423,6 +449,38 @@ La población de votación se obtiene desde usuarios con `requests:approve`, exc
 
 Las invitaciones guardadas representan el snapshot de participantes de esa ronda.
 
+### Seguimiento y cancelación
+
+Las solicitudes abiertas son visibles para todos los usuarios activos, pero la visibilidad no concede mutación.
+
+Puede cancelar una solicitud abierta únicamente:
+
+```text
+solicitante original
+OR
+Administrador del sistema registrado en system_accounts
+```
+
+Estados cancelables:
+
+```text
+QUOTATION_VOTING
+SUBMITTED
+PENDING_APPROVAL
+NEEDS_REVISION
+APPROVED
+```
+
+Estados no cancelables:
+
+```text
+CLOSED
+CANCELLED
+REJECTED
+```
+
+La cancelación requiere motivo y conserva `cancelled_at`, `cancelled_by` y `cancellation_reason`. El botón del frontend depende de `can_cancel` calculado por el backend.
+
 ### Corrección y reenvío
 
 `Corregir / reenviar` **preserva siempre el tipo original/canónico**:
@@ -459,13 +517,13 @@ Cuando se corrige una MULTI_QUOTE:
 - los eventos históricos se conservan;
 - la solicitud vuelve a `QUOTATION_VOTING`.
 
-Mientras `main.jsx` conserve la definición histórica de `ExpenseForm`, `frontend/vite.config.js` hace una única extracción estructural durante dev/build: importa `./expense-form.jsx` y elimina la función legacy completa del bundle. Ya no parchea granularmente condiciones internas del formulario. El build falla si esa frontera deja de encontrarse. Ver `docs/REQUEST_CORRECTIONS.md` y `specs/003-request-correction-invariants/`.
+Mientras `main.jsx` conserve la definición histórica de `ExpenseForm`, `frontend/vite.config.js` hace una extracción estructural durante dev/build: importa `./expense-form.jsx` y elimina la función legacy completa del bundle. El mismo transform sustituye el guard legacy de cancelación por `x.can_cancel` usando un patrón semántico validado. El build falla si esas fronteras dejan de encontrarse. Ver `docs/REQUEST_CORRECTIONS.md` y `specs/003-request-correction-invariants/`.
 
 ### Aprobación
 
 La población canónica de aprobadores se obtiene desde `requests:approve`, no desde cargos como Presidente/Tesorero ni flags `can_approve`.
 
-> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.3.3.
+> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.4.0.
 
 ### Cierre
 
@@ -489,9 +547,20 @@ La suite IAM verifica específicamente:
 - 403 de cierre en producción incluso con permiso financiero accidental;
 - exclusión de población de aprobación en producción.
 
+La suite de seguimiento verifica que cualquier usuario activo reciba `requests:read`, pueda ver solicitudes ajenas y cargar el dashboard sin adquirir permisos mutables.
+
+La suite de cancelación verifica:
+
+- `can_cancel=true` para el solicitante de una solicitud abierta;
+- `can_cancel=false` para otro usuario empresarial;
+- `requests:create` no permite cancelar una solicitud ajena;
+- cancelación propia durante `QUOTATION_VOTING`;
+- cancelación administrativa por cuenta técnica;
+- rechazo de cancelación de una solicitud cerrada.
+
 La suite de correcciones verifica además que una MULTI_QUOTE no pueda degradarse a SIMPLE, que un registro legacy con flag SIMPLE pero evidencia múltiple sea reparado, que conserve evidencia, que reinicie votos/invitaciones y que el frontend modular use el tipo efectivo para render y payload.
 
-Prueba manual específica:
+Prueba manual específica de corrección:
 
 ```text
 1. dejar seleccionada Solicitud sencilla;
@@ -499,6 +568,16 @@ Prueba manual específica:
 3. verificar Tipo de solicitud: Múltiples cotizaciones;
 4. verificar Opciones para votación con las cotizaciones existentes;
 5. verificar que no aparezca el formulario sencillo como estructura principal.
+```
+
+Prueba manual específica de cancelación:
+
+```text
+1. iniciar sesión como solicitante de una MULTI_QUOTE en QUOTATION_VOTING;
+2. verificar que aparezca Cancelar solicitud;
+3. iniciar sesión como otro usuario y verificar que no aparezca;
+4. iniciar sesión como Administrador del sistema y verificar que sí aparezca;
+5. cancelar indicando motivo y comprobar estado CANCELLED.
 ```
 
 CI ejecuta además frontend build y construcción/smoke tests de imágenes Docker.
@@ -522,6 +601,7 @@ Documentos principales:
 - `docs/IAM_MODEL.md`
 - `docs/FASTAPI_ARCHITECTURE.md`
 - `docs/REQUEST_CORRECTIONS.md`
+- `docs/REQUEST_TRACKING.md`
 - `docs/EMAIL_CONFIGURATION.md`
 - `docs/HISTORY.md`
 - `CHANGELOG.md`
@@ -532,7 +612,7 @@ Documentos principales:
 - `UserRole`, `title` y `can_*` permanecen temporalmente para compatibilidad; no autorizan.
 - `/api/users` legacy continúa temporalmente.
 - `frontend/src/main.jsx` sigue siendo monolítico en otras áreas.
-- El monolito todavía contiene bypasses visuales legacy como `user.role === "ADMIN"` y `canClose={true}`; el backend no confía en ellos. Deben migrarse a `permission_codes`.
-- `modularExpenseFormPlugin` sigue temporalmente mientras `main.jsx` conserve la definición legacy; debe retirarse cuando el shell importe directamente `expense-form.jsx`.
+- El monolito todavía contiene bypasses visuales legacy como `user.role === "ADMIN"` y `canClose={true}`; el backend no confía en ellos. Deben migrarse a `permission_codes`/capacidades por recurso.
+- `modularExpenseFormPlugin` sigue temporalmente mientras `main.jsx` conserve la definición legacy; también adapta el guard de cancelación a `can_cancel`. Debe retirarse cuando el shell importe componentes canónicos directamente.
 - `domain-normalization.js` sigue como capa temporal.
 - quorum/mayoría de aprobación y empate de cotizaciones requieren specs funcionales separadas.
