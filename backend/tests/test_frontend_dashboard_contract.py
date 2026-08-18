@@ -27,6 +27,8 @@ class FrontendDashboardContractTests(unittest.TestCase):
         self.assertIn('/quotation-vote`', source)
         self.assertIn('/close`', source)
         self.assertIn('REVISION_REQUESTED', source)
+        self.assertIn('Enviar a revisión', source)
+        self.assertIn('comment.trim().length < 3', source)
         self.assertIn('Votar por esta opción', source)
         self.assertIn('Subir factura y cerrar', source)
 
@@ -52,7 +54,7 @@ class FrontendDashboardContractTests(unittest.TestCase):
         self.assertIn('x.can_cancel', vite)
         self.assertIn('x.can_correct', vite)
         self.assertIn('canCreate || revision', vite)
-        self.assertIn('Enviar a revisión', vite)
+        self.assertNotIn('dashboard-action-wording', vite)
 
 
 if __name__ == '__main__':
