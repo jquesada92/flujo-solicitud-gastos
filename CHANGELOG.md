@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-08-17 — Enlaces de aprobación local usan el frontend Docker correcto
+
+### Fixed
+- Docker Compose ya no permite que un `PUBLIC_URL=http://localhost:5173` heredado desde `backend/.env` genere enlaces inválidos mientras el frontend real está publicado en `localhost:3000`.
+- El backend recibe por defecto `PUBLIC_URL=http://localhost:3000` bajo Compose.
+- `CORS_ALLOWED_ORIGINS` local incluye `localhost:3000` y `localhost:5173` para soportar Compose y Vite directo.
+
+### Added
+- `.env.example` raíz documenta `LOCAL_PUBLIC_URL` y `LOCAL_CORS_ALLOWED_ORIGINS`.
+- Regresión en `test_container_portability.py` que exige coherencia entre el puerto publicado por Compose y el `PUBLIC_URL` usado por los correos.
+- Documentación de diagnóstico para `ERR_CONNECTION_REFUSED` causado por desalineación entre puerto 3000/5173.
+
+### Behavior
+- Docker Compose → links nuevos `http://localhost:3000/email-action/...`.
+- Vite directo → `http://localhost:5173/email-action/...` si ese es el `PUBLIC_URL` configurado.
+- Producción → URL HTTPS de Vercel configurada en Render.
+
+---
+
 ## 2026-08-17 — Correo por ambiente: Google SMTP local / Brevo producción
 
 ### Changed
