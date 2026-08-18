@@ -32,7 +32,7 @@ function modularExpenseFormPlugin() {
       next = replaceRequired(
         next,
         reactImport,
-        `${reactImport}\nimport ExpenseForm from "./expense-form.jsx";`,
+        `${reactImport}\nimport ExpenseForm from "./expense-form.jsx";\nimport HomeDashboard from "./home-dashboard.jsx";`,
         "React import",
       );
 
@@ -46,6 +46,17 @@ function modularExpenseFormPlugin() {
       // component. Do not patch the JSX mount by exact whitespace/text: the
       // modular component already rehydrates when draft/request/flow changes.
       next = `${next.slice(0, formStart)}${next.slice(formEnd)}`;
+
+      const dashboardStart = next.indexOf("function HomeDashboard({");
+      const dashboardEnd = next.indexOf("function App()", dashboardStart);
+      if (dashboardStart < 0 || dashboardEnd < 0 || dashboardEnd <= dashboardStart) {
+        throw new Error("Legacy main.jsx extraction could not isolate HomeDashboard");
+      }
+
+      // Dashboard pending actions are now implemented in a dedicated component.
+      // Replace the full legacy function rather than patching individual row
+      // handlers so the modal contract remains maintainable and testable.
+      next = `${next.slice(0, dashboardStart)}${next.slice(dashboardEnd)}`;
 
       // The legacy table previously inferred cancellation from a fixed status
       // list plus can_request. The backend now returns can_cancel per request,
