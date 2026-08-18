@@ -176,6 +176,15 @@ backend/app/
 └── main.py       # alias de compatibilidad
 ```
 
+Frontend relevante para solicitudes:
+
+```text
+frontend/src/
+├── expense-form.jsx       # formulario canónico SIMPLE / MULTI_QUOTE
+├── main.jsx               # shell legacy aún pendiente de modularización total
+└── domain-normalization.js
+```
+
 ### FastAPI
 
 - `APIRouter` separa dominios/capacidades.
@@ -425,7 +434,7 @@ MULTI_QUOTE -> MULTI_QUOTE
 
 La pestaña que estaba seleccionada antes de pulsar **Corregir / reenviar** no participa en esa decisión. Si la pantalla estaba en **Solicitud sencilla** y se corrige una MULTI_QUOTE, el editor debe abrir directamente como MULTI_QUOTE.
 
-El frontend fuerza un remount del formulario al entrar en corrección y deriva el tipo desde la solicitud/evidencia durable. El backend valida de nuevo el tipo canónico.
+El formulario canónico vive en `frontend/src/expense-form.jsx`. Durante corrección calcula el tipo efectivo exclusivamente desde la solicitud/evidencia durable; la pestaña solo aplica a nuevas solicitudes.
 
 Para compatibilidad histórica se considera MULTI_QUOTE cuando:
 
@@ -439,16 +448,18 @@ Alembic `0003` persiste la reparación de esas filas legacy.
 
 Cuando se corrige una MULTI_QUOTE:
 
-- el formulario vuelve a mostrar sus cotizaciones existentes;
-- proveedor, monto, URL y observaciones pueden corregirse;
-- los soportes existentes se conservan;
+- se muestra `Tipo de solicitud: Múltiples cotizaciones` como dato de solo lectura;
+- el layout visible es **Opciones para votación**, no el formulario SIMPLE;
+- se restauran las cotizaciones existentes;
+- proveedor, monto, URL y observaciones se editan dentro de cada opción;
+- los soportes existentes se conservan y se indican como soporte existente;
 - por ahora se mantiene la misma cantidad de opciones;
 - se genera un `flow_id` nuevo;
 - votos e invitaciones vigentes de la ronda anterior se reinician;
 - los eventos históricos se conservan;
 - la solicitud vuelve a `QUOTATION_VOTING`.
 
-Mientras `ExpenseForm` siga dentro del monolito legacy, `frontend/vite.config.js` aplica una transformación estricta para hidratar correctamente una corrección MULTI_QUOTE en dev/build. El build falla si ese parche deja de encontrar los fragmentos esperados. Ver `docs/REQUEST_CORRECTIONS.md` y `specs/003-request-correction-invariants/`.
+Mientras `main.jsx` conserve la definición histórica de `ExpenseForm`, `frontend/vite.config.js` hace una única extracción estructural durante dev/build: importa `./expense-form.jsx` y elimina la función legacy completa del bundle. Ya no parchea granularmente condiciones internas del formulario. El build falla si esa frontera deja de encontrarse. Ver `docs/REQUEST_CORRECTIONS.md` y `specs/003-request-correction-invariants/`.
 
 ### Aprobación
 
@@ -478,14 +489,16 @@ La suite IAM verifica específicamente:
 - 403 de cierre en producción incluso con permiso financiero accidental;
 - exclusión de población de aprobación en producción.
 
-La suite de correcciones verifica además que una MULTI_QUOTE no pueda degradarse a SIMPLE, que un registro legacy con flag SIMPLE pero evidencia múltiple sea reparado, que conserve evidencia y que reinicie votos/invitaciones de la ronda.
+La suite de correcciones verifica además que una MULTI_QUOTE no pueda degradarse a SIMPLE, que un registro legacy con flag SIMPLE pero evidencia múltiple sea reparado, que conserve evidencia, que reinicie votos/invitaciones y que el frontend modular use el tipo efectivo para render y payload.
 
 Prueba manual específica:
 
 ```text
 1. dejar seleccionada Solicitud sencilla;
 2. pulsar Corregir / reenviar en una MULTI_QUOTE;
-3. verificar que el editor abre como Múltiples cotizaciones sin seleccionar esa pestaña antes.
+3. verificar Tipo de solicitud: Múltiples cotizaciones;
+4. verificar Opciones para votación con las cotizaciones existentes;
+5. verificar que no aparezca el formulario sencillo como estructura principal.
 ```
 
 CI ejecuta además frontend build y construcción/smoke tests de imágenes Docker.
@@ -518,8 +531,8 @@ Documentos principales:
 
 - `UserRole`, `title` y `can_*` permanecen temporalmente para compatibilidad; no autorizan.
 - `/api/users` legacy continúa temporalmente.
-- `frontend/src/main.jsx` sigue siendo monolítico.
+- `frontend/src/main.jsx` sigue siendo monolítico en otras áreas.
 - El monolito todavía contiene bypasses visuales legacy como `user.role === "ADMIN"` y `canClose={true}`; el backend no confía en ellos. Deben migrarse a `permission_codes`.
-- `frontend/vite.config.js` contiene temporalmente el transform de seguridad para hidratar correcciones MULTI_QUOTE; debe retirarse al modularizar `ExpenseForm`.
+- `modularExpenseFormPlugin` sigue temporalmente mientras `main.jsx` conserve la definición legacy; debe retirarse cuando el shell importe directamente `expense-form.jsx`.
 - `domain-normalization.js` sigue como capa temporal.
 - quorum/mayoría de aprobación y empate de cotizaciones requieren specs funcionales separadas.
