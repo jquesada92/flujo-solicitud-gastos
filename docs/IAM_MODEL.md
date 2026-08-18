@@ -52,14 +52,37 @@ system_accounts ← users
 
 ## Fórmula para usuarios operativos
 
+Para todo usuario activo:
+
 ```text
 effective_permissions(user) =
-    direct permissions
+    {requests:read}
+  ∪ direct permissions
   ∪ permissions from direct roles
   ∪ permissions from group roles
 ```
 
-No hay DENY explícito en esta versión. La ausencia de ALLOW produce DENY.
+`requests:read` es baseline del producto y no se revoca quitándolo de un rol/grupo. Para las capacidades mutables no hay DENY explícito en esta versión; la ausencia de ALLOW produce DENY.
+
+## Cancelación no es `requests:create`
+
+La facultad de cancelar una solicitud abierta se resuelve por identidad/propiedad del recurso y no por una asignación IAM heredable.
+
+```text
+can_cancel(expense, user) =
+    expense.status está abierto
+    AND (
+        expense.requested_by == user.email
+        OR user ∈ system_accounts
+    )
+```
+
+Por tanto:
+
+- el solicitante original puede cancelar su propia solicitud abierta;
+- el Administrador del sistema puede cancelar cualquier solicitud abierta;
+- otro usuario con `requests:create`, `requests:approve` o `config:manage` no puede cancelar una solicitud ajena por esos permisos;
+- el frontend recibe `can_cancel` calculado por el backend y no debe reconstruir esta regla localmente.
 
 ## Política de `TECHNICAL_ADMIN`
 
@@ -73,7 +96,7 @@ Cuando:
 ENVIRONMENT=production
 ```
 
-la cuenta técnica obtiene únicamente:
+la cuenta técnica obtiene únicamente como permisos IAM:
 
 ```text
 config:manage
@@ -89,6 +112,8 @@ requests:close
 ```
 
 y la excluye de poblaciones financieras para esos permisos.
+
+La cancelación administrativa de una solicitud abierta es una excepción explícita de ciclo de vida basada en `system_accounts`; no otorga ni implica los permisos financieros anteriores.
 
 ### No producción
 
@@ -106,6 +131,7 @@ La cuenta puede probar end-to-end:
 - votación de cotizaciones;
 - carga/reemplazo de factura;
 - cierre;
+- cancelación;
 - configuración.
 
 También puede aparecer en `users_with_permission('requests:approve')` fuera de producción.
@@ -150,6 +176,8 @@ can_close     = requests:close
 
 `apply_effective_permissions_to_user()` deriva estos valores. No se usan como fuente de autorización.
 
+En respuestas de solicitudes, `can_cancel` es una capacidad por recurso calculada por el backend y no forma parte de `permission_codes`.
+
 ## Administración gráfica
 
 `Configuración → Accesos` expone:
@@ -163,6 +191,8 @@ can_close     = requests:close
 - permisos efectivos y su origen.
 
 Los permisos del producto son lectura/configuración de capacidades disponibles. La organización configura roles y asignaciones.
+
+`requests:read` debe mostrarse como baseline efectivo para usuarios activos aunque no exista asignación explícita.
 
 Para cuentas técnicas, `permission_sources()` identifica si el acceso proviene de:
 
@@ -224,6 +254,8 @@ Los campos `role`, `title` y `can_*` aún existen en `users` por compatibilidad.
 `UserOut.permission_codes` y `UserOut.can_close` permiten migrar el frontend hacia capacidades reales.
 
 El frontend monolítico todavía contiene bypasses visuales legacy como `user.role === "ADMIN"` y un `canClose={true}`. No son autoridad y deben retirarse en la modularización del frontend.
+
+La cancelación ya no confía en esos bypasses: el listado canónico devuelve `can_cancel` y el endpoint vuelve a validar propiedad/cuenta técnica.
 
 ## Evolución futura
 
