@@ -38,6 +38,23 @@ Los permisos pueden provenir de asignación directa, Rol directo, Grupo → Rol 
 
 `GET /api/expenses/dashboard` muestra métricas compartidas de la organización.
 
+Los KPIs superiores son **solo informativos**. En particular:
+
+```text
+Acciones que requieren mi atención
+Solicitudes en proceso
+Cerradas en 24 horas
+```
+
+se renderizan como contenido (`article`) y no como botones. No navegan, no abren modales y no ejecutan ninguna acción mediante clic o teclado.
+
+La interacción se concentra en controles explícitos:
+
+```text
+fila de Acciones pendientes → modal contextual
+Ver todas                    → Solicitudes
+```
+
 `pending_my_action` es personal y cuenta acciones concretas vigentes, no simplemente solicitudes abiertas ni permisos abstractos.
 
 El resolver canónico vive en:
@@ -272,11 +289,15 @@ frontend/src/home-dashboard.jsx
 frontend/src/home-dashboard.css
 ```
 
+Los tres KPIs superiores usan elementos no interactivos. Las filas de `pending_items` sí son controles porque abren una acción concreta del usuario.
+
 Mientras `main.jsx` conserve una implementación histórica de `HomeDashboard`, `vite.config.js` elimina la función completa durante build e importa el componente modular. No se parchea el `onClick` de cada fila por coincidencias de texto.
 
 Mientras `ExpenseTable` permanezca dentro de `main.jsx`, el build todavía reemplaza la condición legacy de cancelación por `x.can_cancel`. Esa compatibilidad es independiente del modal de Inicio.
 
 ## Accesibilidad
+
+Los KPIs informativos no deben entrar al orden de tabulación como botones.
 
 El modal usa:
 
@@ -303,7 +324,9 @@ Deben demostrar:
 - acciones pendientes determinadas por permiso + asignación + estado;
 - decisión de aprobación contextual sin token de correo;
 - votación/corrección/cierre personalizados;
+- KPIs superiores informativos, sin botones ni handlers `onClick`;
 - fila pendiente abre modal contextual y no el handler genérico de Solicitudes;
+- **Ver todas** conserva navegación explícita;
 - revalidación después de cada mutación.
 
 Mientras la cuota de GitHub Actions esté agotada, estas pruebas, `npm run build` y los builds Docker deben ejecutarse localmente antes de merge/deploy.
