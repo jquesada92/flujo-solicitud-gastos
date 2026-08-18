@@ -14,14 +14,9 @@ CLOSURE_ACTION_STATUSES = {
     ExpenseStatus.CLOSED,
 }
 
-DELEGATABLE_STATUSES = {
-    ExpenseStatus.QUOTATION_VOTING,
-    ExpenseStatus.SUBMITTED,
-    ExpenseStatus.PENDING_APPROVAL,
-    ExpenseStatus.NEEDS_REVISION,
-    ExpenseStatus.APPROVED,
-    ExpenseStatus.CLOSED,
-}
+# Delegation is intentionally offered only when closure/invoice work is
+# actionable. This keeps the request table free of premature closure controls.
+DELEGATABLE_STATUSES = CLOSURE_ACTION_STATUSES
 
 
 def is_requester(expense: Expense, user: User) -> bool:
