@@ -1,5 +1,96 @@
 # Historial funcional y técnico
 
+## 2026-08-18 — Cargo y Grupo pasan a ser fuentes configurables de Roles
+
+### Problema productivo que reveló la brecha
+
+En producción se observó una solicitud MULTI_QUOTE que indicaba:
+
+```text
+No existe otro usuario activo con permiso de aprobación para participar en la votación
+```
+
+mientras la pantalla legacy mostraba usuarios Tesorero y Vicepresidente con **Aprobar** marcado.
+
+La investigación confirmó que existían dos modelos de acceso conviviendo:
+
+```text
+Pantalla legacy
+AccessProfile.can_approve → users.can_approve
+
+Motor canónico
+users_with_permission('requests:approve') → IAM persistido
+```
+
+El workflow nuevo no consulta `users.can_approve`, por lo que un cargo podía verse configurado como aprobador y aun así no formar parte de la población IAM real.
+
+### Decisión funcional
+
+Se evoluciona el IAM para soportar explícitamente dos formas organizacionales de herencia:
+
+```text
+Usuario → Grupo ─────────→ Rol → Permiso
+       ↘ Cargo/Posición ─→ Rol → Permiso
+       ↘ Rol directo ─────────→ Permiso
+       ↘ Permiso directo
+```
+
+Esto permite configurar, por ejemplo:
+
+```text
+Rol: Aprobador
+  requests:approve
+
+Cargo Presidente      → Aprobador
+Cargo Vicepresidente  → Aprobador
+Cargo Tesorero        → Aprobador
+
+Grupo Junta Directiva → Aprobador
+```
+
+El mismo Rol puede reutilizarse en varios Cargos y Grupos.
+
+El nombre del Cargo **no autoriza**. Runtime no puede contener condiciones como `cargo == TESORERO`; la autorización proviene exclusivamente de la relación persistida `Cargo → Rol → Permiso`.
+
+### Implementación
+
+Se agrega `position_roles` y el resolver IAM incorpora una nueva fuente SQL:
+
+```text
+UserPosition
+→ Position(active)
+→ PositionRole
+→ Role(active)
+→ RolePermission
+→ Permission(active)
+```
+
+`effective_permission_codes()`, `users_with_permission()` y `permission_sources()` usan el mismo modelo. Los orígenes pueden mostrarse como:
+
+```text
+Cargo Tesorero → Aprobador
+Grupo Junta Directiva → Aprobador
+```
+
+La consola **Configuración → Accesos → Cargos** permite seleccionar Roles heredados, mientras **Grupos** conserva miembros + Roles heredados.
+
+### Migración 0004
+
+`20260818_0004_position_role_inheritance.py`:
+
+1. crea `position_roles`;
+2. importa una sola vez `access_profiles` y `users.title` como datos de compatibilidad;
+3. transforma los flags legacy en permisos del Rol (`can_approve → requests:approve`, etc.);
+4. crea/reutiliza Positions y Roles equivalentes;
+5. crea `PositionRole` y `UserPosition`;
+6. excluye `system_accounts` de la asignación organizacional migrada.
+
+Después de la migración, `can_*`, `AccessProfile`, `users.title` y `BOARD_CODES` no son autoridad runtime. La pantalla autoritativa para cambios de acceso es **Configuración → Accesos**.
+
+La Constitución evoluciona a **2.5.0** porque Cargo deja de ser exclusivamente descriptivo: ahora puede heredar Roles configurables, manteniendo la prohibición de autorizar por nombres hardcodeados.
+
+---
+
 ## 2026-08-17 — Seguimiento universal y cancelación por solicitante/Admin del sistema
 
 ### Decisión funcional
@@ -38,15 +129,7 @@ La cancelación exige motivo y conserva actor/timestamp/razón. El listado canó
 
 ### Diagnóstico de producción
 
-Una captura de Configuración confirmó que Tesorero y Vicepresidente ya tenían permiso efectivo de aprobación. Por tanto se descartó el supuesto de que el error observado exigía un backfill de `can_approve → requests:approve` en Neon.
-
-No se agrega migración IAM para esta feature. La cadena Alembic permanece:
-
-```text
-0000 → 0001 → 0002 → 0003
-```
-
-Se retiró además un residuo transitorio que había dejado `application.py` importando un bridge legacy inexistente durante la investigación.
+Una captura de Configuración inicialmente parecía confirmar que Tesorero y Vicepresidente tenían permiso de aprobación. La investigación posterior precisó que esa pantalla era legacy y reflejaba `AccessProfile.can_approve/users.can_approve`, no necesariamente `requests:approve` efectivo en IAM. Ese hallazgo dio origen a Feature 006 y a la migración `0004` documentada arriba.
 
 ### Implementación
 
@@ -56,7 +139,7 @@ Se retiró además un residuo transitorio que había dejado `application.py` imp
 - el frontend temporal consume `x.can_cancel` para el botón **Cancelar solicitud**.
 - `test_request_cancellation.py` prueba propiedad, cuenta técnica y estados terminales.
 
-La Constitución 2.4.0 ya define backend authoritative, baseline de lectura y política de cuenta técnica; la regla de cancelación se documenta como una regla de recurso dentro de Feature 005 sin crear un nuevo permiso heredable.
+La Constitución 2.4.0 introdujo backend authoritative y baseline de lectura; la regla de cancelación permanece como regla de recurso, no como permiso heredable.
 
 ---
 
@@ -385,6 +468,8 @@ Los cinco permisos iniciales son:
 
 Los Grupos, Roles, Cargos, membresías y asignaciones son configurables desde la interfaz. Los nombres de estructuras organizacionales no se utilizan en condiciones de autorización.
 
+> Este modelo fue evolucionado posteriormente por Constitución 2.5.0 / Feature 006 para permitir `Cargo → Rol → Permiso` sin autorizar por el nombre del Cargo.
+
 ### Cuenta técnica
 
 La cuenta de bootstrap del administrador del sistema queda identificada mediante `system_accounts`. La restricción config/read se aplica específicamente en producción; fuera de producción la política posterior permite acceso completo de prueba.
@@ -412,11 +497,13 @@ El administrador técnico de la plataforma no debe formar parte del proceso fina
 
 ### Baseline de base de datos
 
-Al retirar `Base.metadata.create_all()` del startup se detectó que una instalación nueva también necesitaba una ruta determinista de creación. Se añadió `20260817_0000_application_baseline.py`, libre del dominio inmobiliario. La cadena actual es:
+Al retirar `Base.metadata.create_all()` del startup se detectó que una instalación nueva también necesitaba una ruta determinista de creación. Se añadió `20260817_0000_application_baseline.py`, libre del dominio inmobiliario. La cadena en ese momento era:
 
 ```text
 0000 application baseline → 0001 IAM foundation → 0002 system accounts → 0003 MULTI_QUOTE request_type repair
 ```
+
+Feature 006 agrega posteriormente `0004 position role inheritance`.
 
 El baseline conserva tablas existentes cuando se aplica sobre la base actual y crea el esquema base cuando se ejecuta sobre una base limpia. Una prueba de topología falla si aparecen múltiples heads o se rompe esta cadena.
 
@@ -464,16 +551,18 @@ Se agrega una consola modular `Configuración → Accesos` para administrar Usua
 
 La consola consume `/api/iam/*` y no depende de perfiles/cargos hardcodeados del frontend monolítico.
 
+Feature 006 amplía esta consola para administrar también **Roles heredados por Cargo**.
+
 ---
 
 ## 2026-08-17 — Deuda funcional mantenida explícitamente
 
 Pendientes separados:
 
-- fórmula exacta del motor de aprobación para cumplir la Constitución 2.3.3;
+- fórmula exacta del motor de aprobación para cumplir la Constitución vigente;
 - regla de quorum/empate de votación de cotizaciones;
 - edición estructural de una ronda MULTI_QUOTE corregida (agregar/eliminar opciones con evidencia/versionado explícito);
-- retiro completo de `UserRole`, `can_*`, `/api/users` legacy y ramas legacy de `api/expenses.py`;
+- retiro completo de `UserRole`, `can_*`, `AccessProfile`, `BOARD_CODES`, `/api/users` legacy y ramas legacy de `api/expenses.py`;
 - modularización restante de `frontend/src/main.jsx`, incluyendo retiro de bypasses visuales de ADMIN y `canClose={true}`;
 - retirar `modularExpenseFormPlugin` cuando `main.jsx` importe directamente el componente modular.
 
