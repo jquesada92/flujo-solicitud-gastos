@@ -113,6 +113,8 @@ Todo usuario activo recibe `requests:read` como baseline y puede abrir Inicio/Da
 
 La lectura no concede mutaciones. En particular, ver una solicitud ajena no autoriza modificarla ni cancelarla.
 
+Los KPIs superiores del Dashboard son informativos y no son controles interactivos. La interacción se concentra en las filas de **Acciones pendientes** y en **Ver todas**.
+
 ### Acciones pendientes
 
 Las acciones de Inicio no son nuevos permisos IAM. Son tareas concretas resueltas por `pending_action_service.py` desde permiso efectivo + asignación + estado:
