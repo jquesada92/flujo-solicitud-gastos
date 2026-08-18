@@ -231,6 +231,21 @@ El bootstrap se ejecuta como módulo Python desde la raíz `backend/`/`/app`.
 docker compose up --build
 ```
 
+Docker Compose publica el frontend Nginx en:
+
+```text
+http://localhost:3000
+```
+
+Por ese motivo, Compose fuerza por defecto el `PUBLIC_URL` del backend a `http://localhost:3000` para que los enlaces incluidos en correos de aprobación/votación sean alcanzables. El `.env` de la raíz puede personalizarlo con:
+
+```env
+LOCAL_PUBLIC_URL=http://localhost:3000
+LOCAL_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
+```
+
+`localhost:5173` corresponde al servidor de desarrollo de Vite cuando se ejecuta directamente con `npm run dev`; no debe aparecer en correos mientras solo esté levantado Docker Compose.
+
 El valor por defecto de `ENVIRONMENT` es no productivo, por lo que el Administrador del sistema puede probar todas las capacidades disponibles localmente.
 
 Para comprobarlo:
@@ -279,7 +294,7 @@ Prueba el transporte antes de crear una solicitud:
 docker compose exec backend python -m scripts.test_email --to destino@example.com
 ```
 
-Si el comando termina correctamente, Google aceptó el correo. Luego prueba el flujo SIMPLE/MULTI_QUOTE. Ver `docs/EMAIL_CONFIGURATION.md` y `specs/004-email-delivery-by-environment/`.
+Si el comando termina correctamente, Google aceptó el correo. Luego prueba el flujo SIMPLE/MULTI_QUOTE. Bajo Docker Compose, un link nuevo de aprobación/votación debe comenzar por `http://localhost:3000/email-action/`. Ver `docs/EMAIL_CONFIGURATION.md` y `specs/004-email-delivery-by-environment/`.
 
 ### Backend sin Docker
 
