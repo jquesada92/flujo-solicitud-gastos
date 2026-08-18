@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.6.0  
+**Versión:** 2.7.0  
 **Vigente desde:** 2026-08-18
 
 ## 1. Evolucionar, no reconstruir sin necesidad
@@ -32,12 +32,13 @@ La estructura organizacional tampoco puede quedar codificada mediante nombres co
 - **Cargo / Posición**: elemento configurable de la estructura organizacional que puede heredar uno o más Roles. El nombre del Cargo nunca autoriza por sí mismo.
 - **Área**: unidad, departamento o función organizacional asociada al gasto.
 - **Categoría**: naturaleza del bien o servicio adquirido.
+- **Delegación de cierre/factura**: asignación explícita y revocable que hace el solicitante para que otro usuario activo pueda gestionar el cierre y la factura de una solicitud concreta.
 
 Área y Categoría son catálogos independientes. Una Categoría puede habilitarse para múltiples Áreas mediante una relación configurable.
 
 ## 4. IAM configurable: permisos sobre nombres
 
-La autorización canónica se resuelve mediante permisos efectivos persistidos en PostgreSQL, capacidades base definidas por el producto y las políticas explícitas de cuenta técnica definidas por ambiente.
+La autorización canónica se resuelve mediante permisos efectivos persistidos en PostgreSQL, capacidades base definidas por el producto, reglas explícitas por recurso y las políticas de cuenta técnica definidas por ambiente.
 
 Modelo:
 
@@ -47,6 +48,7 @@ Usuario → Grupo ─────────→ Rol → Permiso
        ↘ Rol directo ─────────→ Permiso
        ↘ Permiso directo
        ↘ Capacidades base del producto
+       ↘ Capacidades por recurso/delegación
 ```
 
 Para usuarios operativos, los permisos efectivos son la unión de:
@@ -59,17 +61,16 @@ Para usuarios operativos, los permisos efectivos son la unión de:
 
 Un mismo Rol puede reutilizarse simultáneamente en Grupos, Cargos y asignaciones directas. Por ejemplo, un Rol `Aprobador` con `requests:approve` puede asociarse a los Cargos Presidente/Tesorero y también al Grupo Junta Directiva sin duplicar la definición del permiso.
 
-Para capacidades mutables no concedidas explícitamente por una de estas relaciones, el resultado es **DENY**, salvo reglas de recurso explícitas definidas por esta Constitución, como cancelar o corregir una solicitud propia y las excepciones administrativas de la cuenta técnica.
+Para capacidades mutables no concedidas explícitamente por una de estas relaciones, el resultado es **DENY**, salvo reglas de recurso explícitas definidas por esta Constitución, como cancelar, corregir o cerrar/gestionar factura de una solicitud cuando el actor sea propietario, cuenta técnica protegida o delegado válido según corresponda.
 
-El producto define las capacidades atómicas disponibles. Cada organización configura desde la interfaz sus grupos, roles, cargos, membresías y asignaciones.
-
-Permisos funcionales iniciales:
+Permisos funcionales activos iniciales:
 
 - `requests:read`;
 - `requests:create`;
 - `requests:approve`;
-- `requests:close`;
 - `config:manage`.
+
+`requests:close` puede permanecer físicamente como **permiso legacy inactivo** para trazabilidad/compatibilidad histórica, pero no autoriza runtime de cierre, factura ni delegación. No debe presentarse como capacidad operativa configurable.
 
 ### Baseline universal de seguimiento
 
@@ -87,17 +88,19 @@ La lectura universal no concede ninguna acción mutable. Un usuario puede tener 
 
 - crear nuevas solicitudes (`requests:create`);
 - aprobar o votar (`requests:approve`);
-- subir factura/cerrar (`requests:close`);
+- cerrar/gestionar factura de una solicitud ajena sin delegación;
 - administrar configuración (`config:manage`).
 
 **Corregir / reenviar no se concede por `requests:create` sobre solicitudes ajenas.** Es una capacidad por recurso reservada al solicitante original y a la cuenta protegida Administrador del sistema según la sección 12.
+
+**Cerrar / adjuntar o corregir factura tampoco se concede por un permiso global.** Se rige por la sección 14.
 
 Un rol, grupo o cargo puede terminar heredando `requests:read` por claridad, pero quitarlo de esas relaciones **no puede retirar** la capacidad base de un usuario activo. Los usuarios inactivos no pueden autenticarse ni ejercer el baseline.
 
 No autorizar por:
 
 - `UserRole.ADMIN`, `REQUESTER`, `APPROVER` o `VIEWER`;
-- `can_request`, `can_approve`, `can_view`, `can_configure` como fuente de verdad;
+- `can_request`, `can_approve`, `can_view`, `can_configure`, `can_close` legacy como fuente de verdad;
 - comparar el nombre/código de un rol, grupo, cargo o perfil;
 - correo fijo;
 - ID mágico;
@@ -124,16 +127,17 @@ Cuando `ENVIRONMENT=production`, la cuenta técnica mantiene segregación estric
 En producción no puede obtener ni ejercer:
 
 - `requests:create`;
-- `requests:approve`;
-- `requests:close`.
+- `requests:approve`.
+
+`requests:close` ya no es una capacidad operativa del modelo vigente.
 
 Esta restricción prevalece incluso si una configuración posterior intenta otorgarle permisos financieros mediante grupo, cargo, rol o permiso directo. Tampoco participa en poblaciones financieras de aprobación o votación.
 
-La cuenta técnica puede cancelar o corregir/reenviar una solicitud abierta como **acciones administrativas del ciclo de vida**, no como permisos financieros. Estas excepciones se identifican por `system_accounts`; no le conceden `requests:create`, `requests:approve` ni `requests:close`.
+La cuenta técnica puede cancelar, corregir/reenviar y gestionar cierre/factura de una solicitud como **acciones administrativas del ciclo de vida**, no como permisos financieros. Estas excepciones se identifican por `system_accounts` y no amplían el IAM empresarial.
 
 ### No producción
 
-En cualquier ambiente distinto de `production` —por ejemplo `local`, `development`, `dev`, `test`, `staging` o `preview`— la cuenta técnica debe poder ejercer **todos los permisos atómicos activos del producto** para realizar pruebas end-to-end.
+En cualquier ambiente distinto de `production` —por ejemplo `local`, `development`, `dev`, `test`, `staging` o `preview`— la cuenta técnica debe poder ejercer todos los permisos atómicos activos del producto para realizar pruebas end-to-end, además de sus capacidades administrativas por recurso.
 
 En no producción también puede participar en poblaciones de aprobación/votación cuando el permiso correspondiente esté activo, de forma que un único administrador técnico pueda validar todas las funcionalidades sin crear cuentas auxiliares obligatorias.
 
@@ -159,9 +163,10 @@ La interfaz debe permitir administrar, sin despliegue de código:
 - permisos directos de usuario;
 - visualización de permisos efectivos y su origen;
 - Áreas y Categorías;
-- políticas de aprobación y demás configuración organizacional cuando corresponda.
+- políticas de aprobación y demás configuración organizacional cuando corresponda;
+- delegación/revocación del cierre y factura de una solicitud por parte de su solicitante.
 
-La interfaz IAM debe distinguir las capacidades configurables de las capacidades base del producto. No debe presentar `requests:read` como una capacidad que pueda revocarse efectivamente a un usuario activo.
+La interfaz IAM debe distinguir las capacidades configurables de las capacidades base y por recurso. No debe presentar `requests:read` como revocable ni `requests:close` como permiso operativo vigente.
 
 La vista de permisos efectivos debe explicar el origen, por ejemplo:
 
@@ -171,6 +176,8 @@ Grupo Junta Directiva → Aprobador
 Rol directo: Comprador
 Asignación directa
 ```
+
+La delegación de cierre pertenece al expediente de la solicitud, no al IAM organizacional global.
 
 Una organización futura puede tener estructuras completamente distintas a la configuración inicial del PH.
 
@@ -188,7 +195,8 @@ El frontend puede ocultar o mostrar acciones por UX, pero el backend es la autor
 - decisiones;
 - configuración IAM;
 - política ambiental de cuentas técnicas;
-- propiedad/capacidades por recurso como cancelación y corrección;
+- propiedad/capacidades por recurso como cancelación, corrección y cierre/factura;
+- delegaciones de cierre/factura y su revocación;
 - invariantes del tipo de solicitud durante una corrección;
 - interrupción del flujo cuando un aprobador envía una solicitud a revisión.
 
@@ -257,11 +265,15 @@ Los cambios futuros de membresías, roles, cargos con herencia y permisos deben 
 
 Una acción **Enviar a revisión** debe conservar el aprobador que la ejecutó, timestamp y comentario obligatorio; la corrección posterior debe conservar actor/fecha y generar una nueva versión/ronda del flujo según corresponda.
 
+Cada delegación de cierre/factura debe conservar al solicitante que la creó, usuario delegado y timestamp. Cambiar o revocar una delegación debe conservar la fila histórica anterior mediante `revoked_at` y actor de revocación; no se reemplaza silenciosamente.
+
 ## 11. Evidencia documental
 
 Los documentos son evidencia privada. Deben validarse por contenido real, almacenarse fuera del acceso público directo, descargarse con autorización backend, conservar versiones al sustituirse y registrar actor/fecha/motivo.
 
 Una corrección no debe obligar a descartar o volver a cargar evidencia válida ya asociada a la solicitud únicamente porque el navegador no pueda prellenar un control de archivo.
+
+La factura final y sus reemplazos forman parte del expediente. Solo un actor autorizado para el cierre/factura de esa solicitud puede cargarlos o sustituirlos.
 
 ## 12. Solicitudes, clasificación, seguimiento, cancelación y correcciones
 
@@ -354,12 +366,40 @@ Al registrarse una sola solicitud válida de revisión:
 
 Aprobar/rechazar continúan sujetos a sus reglas de respuesta/mayoría. Las reglas de selección de cotización no se presumen iguales a las reglas de aprobación. Si el código legacy aún difiere de la fórmula de mayoría anterior, debe documentarse como deuda funcional y no presentarse como resuelto por un refactor de arquitectura.
 
-## 14. Aprobado no significa cerrado
+## 14. Aprobado no significa cerrado: propiedad y delegación de cierre/factura
 
-Una solicitud aprobada permanece en proceso hasta cumplir el cierre. El cierre requiere factura y `requests:close`.
+Una solicitud aprobada permanece en proceso hasta que se registre su factura y se cierre el expediente.
 
-- En producción, una cuenta técnica nunca puede cerrar solicitudes.
-- En no producción, una cuenta técnica puede cerrar solicitudes para pruebas end-to-end conforme a la política de la sección 5.
+**Cerrar, adjuntar la factura final o corregir/reemplazar esa factura son capacidades por recurso.** Solo pueden ejecutarlas:
+
+1. el solicitante original;
+2. la cuenta protegida Administrador del sistema identificada mediante `system_accounts`; o
+3. un usuario activo con una delegación vigente creada explícitamente por el solicitante para esa solicitud.
+
+`requests:close`, `requests:create`, `requests:approve`, `config:manage`, Grupo, Rol o Cargo **no** autorizan por sí solos el cierre/factura de una solicitud ajena.
+
+### Delegación
+
+- únicamente el solicitante original puede crear, cambiar o revocar la delegación;
+- el Administrador del sistema no necesita ser delegado y no puede convertirse en sustituto del solicitante para crear delegaciones ordinarias;
+- solo puede existir **una delegación activa por solicitud**;
+- cambiar de delegado revoca primero la delegación anterior y conserva su historial;
+- el delegado debe ser un usuario activo y no una cuenta protegida de sistema;
+- la delegación pertenece a una solicitud concreta y no concede autoridad sobre otras solicitudes;
+- revocar una delegación elimina inmediatamente la autoridad futura del delegado;
+- el solicitante conserva su autoridad aunque haya delegado;
+- el Administrador del sistema conserva su excepción administrativa aunque exista o no delegación.
+
+### Tarea personal de cierre
+
+Cuando una solicitud está `APPROVED`, `CLOSE_REQUEST` aparece para:
+
+- el solicitante original; y
+- el delegado activo, si existe.
+
+El Administrador del sistema puede cerrar desde la lista por excepción administrativa, pero no recibe todas las solicitudes aprobadas como tareas personales de Dashboard.
+
+Una solicitud `CLOSED` permite reemplazar/corregir la factura únicamente a los mismos actores autorizados. La sustitución conserva versiones y exige motivo.
 
 ## 15. Migraciones, despliegue y portabilidad de contenedores
 
@@ -390,7 +430,8 @@ Las migraciones de compatibilidad pueden leer estructuras legacy una sola vez pa
 Como mínimo:
 
 - default deny para capacidades mutables; `requests:read` es la excepción base explícita para usuarios activos;
-- reglas de recurso explícitas para corrección/cancelación en lugar de ampliar permisos globales;
+- reglas de recurso explícitas para corrección, cancelación y cierre/factura en lugar de ampliar permisos globales;
+- delegaciones por solicitud con un solo registro activo y trazabilidad de revocación;
 - backend authoritative;
 - rate limiting diferenciado;
 - CORS restrictivo;
@@ -410,17 +451,16 @@ Los cambios incluyen pruebas proporcionales al riesgo. Para IAM son obligatorias
 
 - permiso base `requests:read` para cualquier usuario activo sin rol/grupo/permisos asignados;
 - un usuario con solo lectura puede abrir dashboard y consultar solicitudes de otros usuarios;
-- la lectura base no concede crear, aprobar, cerrar ni configurar;
+- la lectura base no concede crear, aprobar, cerrar una solicitud ajena ni configurar;
 - `users_with_permission('requests:read')` incluye a todos los usuarios activos;
 - permisos directos;
 - herencia Grupo → Rol → Permiso;
 - herencia Cargo/Posición → Rol → Permiso;
 - origen de permisos efectivo distinguible entre Grupo, Cargo, Rol directo y asignación directa;
 - cargo inactivo no concede permisos;
-- cuenta técnica con todos los permisos activos en no producción;
+- cuenta técnica con todos los permisos atómicos activos en no producción;
 - cuenta técnica incluida en poblaciones de aprobación/votación fuera de producción;
 - cuenta técnica restringida a `config:manage` + `requests:read` en producción;
-- operaciones financieras negadas a la cuenta técnica en producción incluso con asignación accidental por grupo/cargo/rol/directa;
 - endpoints `config:manage`;
 - cambios de permisos efectivos sin reiniciar la app;
 - login/respuesta de usuario exponiendo permisos efectivos coherentes con el ambiente.
@@ -447,6 +487,20 @@ Para **Enviar a revisión** son obligatorias pruebas que demuestren que:
 - el comentario queda persistido/auditado;
 - la tarea de corrección aparece para el solicitante y no para los demás aprobadores;
 - ningún aprobador adquiere `can_correct` por enviar una solicitud a revisión.
+
+Para **cierre/factura y delegación** son obligatorias pruebas que demuestren que:
+
+- el solicitante puede cerrar su solicitud aprobada sin depender de `requests:close`;
+- el Administrador del sistema puede ejecutar la excepción administrativa;
+- un tercero con `requests:close` legacy no puede cerrar una solicitud ajena;
+- solo el solicitante puede crear/cambiar/revocar una delegación;
+- un delegado activo puede cerrar y gestionar la factura de esa solicitud;
+- la delegación no autoriza otras solicitudes;
+- revocar la delegación retira inmediatamente `can_close` y la tarea `CLOSE_REQUEST`;
+- solo existe una delegación activa por solicitud;
+- el solicitante y el delegado reciben `CLOSE_REQUEST` cuando corresponde, pero el Administrador del sistema no recibe todas las solicitudes como tareas personales;
+- reemplazar factura conserva evidencia anterior y exige motivo;
+- `requests:close` queda inactivo/legacy y no es autoridad runtime.
 
 Para correo/configuración son obligatorias comprobaciones que demuestren que:
 
@@ -504,6 +558,9 @@ Una feature está terminada cuando:
 - invariantes de cancelación/corrección están protegidos en backend y probados;
 - solo solicitante/Admin del sistema pueden corregir solicitudes y los aprobadores usan **Enviar a revisión** con comentario;
 - una solicitud válida de revisión interrumpe la ronda y devuelve la tarea al solicitante;
+- cierre/factura se autoriza únicamente por solicitante, Administrador del sistema o delegación activa por solicitud;
+- solo el solicitante puede administrar la delegación de cierre/factura y su historial es trazable;
+- `requests:close` no vuelve a convertirse en autoridad global de cierre;
 - el editor de corrección deriva su tipo de la solicitud y no conserva la pestaña de creación previa;
 - la configuración de correo por ambiente está documentada y puede diagnosticarse sin exponer secretos;
 - migraciones son versionadas y desplegables;
