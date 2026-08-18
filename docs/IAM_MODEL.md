@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Permitir que cada organización configure acceso sin hardcodear nombres, cargos o correos y distinguir claramente **permisos IAM** de **capacidades por recurso** y **tareas contextuales**.
+Permitir que cada organización configure acceso sin hardcodear nombres, cargos o correos y distinguir **permisos IAM**, **capacidades por recurso**, **delegaciones** y **tareas contextuales**.
 
 ## Modelo
 
@@ -12,9 +12,10 @@ Usuario → Grupo ─────────→ Rol → Permiso
        ↘ Rol directo ─────────→ Permiso
        ↘ Permiso directo
        ↘ baseline requests:read
+       ↘ capacidades/delegaciones por recurso
 ```
 
-Persistencia:
+Persistencia IAM:
 
 ```text
 permissions
@@ -31,15 +32,18 @@ position_roles
 system_accounts
 ```
 
-## Permisos atómicos
+La delegación de cierre se persiste aparte en `expense_closure_delegations` porque pertenece a una solicitud concreta, no a la organización global.
+
+## Permisos IAM operativos
 
 ```text
 requests:read
 requests:create
 requests:approve
-requests:close
 config:manage
 ```
+
+`requests:close` permanece físicamente como registro **legacy inactivo** después de Alembic `0005`. No autoriza runtime ni debe configurarse para conseguir cierre/factura.
 
 Para usuario activo:
 
@@ -52,7 +56,7 @@ effective_permissions =
   ∪ position-role permissions
 ```
 
-`requests:read` es baseline. Para permisos mutables configurables, ausencia de ALLOW implica DENY.
+`requests:read` es baseline. Para permisos mutables IAM, ausencia de ALLOW implica DENY.
 
 ## Grupo y Cargo
 
@@ -62,16 +66,7 @@ Cargo/Posición puede heredar Roles, pero su nombre no autoriza.
 Cargo Tesorero → Rol Aprobador → requests:approve
 ```
 
-Correcto: resolver relaciones persistidas.
-
-Prohibido:
-
-```python
-if user.title == 'TESORERO':
-    allow_approve()
-```
-
-Grupo y Cargo son fuentes independientes y acumulativas.
+Grupo y Cargo son fuentes independientes y acumulativas. Prohibido autorizar con comparaciones de nombres.
 
 ## Fuentes visibles
 
@@ -85,51 +80,48 @@ Grupo Junta Directiva → Aprobador
 Cargo Tesorero → Aprobador
 ```
 
-## Capacidades por recurso no son permisos IAM
+Una delegación de cierre no aparece como permiso efectivo porque **no es un permiso IAM**; se presenta en el contexto de la solicitud.
+
+## Capacidades por recurso
 
 ### Cancelación
 
 ```text
-can_cancel(expense, user) =
-    estado cancelable
-    AND (requester OR system_accounts)
+can_cancel = estado cancelable AND (requester OR system_accounts)
 ```
 
 ### Corrección
 
 ```text
-can_correct(expense, user) =
-    estado corregible
-    AND (requester OR system_accounts)
+can_correct = estado corregible AND (requester OR system_accounts)
 ```
+
+### Cierre/factura
+
+```text
+can_close =
+  status ∈ {APPROVED, CLOSED}
+  AND (requester OR system_accounts OR active_closure_delegate)
+```
+
+### Administración de delegación
+
+```text
+can_delegate_close = requester original
+```
+
+Solo el solicitante crea/cambia/revoca la delegación. El Administrador del sistema ya posee la excepción administrativa y no necesita una delegación.
 
 Por tanto:
 
-- `requests:create` permite crear nuevas solicitudes, no editar solicitudes ajenas;
-- `requests:approve` no permite corregir solicitudes ajenas;
-- `config:manage` no permite corregir/cancelar solicitudes ajenas;
+- `requests:create` no permite corregir/cancelar/cerrar solicitudes ajenas;
+- `requests:approve` no permite editar ni cerrar solicitudes ajenas;
+- `config:manage` no permite sustituir al solicitante;
+- `requests:close` legacy no concede nada en runtime;
 - Grupo/Rol/Cargo no amplían estas reglas por recurso;
-- frontend consume `can_cancel`/`can_correct`, pero backend siempre vuelve a autorizar.
+- frontend consume `can_cancel`, `can_correct`, `can_close`, `can_delegate_close`; backend siempre revalida.
 
-Estados corregibles:
-
-```text
-QUOTATION_VOTING
-SUBMITTED
-PENDING_APPROVAL
-NEEDS_REVISION
-APPROVED
-REJECTED
-```
-
-Estados no corregibles:
-
-```text
-CLOSED
-CANCELLED
-```
-
-## Tareas contextuales no son permisos IAM
+## Tareas contextuales
 
 ```text
 APPROVAL_DECISION
@@ -138,64 +130,53 @@ CORRECT_REQUEST
 CLOSE_REQUEST
 ```
 
-se derivan de permiso + asignación + estado.
+No son permisos IAM.
 
 ### `APPROVAL_DECISION`
 
 ```text
-requests:approve
-+ Approval.PENDING asignado
-+ PENDING_APPROVAL
+requests:approve + Approval.PENDING asignado + PENDING_APPROVAL
 ```
 
 ### `QUOTATION_VOTE`
 
 ```text
-requests:approve
-+ invitación vigente
-+ QUOTATION_VOTING
-+ sin voto
+requests:approve + invitación vigente + QUOTATION_VOTING + sin voto
 ```
 
 ### `CORRECT_REQUEST`
 
 ```text
-NEEDS_REVISION
-+ requested_by == current_user.email
+NEEDS_REVISION + requested_by == current_user.email
 ```
-
-No requiere `requests:create`: la tarea de corrección pertenece al solicitante original.
 
 ### `CLOSE_REQUEST`
 
 ```text
-requests:close
-+ APPROVED
+APPROVED + (requester original OR active_closure_delegate)
 ```
 
-`pending_action_service.py` resuelve estas tareas y `GET /api/expenses/{request_id}/my-actions` las revalida.
+El Administrador del sistema conserva facultad administrativa desde la lista, pero no recibe todas las solicitudes aprobadas como tareas personales.
 
-## Enviar a revisión tampoco es un permiso nuevo
+## Enviar a revisión
 
-**Enviar a revisión** es una decisión disponible dentro de una `APPROVAL_DECISION` ya asignada al usuario.
-
-Requiere:
+Es una decisión dentro de una aprobación asignada, no un permiso nuevo:
 
 ```text
 requests:approve
-+ Approval.PENDING asignado
-+ comentario >= 3 caracteres
++ Approval.PENDING
++ comentario >= 3
 ```
 
-Una `REVISION_REQUESTED` válida interrumpe el flujo inmediatamente:
+Una `REVISION_REQUESTED` válida interrumpe inmediatamente:
 
 ```text
 request → NEEDS_REVISION
-otros pasos PENDING/WAITING → EXPIRED
+otros PENDING/WAITING → EXPIRED
 requester → CORRECT_REQUEST
 ```
 
-El aprobador no adquiere `can_correct` por enviar la solicitud a revisión.
+No concede `can_correct` al aprobador.
 
 ## `TECHNICAL_ADMIN`
 
@@ -203,60 +184,53 @@ Identidad persistida en `system_accounts`.
 
 ### Producción
 
-IAM efectivo máximo:
+IAM máximo:
 
 ```text
 config:manage
 requests:read
 ```
 
-Se filtran `requests:create`, `requests:approve`, `requests:close` aunque lleguen por Grupo/Cargo/Rol/directo.
-
-No participa en poblaciones financieras ni recibe tareas financieras.
-
-Excepciones administrativas por recurso:
+No participa en aprobación/votación. Excepciones administrativas por recurso:
 
 ```text
 can_cancel
 can_correct
+can_close
 ```
 
-Estas excepciones no cambian sus permisos IAM.
+No administra delegaciones ordinarias en nombre del solicitante.
 
 ### No producción
 
-Para `ENVIRONMENT != production`, obtiene todos los permisos atómicos activos para pruebas E2E y puede participar en workflows salvo exclusiones intrínsecas.
+`ENVIRONMENT != production` obtiene todos los permisos IAM activos para pruebas E2E además de capacidades administrativas por recurso.
 
 ## Consola autoritativa
 
-**Configuración → Accesos** administra IAM canónico.
+**Configuración → Accesos** administra IAM canónico. La delegación de cierre/factura se administra desde la solicitud.
 
-La pantalla legacy `AccessProfile`, `users.title`, `can_*` y `BOARD_CODES` puede existir como compatibilidad/migración, pero no autoriza runtime.
+`AccessProfile`, `users.title`, `can_*`, `BOARD_CODES` y `requests:close` legacy son compatibilidad/deuda y no autoridad runtime.
 
-## Migración 0004
+## Migraciones
 
 ```text
-20260818_0004_position_role_inheritance.py
+0004 → position_roles + importación legacy de Cargo/Perfil a IAM
+0005 → expense_closure_delegations + requests:close inactivo/legacy
 ```
 
-crea `position_roles` e importa una sola vez configuración legacy hacia `Position → Role → Permission`, excluyendo cuentas técnicas de asignaciones organizacionales migradas.
-
-Después del upgrade, runtime sigue usando IAM canónico.
-
-Feature 007 (Enviar a revisión + propiedad de corrección) no agrega permiso ni migración nueva.
+Cadena completa actual termina en `20260818_0005`.
 
 ## Pruebas mínimas
 
-- permiso directo;
-- Rol directo;
-- Grupo → Rol;
-- Cargo → Rol;
-- Cargo inactivo;
-- fuentes efectivas;
-- `users_with_permission()` con Grupo/Cargo;
+- permiso directo / Rol directo / Grupo→Rol / Cargo→Rol;
+- Cargo inactivo y fuentes efectivas;
 - política técnica producción/no-producción;
 - `can_cancel` requester/Admin;
 - `can_correct` requester/Admin;
-- tercero con `requests:create/approve/config` no corrige ajena;
-- `CORRECT_REQUEST` solo al solicitante;
-- `REVISION_REQUESTED` no otorga edición al aprobador.
+- `CORRECT_REQUEST` solo solicitante;
+- `can_close` requester/Admin/delegado;
+- `requests:close` legacy no autoriza tercero;
+- solo solicitante administra delegación;
+- revocación elimina autoridad;
+- `CLOSE_REQUEST` requester/delegado;
+- una sola delegación activa por solicitud.
