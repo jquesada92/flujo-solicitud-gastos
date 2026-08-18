@@ -148,6 +148,17 @@ Antes de ejecutar una acción y después de registrarla, el sistema debe revalid
 
 Después de una mutación exitosa, el dashboard y el detalle del modal se refrescan. Si ya no existe una tarea vigente, el modal informa que no quedan acciones pendientes para esa solicitud.
 
+### F-005-09 — Los KPIs superiores son solo informativos
+
+Las tarjetas/resúmenes superiores del dashboard, incluidas **Acciones que requieren mi atención** y **Solicitudes en proceso**, son indicadores informativos y no ejecutan navegación ni acciones al seleccionarse.
+
+La interacción se concentra en controles explícitos:
+
+- fila concreta de **Acciones pendientes** → abre el modal contextual de esa solicitud;
+- **Ver todas** → navega a **Solicitudes**.
+
+Los KPIs no deben renderizarse como botones ni tener handlers `onClick`.
+
 ## Alcance de seguimiento
 
 Esta feature mantiene el comportamiento vigente de la lista operativa:
@@ -173,6 +184,8 @@ pero `can_view` no es autoridad; el backend resuelve el baseline.
 Para cancelación, la tabla debe usar exclusivamente `can_cancel` retornado por el backend. Esto permite que una solicitud `QUOTATION_VOTING` pueda cancelarse por su solicitante o por el Administrador del sistema sin habilitar la acción para los demás usuarios que solo la observan.
 
 Para acciones pendientes, cada fila debe mostrar la acción concreta devuelta por backend —por ejemplo **Responder aprobación** o **Votar cotización**— y abrir el modal contextual al seleccionarla.
+
+Las tarjetas KPI superiores son solo visualización de métricas; no sustituyen a las filas accionables ni al botón **Ver todas**.
 
 En la consola IAM, los permisos efectivos deben mostrar que `requests:read` proviene de:
 
