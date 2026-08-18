@@ -22,6 +22,10 @@
 - [x] Solicitudes propias en `NEEDS_REVISION` aparecen como `CORRECT_REQUEST` solo si el usuario mantiene `requests:create`.
 - [x] `pending_my_action` cuenta acciones concretas vigentes, no permisos abstractos.
 - [x] Cada `pending_item` devuelve los códigos de acción correspondientes al usuario actual.
+- [x] **Acciones que requieren mi atención** es un KPI informativo y no un botón.
+- [x] **Solicitudes en proceso** es un KPI informativo y no un botón.
+- [x] Los KPIs superiores no tienen `onClick` ni ejecutan navegación/acciones.
+- [ ] Validar manualmente en Docker que los KPIs superiores no respondan a clic ni teclado como controles.
 
 ## Modal de acciones pendientes
 
@@ -88,6 +92,8 @@
 - [x] `can_view` se deriva temporalmente desde `requests:read` y resulta `true` para usuarios activos.
 - [x] `HomeDashboard` dispone de implementación modular en `frontend/src/home-dashboard.jsx`.
 - [x] Vite elimina la implementación legacy completa de `HomeDashboard` durante build en vez de parchear handlers internos.
+- [x] Los KPIs superiores se renderizan como `article` informativos.
+- [x] Las únicas interacciones de seguimiento son filas de acciones concretas y controles explícitos como **Ver todas**.
 - [ ] Validar manualmente con un usuario sin roles que Inicio carga sin error.
 - [ ] Validar manualmente que ese usuario vea una solicitud creada por otro usuario.
 - [ ] Validar manualmente que ese usuario no pueda crear, aprobar o cerrar si no recibe esos permisos.
@@ -111,6 +117,7 @@
 - [x] Prueba de acción de votación contextual.
 - [x] Prueba de corrección/cierre personalizados por usuario.
 - [x] Contrato frontend exige modal y revalidación posterior a mutación.
+- [x] Contrato frontend impide reintroducir KPIs superiores como botones interactivos.
 - [ ] Suite backend completa ejecutada localmente en el head final.
 - [ ] `npm run build` ejecutado localmente en el head final.
 - [ ] Docker build/smoke ejecutado localmente en el head final.
@@ -118,16 +125,16 @@
 
 ## Documentación
 
-- [x] Constitución 2.5.0 revisada; no requiere bump porque el principio backend-authoritative ya cubre la fuente de verdad de acciones y el modal es un contrato UX de Feature 005.
+- [x] Constitución 2.5.0 revisada; no requiere bump porque la separación KPI informativo/acción explícita es una concreción UX de Feature 005, no un cambio de principio constitucional.
 - [x] Spec funcional actualizada.
 - [x] Plan técnico actualizado.
 - [x] Criterios de aceptación actualizados.
-- [x] README actualizado con el modal contextual.
-- [x] PROMPT_RECONSTRUCCION actualizado con el modal contextual.
-- [x] IAM_MODEL actualizado para distinguir tareas contextuales de permisos IAM.
-- [x] FASTAPI_ARCHITECTURE actualizado con `my_actions.py` / `pending_action_service.py`.
+- [x] README revisado para mantener el Dashboard como resumen y las filas como interacción.
+- [x] PROMPT_RECONSTRUCCION revisado con la misma regla UX.
+- [x] IAM_MODEL no requiere cambio semántico por este ajuste visual.
+- [x] FASTAPI_ARCHITECTURE no requiere cambio backend por este ajuste visual.
 - [x] `docs/REQUEST_TRACKING.md` actualizado.
 - [x] HISTORY actualizado preservando las entradas anteriores.
 - [x] CHANGELOG actualizado.
-- [x] docs/README actualizado.
+- [x] docs/README revisado.
 - [ ] PR #9 actualizado con contrato final y nota de cuota agotada de Actions.
