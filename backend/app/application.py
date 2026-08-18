@@ -15,6 +15,7 @@ from app.api import (
     financial_actions,
     iam,
     iam_users,
+    my_actions,
     position_access,
     quotation_actions,
     request_actions,
@@ -104,6 +105,7 @@ def create_app() -> FastAPI:
     app.include_router(quotation_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(document_actions.router, prefix='/api/expenses', tags=['Documents'])
     app.include_router(financial_actions.router, prefix='/api/expenses', tags=['Expenses'])
+    app.include_router(my_actions.router, prefix='/api/expenses', tags=['My Request Actions'])
     app.include_router(tracking.router, prefix='/api/expenses', tags=['Request Tracking'])
     app.include_router(expenses.router, prefix='/api/expenses', tags=['Expenses (legacy compatibility)'])
     app.include_router(approvals.router, prefix='/api/approvals', tags=['Approvals'])
