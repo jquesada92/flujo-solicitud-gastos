@@ -9,7 +9,7 @@ os.environ.setdefault('ANALYTICS_HASH_KEY', 'unit-test-analytics-key-at-least-32
 os.environ.setdefault('ENVIRONMENT', 'test')
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -141,10 +141,15 @@ class UniversalTrackingTests(unittest.TestCase):
             users = users_with_permission(db, 'requests:read')
         self.assertEqual({user.id for user in users}, {self.requester_id, self.viewer_id})
 
-    def test_read_baseline_does_not_grant_close_permission(self):
+    def test_read_baseline_does_not_grant_closure_of_somebody_elses_request(self):
+        with self.Session() as db:
+            expense = db.scalar(select(Expense).where(Expense.request_id == 'REQ-OWN'))
+            expense.status = ExpenseStatus.APPROVED
+            db.commit()
+
         response = self.client.post(
             '/api/expenses/REQ-OWN/close',
-            headers=self.auth(self.requester_token),
+            headers=self.auth(self.viewer_token),
             files={'invoice': ('invoice.pdf', b'%PDF-1.7\n', 'application/pdf')},
         )
         self.assertEqual(response.status_code, 403, response.text)
