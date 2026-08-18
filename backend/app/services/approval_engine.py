@@ -235,11 +235,31 @@ def apply_decision(
 
     if decision == ApprovalStatus.REVISION_REQUESTED and (not comment or len(comment.strip()) < 3):
         raise ValueError('Debes indicar qué debe corregir el solicitante')
+
     previous_status = approval.status
     approval.status = decision
     approval.comment = comment
     approval.decided_at = datetime.utcnow()
     expense = approval.expense
+
+    # A request for revision is an interrupt, not a majority vote. Any assigned
+    # approver who detects a problem can stop the active round, explain what the
+    # requester must review, and return the request to its owner for correction.
+    if decision == ApprovalStatus.REVISION_REQUESTED:
+        expense.status = ExpenseStatus.NEEDS_REVISION
+        record_step_event(
+            db,
+            approval,
+            'STEP_REVISION_REQUESTED',
+            previous_status,
+            actor_email=actor_email,
+            comment=comment,
+        )
+        expire_open_approvals(db, expense, approval.id, actor_email)
+        db.commit()
+        db.refresh(expense)
+        _safe_email(send_final_notification, expense)
+        return expense
 
     if approval.approval_mode in ('ANY', 'ALL', 'MAJORITY'):
         peers = [a for a in expense.approvals if a.flow_id == approval.flow_id]
@@ -254,15 +274,11 @@ def apply_decision(
         threshold = len(peers) // 2 + 1
         approved_count = sum(a.status == ApprovalStatus.APPROVED for a in peers)
         rejected_count = sum(a.status == ApprovalStatus.REJECTED for a in peers)
-        revision_count = sum(a.status == ApprovalStatus.REVISION_REQUESTED for a in peers)
         if approved_count >= threshold:
             expense.status = ExpenseStatus.APPROVED
             expire_open_approvals(db, expense, approval.id, actor_email)
         elif rejected_count >= threshold:
             expense.status = ExpenseStatus.REJECTED
-            expire_open_approvals(db, expense, approval.id, actor_email)
-        elif revision_count >= threshold:
-            expense.status = ExpenseStatus.NEEDS_REVISION
             expire_open_approvals(db, expense, approval.id, actor_email)
         db.commit()
         db.refresh(expense)
@@ -273,24 +289,6 @@ def apply_decision(
     if decision == ApprovalStatus.REJECTED:
         expense.status = ExpenseStatus.REJECTED
         record_step_event(db, approval, 'STEP_REJECTED', previous_status, actor_email=actor_email, comment=comment)
-        expire_open_approvals(db, expense, approval.id, actor_email)
-        db.commit()
-        db.refresh(expense)
-        _safe_email(send_final_notification, expense)
-        return expense
-
-    if decision == ApprovalStatus.REVISION_REQUESTED:
-        if not comment or len(comment.strip()) < 3:
-            raise ValueError('Debes indicar qué debe corregir el solicitante')
-        expense.status = ExpenseStatus.NEEDS_REVISION
-        record_step_event(
-            db,
-            approval,
-            'STEP_REVISION_REQUESTED',
-            previous_status,
-            actor_email=actor_email,
-            comment=comment,
-        )
         expire_open_approvals(db, expense, approval.id, actor_email)
         db.commit()
         db.refresh(expense)
