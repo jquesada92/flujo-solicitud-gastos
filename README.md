@@ -1,6 +1,6 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.4.0**.
+> Constitución vigente: **2.5.0**.
 
 Aplicación web para solicitar, evaluar, aprobar, ejecutar y documentar gastos con trazabilidad y evidencia verificable.
 
@@ -11,7 +11,8 @@ El producto es **neutral respecto al tipo de organización**. Un PH, empresa, co
 - Backend FastAPI es la autoridad final.
 - La estructura organizacional es **dato configurable**, no código.
 - `Usuario`, `Grupo`, `Rol`, `Permiso` y `Cargo` son conceptos separados.
-- Un cargo no concede permisos.
+- Un Cargo puede heredar Roles; **su nombre nunca autoriza por sí mismo**.
+- Un Grupo puede heredar Roles y sus miembros reciben esos permisos.
 - Todo usuario activo puede entrar a Inicio y dar seguimiento a las solicitudes mediante el baseline `requests:read`.
 - Ver una solicitud ajena no concede acciones sobre ella.
 - Solo el solicitante original o el Administrador del sistema pueden cancelar una solicitud abierta.
@@ -25,10 +26,10 @@ El producto es **neutral respecto al tipo de organización**. Un PH, empresa, co
 ## Terminología
 
 - **Usuario**: cuenta que interactúa con el sistema.
-- **Grupo**: conjunto configurable de usuarios.
+- **Grupo**: conjunto configurable de usuarios que puede heredar Roles.
 - **Rol**: conjunto configurable de permisos.
 - **Permiso**: capacidad atómica del producto.
-- **Cargo / Posición**: metadato organizacional descriptivo; no autoriza.
+- **Cargo / Posición**: dato organizacional configurable que puede heredar Roles; el nombre del Cargo no autoriza directamente.
 - **Área**: unidad/departamento/función asociada al gasto.
 - **Categoría**: naturaleza del bien o servicio.
 
@@ -39,12 +40,28 @@ Para usuarios operativos activos:
 ```text
 Usuario
   ├─ Baseline del producto: requests:read
-  ├─ Grupos ──> Roles ──> Permisos
-  ├─ Roles directos ──> Permisos
+  ├─ Grupos ───────────> Roles ──> Permisos
+  ├─ Cargos/Posiciones -> Roles ──> Permisos
+  ├─ Roles directos ─────────────> Permisos
   └─ Permisos directos
 ```
 
 `requests:read` es una capacidad base no revocable mientras el usuario esté activo. Para las demás capacidades, si no existe ALLOW explícito, el resultado es DENY.
+
+Un mismo Rol puede reutilizarse en varios Cargos y Grupos. Por ejemplo:
+
+```text
+Rol: Aprobador
+  requests:approve
+
+Cargo: Presidente      → Aprobador
+Cargo: Vicepresidente  → Aprobador
+Cargo: Tesorero        → Aprobador
+
+Grupo: Junta Directiva → Aprobador
+```
+
+Ningún nombre como Presidente, Tesorero, CFO o Procurement Manager está hardcodeado en runtime. La autorización proviene de relaciones persistidas `Cargo/Grupo → Rol → Permiso`.
 
 ### Permisos atómicos iniciales
 
@@ -87,7 +104,7 @@ requests:approve
 requests:close
 ```
 
-Aunque un rol, grupo o permiso directo intente concedérselos, el backend los filtra. Tampoco participa en poblaciones financieras de aprobación/votación.
+Aunque un rol, grupo, cargo o permiso directo intente concedérselos, el backend los filtra. Tampoco participa en poblaciones financieras de aprobación/votación.
 
 Como excepción explícita de administración del ciclo de vida, el Administrador del sistema **sí puede cancelar una solicitud abierta**. Esta facultad se valida mediante `system_accounts`; no equivale a conceder `requests:create`, `requests:approve` ni `requests:close`.
 
@@ -150,28 +167,41 @@ En **Configuración → Accesos** se administran:
 - permisos;
 - cargos;
 - miembros de grupos;
-- roles de grupos;
+- roles heredados por grupos;
+- roles heredados por cargos;
 - roles directos;
 - permisos directos;
 - cargos de cada usuario;
 - permisos efectivos y su origen.
 
-Ejemplo PH, configurado como datos:
+### Ejemplo por Grupo
 
 ```text
-Grupo: Administración PH
-  Rol: Gestión de solicitudes
-    requests:create
-    requests:close
-    requests:read
-
 Grupo: Junta Directiva
+  Miembros: Presidente, Vicepresidente, Tesorero
   Rol: Aprobador
     requests:approve
-    requests:read
 ```
 
-Una empresa puede reemplazar estos grupos por Procurement, Finance, IT, Executive Committee o cualquier estructura propia sin cambiar el código.
+### Ejemplo por Cargo
+
+```text
+Cargo: Presidente      → Rol Aprobador
+Cargo: Vicepresidente  → Rol Aprobador
+Cargo: Tesorero        → Rol Aprobador
+
+Rol Aprobador:
+  requests:approve
+```
+
+Ambas estrategias son válidas y pueden combinarse. Una empresa puede usar Procurement, Finance, IT, Executive Committee o cualquier estructura propia sin cambiar código.
+
+La sección **Permisos efectivos** identifica también el origen, por ejemplo:
+
+```text
+Cargo Tesorero → Aprobador
+Grupo Junta Directiva → Aprobador
+```
 
 ## Arquitectura
 
@@ -197,11 +227,12 @@ backend/app/
 └── main.py       # alias de compatibilidad
 ```
 
-Frontend relevante para solicitudes:
+Frontend relevante para solicitudes/accesos:
 
 ```text
 frontend/src/
 ├── expense-form.jsx       # formulario canónico SIMPLE / MULTI_QUOTE
+├── iam-admin.jsx          # consola IAM canónica
 ├── main.jsx               # shell legacy aún pendiente de modularización total
 └── domain-normalization.js
 ```
@@ -216,7 +247,7 @@ frontend/src/
 - contratos sensibles usan response models explícitos.
 - tests HTTP usan `FastAPI TestClient`.
 
-Rutas canónicas actualmente registradas antes de `expenses.py` legacy incluyen creación, corrección, cancelación, documentos, acciones financieras y seguimiento.
+Rutas canónicas actualmente registradas antes de compatibilidad legacy incluyen creación, corrección, cancelación, documentos, acciones financieras, seguimiento y herencia de Roles por Cargo.
 
 ## Seguridad
 
@@ -229,6 +260,7 @@ Rutas canónicas actualmente registradas antes de `expenses.py` legacy incluyen 
 - CORS explícito en producción/runtime alojado.
 - documentos privados y validación de firma real de archivo.
 - autorización por permisos persistidos, capacidades base, propiedad del recurso y política técnica ambiental; no por emails hardcodeados/nombres de cargos/IDs mágicos.
+- `Cargo → Rol → Permiso` es válido; `if cargo == 'TESORERO'` no lo es.
 - cuenta técnica segregada del flujo financiero en producción, con la excepción explícita de cancelación administrativa de solicitudes abiertas.
 - un usuario con `requests:create` no puede cancelar por ese hecho una solicitud creada por otro usuario.
 
@@ -241,12 +273,15 @@ backend/alembic/versions/
 ├── 20260817_0000_application_baseline.py
 ├── 20260817_0001_iam_foundation.py
 ├── 20260817_0002_system_accounts.py
-└── 20260817_0003_backfill_multi_quote_request_type.py
+├── 20260817_0003_backfill_multi_quote_request_type.py
+└── 20260818_0004_position_role_inheritance.py
 ```
 
 `0003` repara solicitudes históricas que tengan evidencia durable de múltiples cotizaciones pero conserven accidentalmente `request_type=SIMPLE`.
 
-La feature de seguimiento/cancelación actual **no agrega migración de esquema**.
+`0004` agrega `position_roles` y convierte una sola vez la configuración legacy de Cargos/Perfiles (`access_profiles` + `users.title`) a IAM canónico. Los `can_*` se usan únicamente como entrada histórica de migración; runtime sigue consultando Roles/Permisos persistidos.
+
+La migración preserva, entre otros, los cargos existentes configurados con `can_approve=true` convirtiéndolos en Roles con `requests:approve` y asignando los usuarios actuales al Cargo canónico correspondiente.
 
 El contenedor ejecuta antes de FastAPI:
 
@@ -422,6 +457,8 @@ VITE_API_URL=<BACKEND_URL>
 VITE_TIME_ZONE=America/Panama
 ```
 
+No existe una variable de entorno especial para Cargo/Grupo → Rol; estas relaciones viven en PostgreSQL y se administran desde la aplicación.
+
 ## Clasificación Área + Categoría
 
 Área y Categoría son catálogos independientes con relación configurable N:M.
@@ -443,6 +480,15 @@ Una solicitud simple contiene proveedor, monto y soporte/cotización. La creaci�
 ### Múltiples cotizaciones
 
 La población de votación se obtiene desde usuarios con `requests:approve`, excluyendo al solicitante.
+
+`requests:approve` puede provenir de:
+
+```text
+Permiso directo
+Rol directo
+Grupo → Rol
+Cargo → Rol
+```
 
 - Producción: las cuentas técnicas quedan fuera de permisos financieros.
 - No producción: la cuenta técnica puede participar para pruebas si no queda excluida por una regla propia del flujo, por ejemplo ser el mismo solicitante.
@@ -521,9 +567,9 @@ Mientras `main.jsx` conserve la definición histórica de `ExpenseForm`, `fronte
 
 ### Aprobación
 
-La población canónica de aprobadores se obtiene desde `requests:approve`, no desde cargos como Presidente/Tesorero ni flags `can_approve`.
+La población canónica de aprobadores se obtiene desde el permiso efectivo `requests:approve`. El motor no pregunta si alguien se llama/carga como Presidente o Tesorero; sí reconoce `requests:approve` cuando llega mediante un Rol asociado a ese Cargo.
 
-> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.4.0.
+> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.5.0.
 
 ### Cierre
 
@@ -547,6 +593,14 @@ La suite IAM verifica específicamente:
 - 403 de cierre en producción incluso con permiso financiero accidental;
 - exclusión de población de aprobación en producción.
 
+`test_position_role_inheritance.py` verifica:
+
+- Cargo → Rol → `requests:approve`;
+- origen visible `Cargo Tesorero → Aprobador`;
+- `users_with_permission('requests:approve')` incluye aprobadores por Cargo;
+- Grupo y Cargo funcionan como fuentes simultáneas;
+- Cargo inactivo no concede permisos.
+
 La suite de seguimiento verifica que cualquier usuario activo reciba `requests:read`, pueda ver solicitudes ajenas y cargar el dashboard sin adquirir permisos mutables.
 
 La suite de cancelación verifica:
@@ -559,6 +613,17 @@ La suite de cancelación verifica:
 - rechazo de cancelación de una solicitud cerrada.
 
 La suite de correcciones verifica además que una MULTI_QUOTE no pueda degradarse a SIMPLE, que un registro legacy con flag SIMPLE pero evidencia múltiple sea reparado, que conserve evidencia, que reinicie votos/invitaciones y que el frontend modular use el tipo efectivo para render y payload.
+
+Prueba manual específica de herencia de aprobación:
+
+```text
+1. Configuración → Accesos → Roles: crear/seleccionar Aprobador con requests:approve;
+2. Accesos → Cargos: asociar Aprobador a Tesorero y Vicepresidente;
+3. Accesos → Usuarios: confirmar los Cargos asignados;
+4. verificar en Permisos efectivos: requests:approve + origen Cargo ... → Aprobador;
+5. crear una MULTI_QUOTE con uno de ellos;
+6. verificar que el otro aparezca en la ronda de votación.
+```
 
 Prueba manual específica de corrección:
 
@@ -606,10 +671,13 @@ Documentos principales:
 - `docs/HISTORY.md`
 - `CHANGELOG.md`
 - `PROMPT_RECONSTRUCCION.md`
+- `specs/006-position-group-role-inheritance/`
 
 ## Deuda de transición conocida
 
 - `UserRole`, `title` y `can_*` permanecen temporalmente para compatibilidad; no autorizan.
+- `AccessProfile` y `BOARD_CODES` siguen físicamente en `/api/users` legacy. `0004` los usa solo como entrada de migración; no son arquitectura objetivo.
+- La pantalla autoritativa para cambios de acceso es **Configuración → Accesos**.
 - `/api/users` legacy continúa temporalmente.
 - `frontend/src/main.jsx` sigue siendo monolítico en otras áreas.
 - El monolito todavía contiene bypasses visuales legacy como `user.role === "ADMIN"` y `canClose={true}`; el backend no confía en ellos. Deben migrarse a `permission_codes`/capacidades por recurso.
