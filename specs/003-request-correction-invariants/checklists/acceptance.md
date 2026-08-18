@@ -82,4 +82,4 @@
 - [x] `docs/REQUEST_CORRECTIONS.md` actualizado.
 - [x] HISTORY actualizado.
 - [x] CHANGELOG actualizado.
-- [ ] PR actualizado con la causa y solución final.
+- [x] PR actualizado con la causa, solución modular y validación CI.
