@@ -14,14 +14,6 @@ class FrontendDashboardContractTests(unittest.TestCase):
         self.assertIn('role="dialog"', source)
         self.assertIn('ACCIÓN PENDIENTE', source)
 
-    def test_summary_kpis_are_informational_not_interactive(self):
-        source = (REPO_ROOT / 'frontend' / 'src' / 'home-dashboard.jsx').read_text(encoding='utf-8')
-        self.assertIn('<article className="dashboard-kpi attention">', source)
-        self.assertIn('<article className="dashboard-kpi"><span>Solicitudes en proceso</span>', source)
-        self.assertNotIn('<button className="dashboard-kpi attention"', source)
-        self.assertNotIn('<button className="dashboard-kpi" onClick={onOpenRequests}', source)
-        self.assertIn('<button className="secondary" onClick={onOpenRequests}>Ver todas</button>', source)
-
     def test_modal_supports_all_current_user_action_types(self):
         source = (REPO_ROOT / 'frontend' / 'src' / 'home-dashboard.jsx').read_text(encoding='utf-8')
         for code in (
@@ -34,7 +26,7 @@ class FrontendDashboardContractTests(unittest.TestCase):
         self.assertIn('/approval-decision`', source)
         self.assertIn('/quotation-vote`', source)
         self.assertIn('/close`', source)
-        self.assertIn('Solicitar corrección', source)
+        self.assertIn('REVISION_REQUESTED', source)
         self.assertIn('Votar por esta opción', source)
         self.assertIn('Subir factura y cerrar', source)
 
@@ -43,12 +35,24 @@ class FrontendDashboardContractTests(unittest.TestCase):
         self.assertIn('Promise.all([loadDashboard(), loadDetail(selected.request_id)])', source)
         self.assertIn('Ya no tienes acciones pendientes para esta solicitud.', source)
 
-    def test_vite_extracts_complete_legacy_dashboard_function(self):
+    def test_top_kpis_are_informational_not_buttons(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'home-dashboard.jsx').read_text(encoding='utf-8')
+        self.assertIn('<article className="dashboard-kpi attention">', source)
+        self.assertIn('<article className="dashboard-kpi">', source)
+        self.assertIn('<article className="dashboard-kpi success">', source)
+        self.assertNotIn('<button className="dashboard-kpi attention"', source)
+        self.assertNotIn('<button className="dashboard-kpi" onClick={onOpenRequests}', source)
+
+    def test_vite_extracts_legacy_components_and_uses_resource_capabilities(self):
         vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')
         self.assertIn('import HomeDashboard from "./home-dashboard.jsx";', vite)
         self.assertIn('function HomeDashboard({', vite)
         self.assertIn('function App()', vite)
         self.assertIn('could not isolate HomeDashboard', vite)
+        self.assertIn('x.can_cancel', vite)
+        self.assertIn('x.can_correct', vite)
+        self.assertIn('canCreate || revision', vite)
+        self.assertIn('Enviar a revisión', vite)
 
 
 if __name__ == '__main__':
