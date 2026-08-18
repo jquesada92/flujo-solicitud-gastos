@@ -201,7 +201,7 @@ requests:approve
 requests:close
 ```
 
-incluso si recibe accidentalmente esas capacidades por Grupo, Cargo, Rol directo o permiso directo. Tampoco participa en poblaciones financieras de aprobación/votación.
+incluso si recibe accidentalmente esas capacidades por Grupo, Cargo, Rol directo o permiso directo. Tampoco participa en poblaciones financieras de aprobación/votación ni recibe acciones financieras contextuales en su bandeja personal.
 
 Como excepción explícita de administración del ciclo de vida, la cuenta técnica puede cancelar una solicitud abierta. Esta facultad se resuelve mediante `system_accounts`; no equivale a conceder un permiso financiero.
 
@@ -257,7 +257,7 @@ Estos aliases nunca autorizan el backend.
 
 `current_user()` debe recalcular permisos efectivos por request para reflejar cambios IAM sin reiniciar la app.
 
-## 7. Dashboard y seguimiento universal
+## 7. Dashboard, seguimiento universal y acciones pendientes
 
 Todo usuario activo y autenticado puede:
 
@@ -272,10 +272,106 @@ La lectura compartida no concede acciones mutables.
 
 No filtres la lista por `UserRole.REQUESTER` ni por `requested_by == current_user.email`.
 
-`pending_my_action` solo incluye acciones que el usuario puede ejecutar:
+### Bandeja personal de acciones
 
-- `requests:approve` para aprobaciones/votaciones asignadas;
-- `requests:close` para solicitudes aprobadas pendientes de cierre.
+`pending_my_action` debe contar **acciones concretas vigentes** que requieren intervención del usuario actual, no simplemente solicitudes abiertas ni permisos abstractos.
+
+Resuelve las acciones con un servicio equivalente a `pending_action_service.py` combinando:
+
+```text
+permiso efectivo
++
+asignación concreta del workflow
++
+estado vigente de la solicitud
+```
+
+Códigos actuales:
+
+```text
+APPROVAL_DECISION
+QUOTATION_VOTE
+CORRECT_REQUEST
+CLOSE_REQUEST
+```
+
+No agregues estos códigos al catálogo IAM: **son tareas contextuales, no permisos**.
+
+Reglas:
+
+```text
+APPROVAL_DECISION
+= requests:approve
++ Approval.PENDING asignado al usuario
++ solicitud PENDING_APPROVAL
+
+QUOTATION_VOTE
+= requests:approve
++ QuotationVotingInvitation para el usuario
++ solicitud QUOTATION_VOTING
++ ausencia de voto vigente del usuario
+
+CORRECT_REQUEST
+= requests:create
++ solicitud propia NEEDS_REVISION
+
+CLOSE_REQUEST
+= requests:close
++ solicitud APPROVED
+```
+
+Cada `pending_item` del dashboard debe exponer los códigos concretos correspondientes al usuario actual.
+
+### Interacción desde Inicio
+
+En **Inicio → Acciones pendientes**:
+
+```text
+Ver todas
+→ navegar a Solicitudes
+
+clic en una fila pendiente
+→ abrir ventana/modal contextual
+```
+
+No reutilices el handler de **Ver todas** para las filas.
+
+Al abrir una fila, consulta nuevamente al backend:
+
+```text
+GET /api/expenses/{request_id}/my-actions
+```
+
+El backend debe revalidar permiso + asignación + estado y devolver solo acciones todavía ejecutables por el usuario autenticado.
+
+El modal muestra únicamente los controles requeridos por esas acciones:
+
+```text
+APPROVAL_DECISION
+→ Aprobar
+→ Rechazar
+→ Solicitar corrección
+
+QUOTATION_VOTE
+→ revisar opciones, URLs y soportes
+→ votar una cotización
+
+CLOSE_REQUEST
+→ seleccionar factura
+→ notas de cierre
+→ cerrar
+
+CORRECT_REQUEST
+→ abrir la solicitud propia para corregir / reenviar
+```
+
+Para aprobación autenticada desde el modal usa una ruta por solicitud —por ejemplo `POST /api/expenses/{request_id}/approval-decision`— que localice la aprobación pendiente asignada al usuario actual. **No expongas al frontend el token bearer usado en los enlaces de correo.**
+
+Votación y cierre pueden reutilizar los endpoints canónicos existentes.
+
+Después de cada mutación refresca tanto el dashboard como `my-actions`. Si otra pestaña, correo o sesión ya procesó la tarea, el modal debe informar que ya no quedan acciones pendientes en vez de ofrecer controles obsoletos.
+
+`frontend/src/home-dashboard.jsx` es la implementación canónica del Dashboard/Modal durante esta transición.
 
 ## 8. Cancelación de solicitudes
 
@@ -533,10 +629,18 @@ Rutas/capacidades canónicas actuales incluyen:
 - `quotation_actions.py`
 - `document_actions.py`
 - `financial_actions.py`
+- `my_actions.py`
 - `tracking.py`
 - `position_access.py`
 - `iam.py`
 - `iam_users.py`
+
+Servicios relevantes incluyen:
+
+- `iam_service.py` para permisos efectivos/poblaciones;
+- `pending_action_service.py` para tareas concretas del usuario;
+- `approval_engine.py` para transiciones de aprobación;
+- `quotation_service.py` para votación.
 
 ## 18. Passwords y sesiones
 
@@ -587,6 +691,8 @@ Esto **no** significa que `can_approve` vuelva a ser autoridad: se lee una sola 
 
 Excluye `system_accounts` de asignaciones organizacionales migradas.
 
+El modal contextual de acciones pendientes no agrega migración adicional.
+
 Secuencia de arranque:
 
 ```text
@@ -631,6 +737,19 @@ Matriz de seguimiento/cancelación:
 - system admin puede cancelar abierta;
 - cerrada no puede cancelarse.
 
+Matriz de acciones pendientes:
+
+- Approval.PENDING asignado + `requests:approve` produce `APPROVAL_DECISION`;
+- invitación MULTI_QUOTE vigente sin voto produce `QUOTATION_VOTE`;
+- solicitud propia NEEDS_REVISION + `requests:create` produce `CORRECT_REQUEST`;
+- APPROVED + `requests:close` produce `CLOSE_REQUEST`;
+- usuario con permiso pero sin asignación concreta no recibe una acción falsa;
+- `GET /my-actions` revalida tareas para el usuario actual;
+- aprobación contextual funciona sin exponer token de correo;
+- después de responder, una acción obsoleta desaparece;
+- frontend: clic de fila abre modal contextual y **Ver todas** conserva navegación a Solicitudes;
+- frontend refresca dashboard + detalle después de mutación.
+
 Matriz de correcciones:
 
 - MULTI_QUOTE permanece MULTI_QUOTE;
@@ -649,7 +768,16 @@ Matriz de Feature 006:
 - población `requests:approve` incluye ambos caminos;
 - topología Alembic tiene `0004` como único head.
 
-CI debe ejecutar compilación/tests backend, build frontend, construcción/smoke de imágenes Docker.
+CI normalmente debe ejecutar compilación/tests backend, build frontend y construcción/smoke de imágenes Docker. Si la cuota de GitHub Actions está agotada, los mismos gates son obligatorios localmente antes de merge/deploy:
+
+```text
+python -m unittest discover -s tests -v
+npm ci && npm run build
+docker compose build --no-cache
+docker compose up -d
+```
+
+No marques CI como verde cuando el run no pudo ejecutarse por cuota.
 
 ## 21. Deuda legacy permitida solo si está explícita
 
@@ -668,6 +796,8 @@ Puede permanecer temporalmente:
 Pero ninguno de esos elementos puede ser autoridad de autorización nueva.
 
 La pantalla autoritativa de acceso es **Configuración → Accesos**.
+
+`frontend/vite.config.js` puede eliminar temporalmente las definiciones legacy completas de `ExpenseForm` y `HomeDashboard` para usar los módulos canónicos, pero evita nuevos parches de handlers internos sensibles a whitespace. Retira esos transforms cuando `main.jsx` importe directamente los componentes.
 
 Retira progresivamente:
 
