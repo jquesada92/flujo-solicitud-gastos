@@ -1,5 +1,52 @@
 # Historial funcional y técnico
 
+## 2026-08-17 — Google SMTP local y Brevo en producción
+
+### Problema observado
+
+Durante pruebas locales las solicitudes generaban aprobaciones/invitaciones, pero no se recibían correos reales porque el entorno podía quedar en `EMAIL_MODE=console`, modo que únicamente escribe el contenido en logs.
+
+### Decisión
+
+Se formaliza la estrategia de correo por ambiente:
+
+```text
+Producción
+Frontend: Vercel
+Backend:  Render
+Correo:   Brevo HTTPS API
+
+Local / development
+Frontend: localhost
+Backend:  FastAPI/Docker local
+Correo:   Gmail/Google Workspace SMTP
+```
+
+Configuración SMTP local recomendada:
+
+```env
+EMAIL_MODE=smtp
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURITY=ssl
+SMTP_USER=<CUENTA_GOOGLE>
+SMTP_PASSWORD=<APP_PASSWORD_GOOGLE>
+EMAIL_FROM=<CUENTA_GOOGLE>
+```
+
+Se mantiene `587 + starttls` como alternativa soportada. Las credenciales reales viven únicamente en `backend/.env` y nunca en Git.
+
+### Diagnóstico
+
+Se incorpora `python -m scripts.test_email --to <correo>` para validar el transporte configurado sin depender de crear una solicitud. Esto separa dos preguntas distintas:
+
+1. ¿Google SMTP/Brevo acepta el correo?
+2. ¿El workflow creó correctamente la aprobación o invitación y disparó la notificación?
+
+El estado del workflow sigue siendo persistido aunque el proveedor de correo falle; una futura outbox/retry debe mejorar esa observabilidad sin acoplar la transacción de negocio a la disponibilidad inmediata del proveedor.
+
+---
+
 ## 2026-08-17 — Aislamiento del estado de corrección y reparación de request_type
 
 ### Incidente refinado
