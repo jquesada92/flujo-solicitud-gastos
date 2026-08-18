@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.3.2  
+**Versión:** 2.3.3  
 **Vigente desde:** 2026-08-17
 
 ## 1. Evolucionar, no reconstruir sin necesidad
@@ -162,6 +162,32 @@ El backend sigue estas reglas:
 
 `app/main.py` no debe volver a convertirse en un archivo de migraciones, seeds o lógica de dominio.
 
+### Entrega de correo por ambiente
+
+La selección del transporte de correo pertenece al backend y se centraliza en Settings. Los secretos de correo nunca pertenecen al frontend.
+
+Política operativa vigente:
+
+```text
+Producción
+Frontend: Vercel
+Backend:  Render
+Correo:   Brevo HTTPS API
+
+Local / development
+Frontend: localhost
+Backend:  FastAPI/Docker local
+Correo:   Gmail/Google Workspace SMTP
+```
+
+En producción se usa `EMAIL_MODE=brevo`. En desarrollo local se usa `EMAIL_MODE=smtp` con `smtp.gmail.com`, preferiblemente `465 + SSL` o alternativamente `587 + STARTTLS`, y una App Password cuando la cuenta Google lo requiera.
+
+`EMAIL_MODE=console` es únicamente un modo de simulación/log y **no significa que un correo haya sido entregado**.
+
+Las credenciales (`BREVO_API_KEY`, `SMTP_PASSWORD`) deben existir solo en secretos/configuración backend y nunca en Vercel, bundles Vite, repositorio o logs.
+
+Debe existir una forma de probar el transporte de correo independientemente del workflow para diferenciar errores del proveedor de errores de negocio. El diagnóstico no debe imprimir secretos.
+
 ## 9. Contraseñas y sesiones
 
 - nuevos hashes: Argon2 mediante `pwdlib` recomendado;
@@ -269,7 +295,8 @@ Como mínimo:
 - evitar N+1;
 - pool y query timeout configurables antes de escalar;
 - una futura capa de scope debe limitar permisos por organización/área/recurso sin reutilizar cargos como autorización;
-- la elevación de la cuenta técnica fuera de producción debe depender de `ENVIRONMENT`, nunca de email/nombre/cargo.
+- la elevación de la cuenta técnica fuera de producción debe depender de `ENVIRONMENT`, nunca de email/nombre/cargo;
+- secretos de correo deben permanecer exclusivamente en configuración backend y no exponerse a Vite/Vercel.
 
 ## 17. Calidad y pruebas
 
@@ -286,6 +313,14 @@ Los cambios incluyen pruebas proporcionales al riesgo. Para IAM son obligatorias
 - login/respuesta de usuario exponiendo permisos efectivos coherentes con el ambiente.
 
 Para correcciones son obligatorias pruebas que demuestren que `request_type` no cambia, que una MULTI_QUOTE reinicia su ronda, que evidencia existente no se pierde por la hidratación del formulario, que el tipo del editor no depende de la pestaña seleccionada previamente y que un registro legacy con evidencia MULTI_QUOTE no se degrada por un default `SIMPLE` incorrecto.
+
+Para correo/configuración son obligatorias comprobaciones que demuestren que:
+
+- `EMAIL_MODE=smtp` requiere credenciales SMTP;
+- `EMAIL_MODE=brevo` requiere su API key;
+- el diagnóstico de correo usa el mismo transporte de la aplicación sin imprimir secretos;
+- la documentación distingue claramente Google SMTP local de Brevo productivo;
+- `console` no se presenta como entrega real.
 
 Para portabilidad de contenedores deben existir controles de regresión que verifiquen la política LF de scripts, el mecanismo defensivo de normalización y que el módulo de bootstrap sea importable desde la imagen construida.
 
@@ -331,6 +366,7 @@ Una feature está terminada cuando:
 - la política de cuenta técnica está probada en producción y no producción;
 - invariantes de corrección están protegidos en backend y probados;
 - el editor de corrección deriva su tipo de la solicitud y no conserva la pestaña de creación previa;
+- la configuración de correo por ambiente está documentada y puede diagnosticarse sin exponer secretos;
 - migraciones son versionadas y desplegables;
 - términos visibles coinciden con `docs/TERMINOLOGY.md`;
 - README/prompt no reconstruyen conceptos retirados;
