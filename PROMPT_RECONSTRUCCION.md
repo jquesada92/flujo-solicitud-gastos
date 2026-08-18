@@ -214,6 +214,31 @@ Cada solicitud conserva como mínimo:
 
 Crear/corregir/cargar soporte requiere `requests:create`.
 
+### Formulario canónico
+
+El formulario de solicitudes debe vivir en un módulo mantenible, actualmente:
+
+```text
+frontend/src/expense-form.jsx
+```
+
+No uses el estado de una pestaña de creación como fuente de verdad de una corrección.
+
+El componente debe calcular:
+
+```text
+effectiveRequestType = draft ? resolveRequestType(draft) : requestType
+```
+
+Y ese valor MUST gobernar conjuntamente:
+
+- layout/renderizado;
+- validaciones;
+- `request_type` del payload;
+- campos SIMPLE;
+- `quotation_options` MULTI_QUOTE;
+- carga posterior de soportes.
+
 ### Correcciones
 
 `Corregir / reenviar` debe preservar siempre el tipo canónico:
@@ -237,10 +262,11 @@ El backend debe rechazar con `409 Conflict` un intento real de convertir el tipo
 
 Para una corrección MULTI_QUOTE:
 
-- fuerza un estado/editor nuevo derivado del draft; no reutilices estado React de la pestaña de creación;
+- el layout visible MUST ser **Opciones para votación**, no el formulario SIMPLE;
+- muestra `Tipo de solicitud: Múltiples cotizaciones` como dato de solo lectura;
 - restaura en UI las opciones existentes;
-- conserva los attachments existentes como evidencia;
-- permite editar proveedor, monto, URL y observaciones;
+- conserva los attachments existentes como evidencia y representa esa evidencia con metadata, no intentando prellenar `input[type=file]`;
+- permite editar proveedor, monto, URL y observaciones dentro de cada opción;
 - conserva por ahora la cantidad de opciones;
 - genera un `flow_id` nuevo;
 - invalida/elimina votos e invitaciones vigentes de la ronda anterior;
@@ -248,14 +274,24 @@ Para una corrección MULTI_QUOTE:
 - crea nuevas invitaciones desde `requests:approve`;
 - vuelve a `QUOTATION_VOTING`.
 
+Una corrección MULTI_QUOTE NO debe mostrar como estructura principal:
+
+- un único `Monto (USD)` de solicitud;
+- un único `Proveedor`;
+- un único `URL del producto o servicio`;
+- un único input de cotización.
+
 No conviertas SIMPLE ↔ MULTI_QUOTE como efecto colateral de una corrección. Si el producto requiere esa conversión, especifícala como una operación distinta.
 
-Mientras `ExpenseForm` permanezca en el `main.jsx` monolítico, puede existir un transform Vite temporal que hidrate correctamente drafts MULTI_QUOTE. Ese transform debe:
+### Integración temporal del monolito
 
-- derivar el tipo inicial desde el draft/evidencia durable;
-- forzar remount del formulario al entrar/cambiar corrección;
-- fallar el build si deja de aplicar;
-- retirarse al modularizar el formulario.
+Mientras `main.jsx` conserve una definición histórica de `ExpenseForm`, `vite.config.js` puede realizar una única extracción estructural temporal:
+
+1. importar `ExpenseForm` desde `./expense-form.jsx`;
+2. eliminar del bundle la función legacy completa;
+3. usar una `key` por solicitud/flujo para forzar remount.
+
+No vuelvas a depender de múltiples reemplazos granulares de condiciones internas del formulario legacy. La transformación debe fallar el build si no puede aislar esa frontera y debe retirarse cuando `main.jsx` importe el componente modular directamente.
 
 ## 9. Cotizaciones
 
@@ -445,13 +481,15 @@ Matriz de correcciones mínima:
 
 - MULTI_QUOTE corregida permanece MULTI_QUOTE;
 - con la pestaña SIMPLE activa antes de corregir, una MULTI_QUOTE abre como múltiple;
+- un `draft` en `QUOTATION_VOTING` renderiza `Opciones para votación`;
 - un registro legacy `request_type=SIMPLE` con evidencia múltiple se trata/repara como MULTI_QUOTE;
+- `effectiveRequestType` gobierna render y payload en el formulario modular;
+- opciones y soportes existentes se restauran;
 - `flow_id` cambia;
-- opciones y soportes existentes se conservan;
 - votos vigentes se limpian;
 - invitaciones se reemplazan;
 - MULTI_QUOTE → SIMPLE por `resubmit` devuelve 409;
-- frontend build falla si la hidratación legacy deja de poder parchearse;
+- frontend build falla si la extracción del ExpenseForm legacy no puede aplicarse;
 - topología Alembic exige `0003` como único head.
 
 Matriz de correo mínima:
@@ -489,8 +527,10 @@ Un cambio no está terminado hasta revisar y actualizar cuando aplique Constituc
 
 ## 21. Deuda permitida solo si está explícita
 
-Durante la transición pueden existir `UserRole`, `can_*`, router legacy `/api/users`, `main.jsx` monolítico, `domain-normalization.js` y un transform Vite temporal de correcciones.
+Durante la transición pueden existir `UserRole`, `can_*`, router legacy `/api/users`, `main.jsx` monolítico, `domain-normalization.js` y `modularExpenseFormPlugin`.
 
-No los presentes como arquitectura objetivo. No deben ser fuente de autorización ni de invariantes críticos sin defensa backend.
+`frontend/src/expense-form.jsx` ya es la implementación canónica del formulario; no reconstruyas el esquema anterior de parchear granularmente el ExpenseForm legacy. El plugin temporal solo existe para retirar la definición histórica del bundle hasta que `main.jsx` importe directamente el componente modular.
+
+No presentes ninguna deuda legacy como arquitectura objetivo. No debe ser fuente de autorización ni de invariantes críticos sin defensa backend.
 
 No reconstruyas funcionalidad inmobiliaria ni vuelvas a introducir roles/cargos organizacionales hardcodeados.
