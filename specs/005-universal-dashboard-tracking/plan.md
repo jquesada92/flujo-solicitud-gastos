@@ -1,46 +1,24 @@
 # Plan técnico — Dashboard y seguimiento universal
 
 **Feature:** 005  
-**Constitución:** 2.5.0
+**Constitución:** 2.6.0
 
 ## Diseño
 
-La lectura compartida se implementa como una capacidad base resuelta por IAM, no como un bypass de frontend ni como un nombre de rol.
+La lectura compartida se resuelve mediante el baseline `requests:read`. Las mutaciones siguen siendo backend-authoritative y pueden depender de permisos IAM o de reglas explícitas por recurso.
 
 ```text
 current_user
    ↓
 effective_permission_codes(user)
    ↓
-requests:read baseline para usuario activo
+requests:read baseline
    ↓
 GET /api/expenses/dashboard
 GET /api/expenses
 ```
 
-Las acciones sobre una solicitud continúan siendo backend-authoritative. Para cancelación, la autoridad no deriva de `requests:create`: se calcula por propiedad de la solicitud o identidad de cuenta técnica protegida.
-
-Las acciones personales del Inicio se resuelven en dos niveles:
-
-```text
-IAM efectivo
-   ↓
-¿el usuario posee la capacidad general?
-   ↓
-asignación/estado concreto del workflow
-   ↓
-acción pendiente para ese usuario
-```
-
-Por ejemplo, `requests:approve` habilita la capacidad de aprobar, pero una solicitud solo aparece como **Responder aprobación** cuando existe un `Approval.PENDING` asignado al correo del usuario actual.
-
-## IAM
-
-`app/services/iam_service.py` define:
-
-```text
-BASELINE_PERMISSION_CODES = {requests:read}
-```
+## IAM y capacidades por recurso
 
 Para usuarios activos:
 
@@ -52,51 +30,47 @@ effective = baseline
           ∪ position-role permissions
 ```
 
-Para cuentas técnicas, la política ambiental se combina con el baseline. Producción continúa limitada a `config:manage + requests:read` como permisos IAM; la cancelación es una facultad explícita de administración de ciclo de vida definida por identidad de `system_accounts`, no un permiso financiero heredable.
-
-`permission_sources()` debe explicar el origen:
+La lista expone además capacidades calculadas por solicitud:
 
 ```text
-Acceso base del producto para usuarios activos
+can_cancel
+can_correct
 ```
 
-`users_with_permission('requests:read')` debe devolver todos los usuarios activos.
+Ambas son reglas por recurso. `can_correct` no deriva de `requests:create`.
 
-## Rutas canónicas de seguimiento
-
-`app/api/tracking.py` se registra antes de `expenses.py` legacy.
-
-Motivo: el router legacy todavía contiene filtros basados en `UserRole.REQUESTER`. La ruta canónica evita que esa deuda limite la visibilidad mientras se retira el monolito legacy.
-
-### `GET /api/expenses`
-
-- requiere `requests:read`;
-- no filtra por `requested_by` ni `UserRole`;
-- conserva carga eager de aprobaciones, attachments, opciones y votos;
-- conserva el conjunto operativo de estados visibles;
-- presenta actor/nombres/eventos como el contrato existente;
-- agrega `can_cancel` calculado por solicitud y usuario actual.
-
-`can_cancel=true` únicamente cuando:
+### `can_cancel`
 
 ```text
 status ∈ {QUOTATION_VOTING, SUBMITTED, PENDING_APPROVAL, NEEDS_REVISION, APPROVED}
-AND (
-  current_user.email == expense.requested_by
-  OR current_user está registrado en system_accounts
-)
+AND (requester OR system_accounts)
 ```
 
-La consulta de `system_accounts` se resuelve una vez por request de listado para evitar N+1.
+### `can_correct`
 
-### `GET /api/expenses/dashboard`
+```text
+status ∈ {QUOTATION_VOTING, SUBMITTED, PENDING_APPROVAL, NEEDS_REVISION, APPROVED, REJECTED}
+AND (requester OR system_accounts)
+```
+
+## `GET /api/expenses`
+
+`tracking.py`:
 
 - requiere `requests:read`;
-- expone métricas generales a todo usuario activo;
-- usa `pending_action_service.py` para resolver acciones personales;
-- `pending_my_action` cuenta acciones concretas vigentes, no solo solicitudes;
-- cada `pending_item` incluye códigos de acción backend-authoritative;
-- limita la lista visual inicial a ocho solicitudes, manteniendo el total de acciones independiente.
+- no filtra por solicitante ni `UserRole`;
+- carga relaciones necesarias para seguimiento;
+- calcula `can_cancel` y `can_correct` por solicitud;
+- resuelve `system_accounts` una vez por request para evitar N+1.
+
+## `GET /api/expenses/dashboard`
+
+- requiere `requests:read`;
+- expone métricas generales;
+- usa `pending_action_service.py` para tareas personales;
+- `pending_my_action` cuenta acciones concretas;
+- cada `pending_item` incluye códigos de acción;
+- la lista visual inicial se limita a ocho solicitudes.
 
 Acciones actuales:
 
@@ -109,208 +83,149 @@ CLOSE_REQUEST
 
 ## Resolver de acciones personales
 
-Se agrega `app/services/pending_action_service.py`.
-
-`pending_actions_by_expense(db, user)` combina permisos efectivos y estado/asignación concreta:
-
 ### `APPROVAL_DECISION`
 
-Requiere:
+Requiere `requests:approve` + `Approval.PENDING` asignado al correo del usuario + solicitud `PENDING_APPROVAL`.
 
-- `requests:approve` efectivo;
-- `Approval.status=PENDING`;
-- `approver_email == current_user.email`;
-- solicitud todavía en `PENDING_APPROVAL`.
+Puede ejecutar:
+
+```text
+APPROVED
+REJECTED
+REVISION_REQUESTED
+```
+
+`REVISION_REQUESTED` se presenta como **Enviar a revisión** y requiere comentario mínimo de 3 caracteres.
+
+Feature 007 establece que una sola revisión válida interrumpe inmediatamente la ronda:
+
+```text
+approval → REVISION_REQUESTED
+request  → NEEDS_REVISION
+otros PENDING/WAITING → EXPIRED
+requester → CORRECT_REQUEST
+```
+
+No se espera mayoría para enviar a revisión.
 
 ### `QUOTATION_VOTE`
 
-Requiere:
-
-- `requests:approve` efectivo;
-- invitación `QuotationVotingInvitation` para `current_user.id`;
-- solicitud en `QUOTATION_VOTING`;
-- ausencia de `QuotationVote` del usuario para esa solicitud.
+Requiere `requests:approve`, invitación vigente para el usuario, estado `QUOTATION_VOTING` y ausencia de voto vigente.
 
 ### `CORRECT_REQUEST`
 
-Requiere:
+Requiere únicamente:
 
-- `requests:create` efectivo;
-- solicitud en `NEEDS_REVISION`;
-- `requested_by == current_user.email`.
+```text
+Expense.status == NEEDS_REVISION
+AND Expense.requested_by == current_user.email
+```
+
+No depende de `requests:create`: es una tarea por propiedad. El Administrador del sistema puede corregir solicitudes ajenas desde la lista mediante `can_correct`, pero no recibe automáticamente esta tarea personal.
 
 ### `CLOSE_REQUEST`
 
-Requiere:
+Requiere `requests:close` + solicitud `APPROVED`.
 
-- `requests:close` efectivo;
-- solicitud en `APPROVED`.
-
-El servicio acepta opcionalmente `expense_ids` para revalidar una solicitud concreta sin calcular toda la bandeja.
-
-## API contextual de acciones
-
-Se agrega `app/api/my_actions.py` y se registra antes del router legacy.
+## API contextual
 
 ### `GET /api/expenses/{request_id}/my-actions`
 
-- requiere `requests:read`;
-- recarga la solicitud y sus soportes/opciones;
-- vuelve a ejecutar `pending_actions_by_expense()` para el usuario actual;
-- devuelve únicamente acciones todavía vigentes;
-- devuelve el detalle requerido por el modal;
-- no expone tokens bearer de correo.
+Revalida permiso + asignación + estado y devuelve únicamente acciones todavía vigentes.
 
 ### `POST /api/expenses/{request_id}/approval-decision`
 
 - requiere `requests:approve`;
-- localiza y bloquea la solicitud;
-- rechaza autoaprobación;
-- exige que exista un `Approval.PENDING` asignado al usuario actual;
+- exige `Approval.PENDING` asignado al usuario;
+- evita autoaprobación;
 - reutiliza `approval_engine.apply_decision()`;
-- permite `APPROVED`, `REJECTED` y `REVISION_REQUESTED` con las mismas reglas del motor existente.
+- **Enviar a revisión** exige comentario y se procesa como interrupción inmediata.
 
-Las demás acciones reutilizan endpoints canónicos existentes:
-
-```text
-POST /api/expenses/{request_id}/quotation-vote
-POST /api/expenses/{request_id}/close
-```
-
-La corrección reutiliza el editor canónico de Solicitudes; el modal ofrece **Abrir para corregir / reenviar**.
-
-## Cancelación canónica
-
-`app/api/cancellation_actions.py` se registra antes de `expenses.py` legacy.
-
-### `POST /api/expenses/{request_id}/cancel`
-
-- requiere autenticación, no `requests:create`;
-- localiza y bloquea la solicitud antes de cambiar estado;
-- autoriza solo al solicitante original o a una cuenta en `system_accounts`;
-- rechaza usuarios empresariales ajenos aunque tengan `requests:create`, `requests:approve` o `config:manage`;
-- rechaza `CLOSED`, `CANCELLED` y `REJECTED`;
-- permite `QUOTATION_VOTING`, `SUBMITTED`, `PENDING_APPROVAL`, `NEEDS_REVISION` y `APPROVED`;
-- exige motivo de 3 a 1000 caracteres;
-- expira aprobaciones abiertas;
-- persiste estado, actor, timestamp y motivo.
-
-La cuenta técnica se identifica por `system_accounts`, nunca por `UserRole.ADMIN`, email o cargo.
+Voto/cierre reutilizan endpoints canónicos existentes.
 
 ## Frontend
 
-No se requiere una nueva variable de Vite.
+`frontend/src/home-dashboard.jsx` es el componente canónico.
 
-Se agrega:
-
-```text
-frontend/src/home-dashboard.jsx
-frontend/src/home-dashboard.css
-```
-
-`HomeDashboard` pasa a ser un componente modular. Mientras `main.jsx` conserve su implementación histórica, `vite.config.js` elimina la función legacy completa entre:
-
-```text
-function HomeDashboard(...)
-function App()
-```
-
-e importa el componente modular. No se parchean handlers internos por coincidencias de whitespace.
-
-### Comportamiento
-
-- los KPIs superiores **Acciones que requieren mi atención**, **Solicitudes en proceso** y **Cerradas en 24 horas** son elementos informativos (`article`), no botones;
-- los KPIs no tienen `onClick`, no navegan y no abren acciones;
-- **Ver todas** continúa ejecutando `onOpenRequests` y navega a Solicitudes;
-- una fila de `pending_items` ejecuta `openAction(item)`;
-- `openAction` consulta `/{request_id}/my-actions`;
-- el modal muestra resumen de la solicitud y únicamente controles vigentes;
-- antes de cada mutación la autorización se vuelve a comprobar en backend;
-- después de una mutación se recargan en paralelo dashboard + detalle contextual;
-- si la acción ya fue respondida desde otro canal, el modal muestra que ya no quedan acciones pendientes.
-
-La separación de interacción es deliberada:
+Comportamiento:
 
 ```text
 KPI superior          → información solamente
 Fila acción pendiente → modal contextual
-Ver todas             → navegación a Solicitudes
+Ver todas             → Solicitudes
 ```
 
-Controles del modal:
+Los KPIs son `article`, no botones.
 
-- aprobación: comentario + Rechazar / Solicitar corrección / Aprobar;
-- votación: opciones, soportes y botón de voto por opción;
-- cierre: factura + notas + cerrar;
-- corrección: navegación explícita al editor de Solicitudes.
+El modal:
 
-El modal es accesible como `role=dialog`, `aria-modal=true`, cierra con Escape y soporta layout móvil.
+- aprobación: Rechazar / **Enviar a revisión** / Aprobar;
+- deshabilita **Enviar a revisión** mientras `comment.trim().length < 3`;
+- votación: opciones/soportes + voto;
+- cierre: factura/notas;
+- corrección: abre el editor para el solicitante.
 
-La tabla legacy de Solicitudes continúa consumiendo `can_cancel` para cancelación hasta su modularización.
+El wording **Enviar a revisión** vive directamente en `home-dashboard.jsx`; no depende de un transform de Vite.
 
-## Compatibilidad legacy
+Mientras `ExpenseTable` siga en `main.jsx`, Vite mantiene solo bridges temporales para `can_cancel`, `can_correct` y montaje del formulario modular.
 
-Se mantiene temporalmente:
+## Cancelación y corrección
 
-- `UserRole.REQUESTER/VIEWER/...` en la tabla `users`;
-- `can_view` como alias transitorio del response model;
-- rutas legacy en `expenses.py` detrás de routers canónicos;
-- partes de `ExpenseTable` dentro de `main.jsx`;
-- definición histórica de `HomeDashboard` dentro de `main.jsx`, eliminada del bundle por la extracción modular de Vite.
+`cancellation_actions.py` y `revision_actions.py` son rutas canónicas por recurso.
 
-Ninguno de esos elementos puede limitar la lectura base, ampliar cancelación ni determinar qué acción personal corresponde al usuario.
+- cancelación: requester/System Admin;
+- corrección: requester/System Admin;
+- `requests:create` no habilita cancelación ni corrección de solicitudes ajenas.
 
 ## Pruebas
 
-`backend/tests/test_universal_tracking.py` verifica lectura universal.
+`test_pending_actions.py` cubre:
 
-`backend/tests/test_request_cancellation.py` verifica cancelación por solicitante/cuenta técnica.
+- aprobación contextual;
+- revisión inmediata en ronda MAJORITY;
+- comentario obligatorio;
+- expiración de otros aprobadores;
+- handoff `CORRECT_REQUEST` al solicitante;
+- invitación MULTI_QUOTE;
+- cierre contextual.
 
-`backend/tests/test_pending_actions.py` verifica:
+`test_frontend_dashboard_contract.py` protege:
 
-1. aprobación pendiente aparece como `APPROVAL_DECISION`;
-2. el detalle contextual devuelve la misma acción;
-3. la aprobación puede registrarse desde el endpoint autenticado por request sin exponer token de correo;
-4. después de responder, `my-actions` queda vacío si no surge otra tarea;
-5. una invitación MULTI_QUOTE no respondida aparece como `QUOTATION_VOTE` y devuelve opciones;
-6. `NEEDS_REVISION` propia aparece como `CORRECT_REQUEST`;
-7. `APPROVED` aparece como `CLOSE_REQUEST` solo a quien tenga `requests:close`.
+- fila → modal;
+- KPIs no interactivos;
+- **Enviar a revisión** directo en source + comentario mínimo;
+- `x.can_correct`/`x.can_cancel` en el bridge legacy;
+- revalidación posterior a mutación.
 
-`backend/tests/test_frontend_dashboard_contract.py` protege:
+## Datos/migraciones
 
-- click de fila → `openAction(item)`;
-- KPIs superiores renderizados como `article` y sin `onClick`;
-- **Ver todas** permanece como control explícito de navegación;
-- presencia del modal contextual;
-- los cuatro códigos actuales;
-- endpoints usados por aprobación/voto/cierre;
-- revalidación posterior a mutación;
-- extracción completa del `HomeDashboard` legacy durante build.
-
-## Datos y migraciones
-
-El modal contextual, los KPIs informativos y el resolver de acciones no requieren columnas nuevas.
-
-La rama contiene además Feature 006, cuya migración `20260818_0004_position_role_inheritance.py` es independiente de este cambio. La cadena global de la rama es:
+Feature 005/007 no requieren migración nueva. La cadena global sigue:
 
 ```text
 0000 → 0001 → 0002 → 0003 → 0004
 ```
 
-No crear un backfill adicional para las acciones pendientes.
+## Validación local mientras Actions no tenga cuota
 
-## Despliegue
+```powershell
+cd backend
+python -m unittest tests.test_pending_actions -v
+python -m unittest tests.test_frontend_dashboard_contract -v
+python -m unittest discover -s tests -v
+cd ..
 
-1. Ejecutar localmente backend tests porque el límite de GitHub Actions está agotado.
-2. Ejecutar `npm run build` del frontend.
-3. Construir imágenes Docker localmente.
-4. Probar en Docker:
-   - confirmar que los KPIs superiores no son clicables ni navegan;
-   - iniciar sesión como usuario con aprobación pendiente;
-   - seleccionar una fila en **Acciones pendientes**;
-   - confirmar apertura del modal, no navegación inmediata a Solicitudes;
-   - aprobar/rechazar/solicitar corrección y verificar que la acción desaparezca o cambie;
-   - probar una invitación MULTI_QUOTE y voto;
-   - probar cierre para un usuario con `requests:close`.
-5. Feature 006 requiere además smoke de Alembic `0004` antes de producción.
-6. Merge a `main` solo después de esas validaciones locales mientras CI remoto no esté disponible.
+cd frontend
+npm run build
+cd ..
+
+docker compose build --no-cache
+docker compose up -d
+```
+
+Pruebas manuales adicionales de Feature 007:
+
+1. aprobador ajeno no ve **Corregir / reenviar**;
+2. aprobador usa **Enviar a revisión** con comentario;
+3. solicitud pasa a `NEEDS_REVISION` inmediatamente;
+4. solicitante recibe la tarea `CORRECT_REQUEST`;
+5. otros aprobadores dejan de tener acción vigente.
