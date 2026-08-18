@@ -59,8 +59,9 @@ class ClosureDelegationTests(unittest.TestCase):
                 db.execute(table.delete())
             db.commit()
 
+            read_permission = Permission(code='requests:read', name='Consultar', active=True)
             close_permission = Permission(code='requests:close', name='Cerrar legacy', active=True)
-            db.add(close_permission)
+            db.add_all([read_permission, close_permission])
             db.flush()
 
             requester = self._user(db, 'requester@example.com')
@@ -209,6 +210,7 @@ class ClosureDelegationTests(unittest.TestCase):
 
     def test_system_administrator_can_close_without_global_close_permission(self):
         response = self.client.get('/api/expenses', headers=self.auth(self.admin_token))
+        self.assertEqual(response.status_code, 200, response.text)
         item = next(row for row in response.json() if row['request_id'] == 'closure-request')
         self.assertTrue(item['can_close'])
         self.assertFalse(item['can_delegate_close'])
