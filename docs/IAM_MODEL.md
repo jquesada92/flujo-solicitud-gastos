@@ -161,6 +161,53 @@ Por tanto:
 - otro usuario con `requests:create`, `requests:approve` o `config:manage` no puede cancelar una solicitud ajena por esos permisos;
 - el frontend recibe `can_cancel` calculado por el backend y no debe reconstruir esta regla localmente.
 
+## Acciones pendientes no son nuevos permisos IAM
+
+Los códigos del dashboard:
+
+```text
+APPROVAL_DECISION
+QUOTATION_VOTE
+CORRECT_REQUEST
+CLOSE_REQUEST
+```
+
+**no son permisos** y no deben agregarse al catálogo `permissions`.
+
+Representan tareas contextuales derivadas de:
+
+```text
+permiso efectivo
++
+asignación concreta del workflow
++
+estado actual de la solicitud
+```
+
+Ejemplos:
+
+```text
+requests:approve
++ Approval.PENDING asignado al usuario
+→ APPROVAL_DECISION
+
+requests:approve
++ invitación de votación vigente sin voto
+→ QUOTATION_VOTE
+
+requests:create
++ solicitud propia NEEDS_REVISION
+→ CORRECT_REQUEST
+
+requests:close
++ solicitud APPROVED
+→ CLOSE_REQUEST
+```
+
+Esto evita multiplicar permisos por cada estado del workflow. IAM responde **qué capacidades generales tiene el usuario**; `pending_action_service.py` responde **qué tarea concreta requiere su intervención ahora**.
+
+La consulta contextual `GET /api/expenses/{request_id}/my-actions` vuelve a calcular estas tareas antes de mostrar controles en el modal de Inicio.
+
 ## Política de `TECHNICAL_ADMIN`
 
 La cuenta técnica no usa la fórmula normal como autoridad final. `iam_service.py` aplica una política ambiental explícita sobre el catálogo de permisos activos.
@@ -191,6 +238,8 @@ requests:close
 incluso si llega por Grupo, Cargo, Rol directo o Permiso directo, y la excluye de poblaciones financieras para esos permisos.
 
 La cancelación administrativa de una solicitud abierta es una excepción explícita de ciclo de vida basada en `system_accounts`; no otorga ni implica los permisos financieros anteriores.
+
+En consecuencia, en producción la cuenta técnica tampoco recibe tareas contextuales financieras como `APPROVAL_DECISION`, `QUOTATION_VOTE` o `CLOSE_REQUEST`.
 
 ### No producción
 
@@ -254,6 +303,8 @@ can_close     = requests:close
 `apply_effective_permissions_to_user()` deriva estos valores. No se usan como fuente de autorización.
 
 En respuestas de solicitudes, `can_cancel` es una capacidad por recurso calculada por el backend y no forma parte de `permission_codes`.
+
+Las acciones contextuales del dashboard tampoco forman parte de `permission_codes`; se consultan por solicitud mediante `my-actions`.
 
 ## Administración gráfica
 
@@ -328,6 +379,8 @@ GET /users/{user_id}/effective-permissions
 ```
 
 Base `/api/iam/users` ofrece administración neutral de usuarios, Grupos, Cargos, Roles directos y permisos directos.
+
+Las APIs `/api/expenses/{request_id}/my-actions` pertenecen al workflow y no a IAM porque describen tareas concretas, no asignaciones de acceso.
 
 ## Participación en workflows
 
