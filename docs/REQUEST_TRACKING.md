@@ -1,44 +1,31 @@
-# Seguimiento universal, acciones pendientes y cancelación
+# Seguimiento universal, acciones pendientes, revisión y capacidades por recurso
 
 ## Objetivo
 
-Todo usuario activo y autenticado puede consultar el dashboard y las solicitudes de la organización para dar seguimiento, sin que la lectura dependa de haber creado la solicitud ni de pertenecer a un rol/grupo específico.
-
-La lectura compartida no convierte las acciones mutables en universales. El dashboard separa explícitamente:
+Todo usuario activo puede consultar dashboard y solicitudes para seguimiento. La lectura compartida no convierte acciones mutables en universales.
 
 ```text
 información compartida
 vs
-acciones concretas que requieren al usuario actual
+acciones concretas del usuario
+vs
+capacidades por recurso
 ```
 
-## Baseline de lectura
-
-`requests:read` es una capacidad base del producto para todo usuario activo.
+## Baseline
 
 ```text
 active user
-  → requests:read
-  → GET /api/expenses/dashboard
-  → GET /api/expenses
+→ requests:read
+→ GET /api/expenses/dashboard
+→ GET /api/expenses
 ```
 
-Los demás permisos continúan siendo configurables:
-
-```text
-requests:create
-requests:approve
-requests:close
-config:manage
-```
-
-Los permisos pueden provenir de asignación directa, Rol directo, Grupo → Rol o Cargo → Rol.
+Los permisos mutables siguen siendo configurables por asignación directa, Rol directo, Grupo → Rol o Cargo → Rol.
 
 ## Dashboard
 
-`GET /api/expenses/dashboard` muestra métricas compartidas de la organización.
-
-Los KPIs superiores son **solo informativos**. En particular:
+Los KPIs superiores son informativos:
 
 ```text
 Acciones que requieren mi atención
@@ -46,128 +33,96 @@ Solicitudes en proceso
 Cerradas en 24 horas
 ```
 
-se renderizan como contenido (`article`) y no como botones. No navegan, no abren modales y no ejecutan ninguna acción mediante clic o teclado.
-
-La interacción se concentra en controles explícitos:
+No son botones ni ejecutan navegación.
 
 ```text
 fila de Acciones pendientes → modal contextual
 Ver todas                    → Solicitudes
 ```
 
-`pending_my_action` es personal y cuenta acciones concretas vigentes, no simplemente solicitudes abiertas ni permisos abstractos.
+## Tareas contextuales
 
-El resolver canónico vive en:
-
-```text
-backend/app/services/pending_action_service.py
-```
-
-Acciones actuales:
+`backend/app/services/pending_action_service.py` resuelve:
 
 ### `APPROVAL_DECISION`
 
-El usuario tiene `requests:approve` y existe un `Approval.PENDING` asignado a su correo para una solicitud todavía en `PENDING_APPROVAL`.
+`requests:approve` + `Approval.PENDING` asignado al usuario + solicitud `PENDING_APPROVAL`.
 
 ### `QUOTATION_VOTE`
 
-El usuario tiene `requests:approve`, fue invitado a la ronda vigente de `QUOTATION_VOTING` y todavía no registró su voto.
+`requests:approve` + invitación vigente + `QUOTATION_VOTING` + sin voto vigente.
 
 ### `CORRECT_REQUEST`
 
-La solicitud está en `NEEDS_REVISION`, pertenece al usuario actual y el usuario conserva `requests:create`.
+```text
+solicitud NEEDS_REVISION
+AND requested_by == current_user.email
+```
+
+No depende de `requests:create`. La tarea pertenece al solicitante original.
 
 ### `CLOSE_REQUEST`
 
-La solicitud está `APPROVED` y el usuario tiene `requests:close`.
+`requests:close` + solicitud `APPROVED`.
 
-El dashboard devuelve el código concreto en cada fila:
+## Modal contextual
 
-```json
-{
-  "request_id": "...",
-  "title": "Compra de prueba",
-  "actions": ["APPROVAL_DECISION"]
-}
-```
-
-## Modal contextual de acciones pendientes
-
-**Inicio → Acciones pendientes** tiene dos comportamientos distintos:
-
-```text
-Ver todas
-→ navegar a Solicitudes
-
-clic en una solicitud pendiente
-→ abrir modal de Mis acciones
-```
-
-La fila no debe reutilizar el handler de **Ver todas**.
-
-Al seleccionar una fila, `frontend/src/home-dashboard.jsx` consulta:
+Al seleccionar una fila:
 
 ```text
 GET /api/expenses/{request_id}/my-actions
 ```
 
-El backend vuelve a evaluar permiso + asignación + estado de workflow. Esto evita mostrar una acción obsoleta si el usuario ya respondió desde correo, otra pestaña o una sesión distinta.
-
-El modal presenta el resumen de la solicitud y solo las acciones vigentes para ese usuario.
+El backend revalida tareas y el modal muestra únicamente las vigentes.
 
 ### Aprobación
 
 ```text
-APPROVAL_DECISION
-→ comentario opcional
-→ Rechazar
-→ Solicitar corrección
-→ Aprobar
+Aprobar
+Rechazar
+Enviar a revisión
 ```
 
-La decisión autenticada usa:
+**Enviar a revisión** exige comentario mínimo de 3 caracteres. El botón permanece deshabilitado sin comentario válido y el backend vuelve a validarlo.
+
+La decisión usa:
 
 ```text
 POST /api/expenses/{request_id}/approval-decision
 ```
 
-El frontend no necesita ni recibe el token bearer usado por los enlaces de correo.
+sin exponer el token bearer de los enlaces de correo.
 
-El endpoint vuelve a comprobar:
+### Enviar a revisión
 
-- `requests:approve`;
-- aprobación `PENDING` asignada al usuario;
-- que el usuario no sea el solicitante de la misma solicitud;
-- reglas del motor `approval_engine.apply_decision()`.
+`REVISION_REQUESTED` es una interrupción inmediata del flujo:
 
-### Votación de cotizaciones
+```text
+aprobación actual      → REVISION_REQUESTED
+solicitud               → NEEDS_REVISION
+otras PENDING/WAITING   → EXPIRED
+solicitante             → CORRECT_REQUEST
+```
+
+No espera mayoría. El comentario, actor y timestamp quedan auditados y el solicitante recibe el comentario por notificación.
+
+Los otros aprobadores dejan de tener acción vigente.
+
+### Votación
 
 ```text
 QUOTATION_VOTE
-→ ver proveedor/monto/notas
-→ abrir URL/soportes
-→ Votar por esta opción
-```
-
-Reutiliza:
-
-```text
-POST /api/expenses/{request_id}/quotation-vote
+→ revisar opciones/soportes
+→ votar una opción
 ```
 
 ### Cierre
 
 ```text
 CLOSE_REQUEST
-→ seleccionar factura
-→ notas opcionales
-→ Subir factura y cerrar
-```
-
-Reutiliza:
-
-```text
-POST /api/expenses/{request_id}/close
+→ factura
+→ notas
+→ cerrar
 ```
 
 ### Corrección
@@ -177,156 +132,157 @@ CORRECT_REQUEST
 → Abrir para corregir / reenviar
 ```
 
-La edición continúa en el editor canónico de Solicitudes para preservar todas las reglas SIMPLE/MULTI_QUOTE de Feature 003.
+La tarea aparece al solicitante original. El Administrador del sistema puede corregir administrativamente desde Solicitudes mediante `can_correct`, pero no recibe automáticamente la tarea personal de solicitudes ajenas.
 
-### Después de ejecutar una acción
+## Después de una acción
 
-El frontend recarga en paralelo:
+El frontend recarga:
 
 ```text
 GET /api/expenses/dashboard
 GET /api/expenses/{request_id}/my-actions
 ```
 
-Si la acción quedó atendida, el modal muestra:
-
-> Ya no tienes acciones pendientes para esta solicitud.
-
-Si el cambio de estado genera otra tarea válida para el mismo usuario, esa nueva acción puede aparecer en el mismo modal después del refresh.
+Una tarea atendida desde correo/otra sesión deja de mostrarse como ejecutable.
 
 ## Lista de solicitudes
 
-`GET /api/expenses` no filtra por `UserRole.REQUESTER` ni por `requested_by`.
-
-La lista conserva el alcance operativo vigente y agrega capacidades por recurso. Actualmente:
+`GET /api/expenses` no filtra por requester y devuelve capacidades por recurso:
 
 ```json
 {
-  "can_cancel": true
+  "can_cancel": true,
+  "can_correct": true
 }
 ```
 
-`can_cancel` es informativo para la UX; el endpoint de cancelación vuelve a autorizar siempre.
+### `can_cancel`
 
-## Regla de cancelación
+Solo solicitante original o Administrador del sistema, en estados cancelables.
 
-Una solicitud abierta puede ser cancelada únicamente por:
+### `can_correct`
 
-1. el solicitante original; o
-2. el Administrador del sistema persistido en `system_accounts`.
+Solo solicitante original o Administrador del sistema, en estados corregibles.
 
-No autoriza cancelación ajena tener:
+`requests:create`, `requests:approve`, `config:manage`, Grupo, Rol o Cargo no permiten editar una solicitud ajena.
 
-- `requests:create`;
-- `requests:approve`;
-- `config:manage`;
-- un cargo particular;
-- un rol/grupo con un nombre específico;
-- un `UserRole` legacy determinado.
+## Cancelación
 
-### Estados abiertos cancelables
+Cancelables:
 
-- `QUOTATION_VOTING`
-- `SUBMITTED`
-- `PENDING_APPROVAL`
-- `NEEDS_REVISION`
-- `APPROVED`
+```text
+QUOTATION_VOTING
+SUBMITTED
+PENDING_APPROVAL
+NEEDS_REVISION
+APPROVED
+```
 
-`APPROVED` sigue abierto porque aprobado no significa cerrado.
+No cancelables:
 
-### Estados no cancelables
+```text
+CLOSED
+CANCELLED
+REJECTED
+```
 
-- `CLOSED`
-- `CANCELLED`
-- `REJECTED`
-
-## API de cancelación
+Endpoint:
 
 ```text
 POST /api/expenses/{request_id}/cancel
 ```
 
-Payload:
+Exige motivo y persiste actor/timestamp/razón.
 
-```json
-{
-  "reason": "Motivo de la cancelación"
-}
+## Corrección
+
+Corregibles por solicitante/Admin:
+
+```text
+QUOTATION_VOTING
+SUBMITTED
+PENDING_APPROVAL
+NEEDS_REVISION
+APPROVED
+REJECTED
 ```
 
-El motivo debe tener entre 3 y 1000 caracteres.
+No corregibles:
 
-La operación:
+```text
+CLOSED
+CANCELLED
+```
 
-1. bloquea la solicitud;
-2. valida estado;
-3. valida solicitante o `system_accounts`;
-4. expira aprobaciones abiertas;
-5. cambia estado a `CANCELLED`;
-6. persiste `cancelled_at`, `cancelled_by` y `cancellation_reason`.
+Endpoint:
+
+```text
+PUT /api/expenses/{request_id}/resubmit
+```
+
+vuelve a autorizar en backend y mantiene invariants SIMPLE/MULTI_QUOTE.
 
 ## Administrador del sistema en producción
 
-La cuenta técnica conserva como permisos IAM efectivos únicamente:
+IAM efectivo:
 
 ```text
 requests:read
 config:manage
 ```
 
-No recibe `requests:create`, `requests:approve` ni `requests:close` y no participa en decisiones financieras.
-
-La cancelación administrativa es una regla explícita de ciclo de vida basada en la identidad protegida `system_accounts`; no se modela como uno de esos permisos financieros.
-
-Por la misma razón, el Administrador del sistema productivo no debe recibir `APPROVAL_DECISION`, `QUOTATION_VOTE` ni `CLOSE_REQUEST` en su bandeja de acciones personales.
+No participa en aprobación/votación/cierre. Cancelar y corregir son excepciones administrativas por recurso basadas en `system_accounts`, no permisos financieros.
 
 ## Frontend
 
-Componentes relevantes:
+Componentes:
 
 ```text
 frontend/src/home-dashboard.jsx
 frontend/src/home-dashboard.css
 ```
 
-Los tres KPIs superiores usan elementos no interactivos. Las filas de `pending_items` sí son controles porque abren una acción concreta del usuario.
+**Enviar a revisión** y la validación mínima de comentario viven directamente en el source modular.
 
-Mientras `main.jsx` conserve una implementación histórica de `HomeDashboard`, `vite.config.js` elimina la función completa durante build e importa el componente modular. No se parchea el `onClick` de cada fila por coincidencias de texto.
+Mientras `ExpenseTable` siga legacy, Vite mantiene bridges para:
 
-Mientras `ExpenseTable` permanezca dentro de `main.jsx`, el build todavía reemplaza la condición legacy de cancelación por `x.can_cancel`. Esa compatibilidad es independiente del modal de Inicio.
+```text
+x.can_cancel
+x.can_correct
+canCreate || revision
+```
+
+No debe parchear wording/handlers internos del Dashboard.
 
 ## Accesibilidad
 
-Los KPIs informativos no deben entrar al orden de tabulación como botones.
-
-El modal usa:
-
-```text
-role="dialog"
-aria-modal="true"
-```
-
-Puede cerrarse con Escape, tiene botón explícito de cierre y adapta su layout a pantallas pequeñas.
+- KPIs informativos no entran al tab order como botones.
+- Modal usa `role="dialog"` y `aria-modal="true"`.
+- Escape cierra cuando no hay una mutación ocupada.
 
 ## Pruebas
 
 Cobertura principal:
 
-- `backend/tests/test_universal_tracking.py`
-- `backend/tests/test_request_cancellation.py`
-- `backend/tests/test_pending_actions.py`
-- `backend/tests/test_frontend_dashboard_contract.py`
+```text
+test_universal_tracking.py
+test_request_cancellation.py
+test_pending_actions.py
+test_frontend_dashboard_contract.py
+test_multi_quote_revision.py
+```
 
-Deben demostrar:
+Debe demostrar:
 
-- lectura universal sin mutación universal;
-- regla exacta solicitante/admin para cancelación;
-- acciones pendientes determinadas por permiso + asignación + estado;
-- decisión de aprobación contextual sin token de correo;
-- votación/corrección/cierre personalizados;
-- KPIs superiores informativos, sin botones ni handlers `onClick`;
-- fila pendiente abre modal contextual y no el handler genérico de Solicitudes;
-- **Ver todas** conserva navegación explícita;
-- revalidación después de cada mutación.
+- lectura universal;
+- KPIs informativos;
+- fila → modal;
+- `my-actions` backend-authoritative;
+- revisión inmediata con comentario y expiración de pares;
+- `CORRECT_REQUEST` al solicitante;
+- tercero sin `can_correct`;
+- solicitante/Admin con capacidad de corrección;
+- cancelación por solicitante/Admin;
+- revalidación posterior a mutación.
 
-Mientras la cuota de GitHub Actions esté agotada, estas pruebas, `npm run build` y los builds Docker deben ejecutarse localmente antes de merge/deploy.
+Mientras GitHub Actions no tenga cuota, backend tests, `npm run build` y Docker build/smoke son gates locales obligatorios.
