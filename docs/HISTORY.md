@@ -1,5 +1,25 @@
 # Historial funcional y técnico
 
+## 2026-08-18 — Hardening del bridge Vite de delegación de cierre
+
+Durante la validación local de Feature 008, `npm run build` falló con:
+
+```text
+Legacy main.jsx extraction could not find: closure delegation action
+```
+
+La causa no era la autorización ni el componente de delegación, sino que el bridge temporal de `vite.config.js` buscaba una secuencia con salto de línea e indentación exactos dentro del `main.jsx` monolítico.
+
+Decisión técnica:
+
+- mantener el bridge temporal mientras `ExpenseTable` siga en `main.jsx`;
+- reemplazar la coincidencia literal por un ancla regex tolerante a LF/CRLF y whitespace variable;
+- exigir exactamente una coincidencia `row-actions → x.can_correct` para conservar fail-fast ante ambigüedad;
+- agregar regresión en `test_frontend_closure_contract.py`;
+- mantener Constitución 2.7.0 porque la semántica funcional de Feature 008 no cambió.
+
+---
+
 ## 2026-08-18 — Cierre/factura pasa a propiedad por solicitud con delegación
 
 ### Problema observado
