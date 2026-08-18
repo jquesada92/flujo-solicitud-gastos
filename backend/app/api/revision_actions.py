@@ -6,7 +6,7 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
-from app.core.security import require_permission
+from app.core.security import current_user
 from app.models.entities import (
     Expense,
     ExpenseArea,
@@ -21,10 +21,40 @@ from app.models.entities import (
 from app.schemas.expense import ExpenseCreate, ExpenseOut
 from app.services.approval_engine import expire_open_approvals, start_approval_flow
 from app.services.email_service import send_quotation_vote_request
-from app.services.iam_service import users_with_permission
+from app.services.iam_service import is_system_account, users_with_permission
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+CORRECTABLE_STATUSES = {
+    ExpenseStatus.QUOTATION_VOTING,
+    ExpenseStatus.SUBMITTED,
+    ExpenseStatus.PENDING_APPROVAL,
+    ExpenseStatus.NEEDS_REVISION,
+    ExpenseStatus.APPROVED,
+    ExpenseStatus.REJECTED,
+}
+
+
+def can_correct_expense(
+    db: Session,
+    expense: Expense,
+    user: User,
+    *,
+    system_admin: bool | None = None,
+) -> bool:
+    """Correction is resource ownership, not a general requests:create capability.
+
+    Only the original requester or the protected system administrator can edit
+    and resubmit a request. Approvers/reviewers must use REVISION_REQUESTED with
+    a comment instead of modifying somebody else's request.
+    """
+    if expense.status not in CORRECTABLE_STATUSES:
+        return False
+    requester = (expense.requested_by or '').strip().lower()
+    actor = (user.email or '').strip().lower()
+    technical_admin = is_system_account(db, user.id) if system_admin is None else system_admin
+    return requester == actor or technical_admin
 
 
 def _validate_classification(db: Session, area_code: str, category_code: str | None) -> None:
@@ -151,7 +181,7 @@ def _reset_multi_quote_round(
     voters = users_with_permission(
         db,
         'requests:approve',
-        exclude_email=actor.email.lower(),
+        exclude_email=expense.requested_by.lower(),
     )
     if not voters:
         raise HTTPException(
@@ -176,10 +206,12 @@ def resubmit_expense(
     request_id: str,
     payload: ExpenseCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_permission('requests:create')),
+    user: User = Depends(current_user),
 ):
     """Correct and restart a request without changing its workflow type.
 
+    Only the original requester or the protected system administrator can
+    correct/resubmit. Reviewers must request revision with comments instead.
     A MULTI_QUOTE correction remains MULTI_QUOTE and restarts its voting round.
     A SIMPLE correction remains SIMPLE. The canonical type is also inferred from
     durable quotation evidence for legacy rows with an incorrect SIMPLE default.
@@ -189,8 +221,18 @@ def resubmit_expense(
     db.scalar(select(Expense.id).where(Expense.id == expense.id).with_for_update())
     db.refresh(expense)
 
-    if expense.status == ExpenseStatus.CLOSED:
-        raise HTTPException(status_code=409, detail='Una solicitud cerrada no puede corregirse')
+    if not can_correct_expense(db, expense, user):
+        if expense.status == ExpenseStatus.CLOSED:
+            raise HTTPException(status_code=409, detail='Una solicitud cerrada no puede corregirse')
+        if expense.status == ExpenseStatus.CANCELLED:
+            raise HTTPException(status_code=409, detail='Una solicitud cancelada no puede corregirse')
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                'Solo el solicitante original o el Administrador del sistema pueden corregir y reenviar. '
+                'Los aprobadores deben usar Enviar a revisión e indicar sus comentarios.'
+            ),
+        )
 
     stored_type = _canonical_request_type(expense)
     if payload.request_type != stored_type:
