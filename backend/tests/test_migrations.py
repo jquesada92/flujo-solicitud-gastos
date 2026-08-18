@@ -51,6 +51,9 @@ class MigrationTopologyTests(unittest.TestCase):
         self.assertIn('revoked_at', migration)
         self.assertIn('uq_expense_closure_delegation_active', migration)
         self.assertIn('revoked_at IS NULL', migration)
+        self.assertIn("WHERE code = 'requests:close'", migration)
+        self.assertIn("SET active = FALSE", migration)
+        self.assertIn('Retirado como autoridad runtime', migration)
 
 
 if __name__ == '__main__':
