@@ -73,11 +73,12 @@
 - [x] Spec 006 creada.
 - [x] Plan 006 creado.
 - [x] Acceptance 006 creado.
-- [ ] README actualizado.
-- [ ] PROMPT_RECONSTRUCCION actualizado.
-- [ ] IAM_MODEL actualizado.
-- [ ] FASTAPI_ARCHITECTURE actualizado.
-- [ ] docs/README actualizado.
-- [ ] HISTORY actualizado.
-- [ ] CHANGELOG actualizado.
+- [x] README actualizado.
+- [x] PROMPT_RECONSTRUCCION actualizado.
+- [x] IAM_MODEL actualizado.
+- [x] FASTAPI_ARCHITECTURE actualizado.
+- [x] TERMINOLOGY actualizado.
+- [x] docs/README actualizado.
+- [x] HISTORY actualizado preservando el historial previo.
+- [x] CHANGELOG actualizado.
 - [ ] PR #9 actualizado con el contrato final.
