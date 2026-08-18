@@ -1,5 +1,37 @@
 # Historial funcional y técnico
 
+## 2026-08-17 — ExpenseForm modular elimina la ruta visual SIMPLE en correcciones MULTI_QUOTE
+
+### Incidente confirmado
+
+La prueba manual volvió a mostrar una solicitud en **Votación de cotizaciones** que, al pulsar **Corregir / reenviar**, renderizaba el formulario sencillo. Esto confirmó que mantener el source real de `ExpenseForm` como legacy y depender de sustituciones granulares de Vite no era una frontera suficientemente confiable para una regla de negocio.
+
+### Decisión
+
+Se crea un formulario canónico mantenible en:
+
+```text
+frontend/src/expense-form.jsx
+```
+
+El componente usa `resolveRequestType(draft)` y un único `effectiveRequestType`. Cuando existe `draft`, el tipo efectivo se deriva exclusivamente de evidencia persistida:
+
+```text
+request_type == MULTI_QUOTE
+OR status == QUOTATION_VOTING
+OR quotation_options >= 2
+```
+
+Para una corrección MULTI_QUOTE, el layout sencillo deja de ser una ruta válida: el componente renderiza directamente **Opciones para votación**, restaura las opciones existentes y conserva metadata de soportes.
+
+`vite.config.js` deja de parchear condiciones internas del formulario. Durante la transición solo importa el componente modular y elimina del bundle la función `ExpenseForm` legacy completa. Se mantiene una `key` por solicitud/flujo para remount.
+
+### Protección
+
+`test_frontend_revision_contract.py` ahora exige la existencia del componente modular, la autoridad de `effectiveRequestType`, restauración de opciones/soportes y la extracción completa del ExpenseForm legacy durante build.
+
+---
+
 ## 2026-08-17 — Corrección MULTI_QUOTE: el tipo efectivo pasa a ser autoritativo
 
 ### Incidente observado
@@ -192,9 +224,7 @@ Una corrección:
 
 ### Implementación temporal frontend
 
-Mientras `ExpenseForm` siga dentro de `main.jsx`, `vite.config.js` aplica un transform de compatibilidad durante dev/build para restaurar correctamente el draft MULTI_QUOTE y aislarlo del estado previo de creación. El build falla si el transform no encuentra los fragmentos legacy esperados.
-
-Este transform no es arquitectura objetivo y debe retirarse al modularizar `ExpenseForm`.
+Históricamente `ExpenseForm` vivía dentro de `main.jsx` y se aplicaron transforms de compatibilidad para restaurar drafts MULTI_QUOTE. Ese enfoque fue reemplazado posteriormente por el componente modular descrito al inicio de este historial.
 
 ### Protección backend y pruebas
 
@@ -355,7 +385,8 @@ Pendientes separados:
 - regla de quorum/empate de votación de cotizaciones;
 - edición estructural de una ronda MULTI_QUOTE corregida (agregar/eliminar opciones con evidencia/versionado explícito);
 - retiro completo de `UserRole`, `can_*`, `/api/users` legacy y ramas legacy de `api/expenses.py`;
-- modularización completa de `frontend/src/main.jsx`, incluyendo retiro de bypasses visuales de ADMIN, `canClose={true}` y del transform temporal de correcciones.
+- modularización restante de `frontend/src/main.jsx`, incluyendo retiro de bypasses visuales de ADMIN y `canClose={true}`;
+- retirar `modularExpenseFormPlugin` cuando `main.jsx` importe directamente el componente modular.
 
 ---
 
