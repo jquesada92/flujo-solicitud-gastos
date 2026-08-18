@@ -24,7 +24,7 @@ position_access.py       → Cargo → Rol
 ```text
 api/       HTTP/dependencias/status codes
 schemas/   contratos Pydantic
-services/  reglas de negocio reutilizables
+services/  reglas de negocio reutilizable
 models/    persistencia SQLAlchemy
 core/      Settings, DB, seguridad, rate limiting
 ```
@@ -226,6 +226,8 @@ x.can_delegate_close
 
 La autorización siempre queda en backend. El `canClose={true}` físicamente presente en source legacy no es autoridad del bundle transformado y debe retirarse cuando se modularice `ExpenseTable`.
 
+Los bridges temporales no deben depender de indentación o saltos de línea exactos del monolito. Para la inserción de **Delegar cierre/factura**, Vite usa un ancla regex tolerante a LF/CRLF y whitespace variable, pero exige exactamente una coincidencia de `row-actions → x.can_correct`; cero o múltiples coincidencias abortan el build de forma explícita para evitar transformar código ambiguo.
+
 ## Response models
 
 `UserOut.permission_codes` expone permisos IAM efectivos y aliases UX legacy temporales.
@@ -305,7 +307,7 @@ test_migrations.py
 test_container_portability.py
 ```
 
-Feature 008 exige probar requester/Admin/delegado, tercero con `requests:close` legacy negado, revocación, una delegación activa y `CLOSE_REQUEST` requester/delegado.
+Feature 008 exige probar requester/Admin/delegado, tercero con `requests:close` legacy negado, revocación, una delegación activa, `CLOSE_REQUEST` requester/delegado y que el bridge Vite de delegación tolere diferencias de formato sin perder el fail-fast de unicidad.
 
 Mientras GitHub Actions no tenga cuota, backend tests + `npm run build` + Docker build/smoke son gates locales obligatorios.
 
