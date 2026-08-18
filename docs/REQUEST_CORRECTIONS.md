@@ -1,21 +1,94 @@
-# Correcciones y reenvío de solicitudes
+# Correcciones, reenvío y handoff de revisión
 
-## Principio
+## Principios
 
-**Corregir / reenviar modifica una solicitud sin cambiar su tipo de flujo.**
+Dos acciones distintas:
+
+```text
+Aprobador detecta un problema
+→ Enviar a revisión + comentario
+
+Solicitante recibe NEEDS_REVISION
+→ Corregir / reenviar
+```
+
+**Enviar a revisión** no permite al aprobador editar la solicitud. **Corregir / reenviar** está reservado al solicitante original o al Administrador del sistema protegido mediante `system_accounts`.
+
+## Quién puede Corregir / reenviar
+
+Solo:
+
+```text
+solicitante original
+OR
+Administrador del sistema
+```
+
+No autorizan la corrección de una solicitud ajena:
+
+```text
+requests:create
+requests:approve
+config:manage
+Grupo
+Rol
+Cargo
+UserRole/can_* legacy
+```
+
+El listado devuelve `can_correct` calculado por backend. La UI lo utiliza para mostrar **Corregir / reenviar**, pero `PUT /api/expenses/{request_id}/resubmit` vuelve a autorizar siempre.
+
+Estados corregibles:
+
+```text
+QUOTATION_VOTING
+SUBMITTED
+PENDING_APPROVAL
+NEEDS_REVISION
+APPROVED
+REJECTED
+```
+
+No corregibles:
+
+```text
+CLOSED
+CANCELLED
+```
+
+## Enviar a revisión
+
+Un aprobador con `Approval.PENDING` puede seleccionar **Enviar a revisión** cuando detecta un problema.
+
+Requiere comentario útil de al menos 3 caracteres indicando qué debe revisar/corregir el solicitante.
+
+`REVISION_REQUESTED` es una interrupción inmediata, no una decisión sometida a mayoría:
+
+```text
+aprobación actual → REVISION_REQUESTED
+solicitud          → NEEDS_REVISION
+otros PENDING/WAITING → EXPIRED
+solicitante        → CORRECT_REQUEST
+```
+
+El solicitante recibe una notificación con el comentario. Los demás aprobadores dejan de tener una acción vigente en esa ronda.
+
+El Administrador del sistema conserva facultad administrativa para corregir, pero la tarea personal `CORRECT_REQUEST` pertenece normalmente al solicitante original.
+
+## Invariant del tipo
+
+**Corregir / reenviar modifica una solicitud sin cambiar su tipo:**
 
 ```text
 SIMPLE      → corrección → SIMPLE
 MULTI_QUOTE → corrección → MULTI_QUOTE
 ```
 
-Cambiar deliberadamente entre tipos no forma parte de una corrección y requeriría una acción funcional diferente.
+Cambiar deliberadamente entre tipos requiere otra operación funcional.
 
 ## La pestaña previa no manda
 
-Las pestañas **Solicitud sencilla** y **Múltiples cotizaciones** pertenecen únicamente al modo de creación. Al pulsar **Corregir / reenviar**, el editor descarta ese estado y deriva su tipo desde la solicitud seleccionada.
-
-Por tanto, estos dos recorridos deben producir exactamente el mismo resultado:
+Las pestañas **Solicitud sencilla** y **Múltiples cotizaciones** solo pertenecen a creación. Al entrar en corrección, el editor deriva su tipo desde la solicitud.
 
 ```text
 Pestaña SIMPLE activa
@@ -23,145 +96,96 @@ Pestaña SIMPLE activa
 → editor MULTI_QUOTE
 ```
 
-```text
-Pestaña MULTI_QUOTE activa
-→ Corregir una MULTI_QUOTE
-→ editor MULTI_QUOTE
-```
-
 ## Formulario canónico
-
-La implementación mantenible vive en:
 
 ```text
 frontend/src/expense-form.jsx
 ```
 
-El componente calcula un único tipo efectivo:
-
 ```text
 effectiveRequestType = draft ? resolveRequestType(draft) : requestType
 ```
 
-Durante una corrección ese valor, y no la pestaña ni un estado React previo, gobierna:
+Durante corrección gobierna layout, validación, payload y uploads.
 
-- layout visible;
-- validaciones;
-- payload enviado al backend;
-- campos SIMPLE;
-- opciones MULTI_QUOTE;
-- carga posterior de soportes.
-
-`resolveRequestType(draft)` considera MULTI_QUOTE si se cumple cualquiera de estas condiciones:
+Se considera MULTI_QUOTE si:
 
 ```text
 request_type == MULTI_QUOTE
 OR status == QUOTATION_VOTING
-OR existen 2 o más quotation_options
+OR quotation_options >= 2
 ```
 
-El propio componente rehidrata cuando cambia `draft.request_id` o `draft.flow_id`; no necesita una `key` inyectada por un reemplazo textual de build.
+## MULTI_QUOTE corregida
 
-## Cómo debe verse una corrección MULTI_QUOTE
+- restaura opciones existentes;
+- conserva soportes vinculados;
+- permite editar proveedor, monto, URL y observaciones;
+- conserva por ahora la cantidad de opciones;
+- genera `flow_id` nuevo;
+- elimina votos vigentes;
+- reemplaza invitaciones;
+- limpia ganador/proveedor/monto seleccionado;
+- conserva historial;
+- vuelve a `QUOTATION_VOTING`;
+- resuelve población con `requests:approve`;
+- **excluye siempre al solicitante original**, incluso si el Administrador del sistema ejecutó la corrección.
 
-Debe aparecer explícitamente:
+## Compatibilidad histórica
 
-```text
-Tipo de solicitud: Múltiples cotizaciones
-```
-
-seguido del bloque:
-
-```text
-Opciones para votación
-  Opción 1
-  Opción 2
-  ...
-```
-
-Cada opción muestra proveedor, monto, URL, archivo y observaciones.
-
-No debe aparecer el formulario sencillo como estructura principal con:
-
-- un único `Monto (USD)` de solicitud;
-- un único `Proveedor`;
-- un único `URL del producto o servicio`;
-- un único input de `Cotización`.
-
-Los montos/proveedores de una MULTI_QUOTE pertenecen a cada opción de cotización.
-
-## SIMPLE
-
-Al corregir una solicitud sencilla se pueden actualizar sus datos de negocio. Los soportes existentes se conservan. Si ya existe evidencia suficiente, el flujo de aprobación puede reiniciarse sin exigir volver a cargar el mismo archivo.
-
-## MULTI_QUOTE
-
-Al corregir una solicitud de múltiples cotizaciones:
-
-- el formulario abre en modo **Múltiples cotizaciones** aunque antes estuviera activa la pestaña SIMPLE;
-- se restauran las opciones existentes;
-- se pueden editar proveedor, monto, URL y observaciones;
-- los soportes ya cargados siguen vinculados a sus opciones;
-- la UI indica `Soporte existente conservado` cuando corresponde;
-- por ahora se conserva la misma cantidad de opciones;
-- el `flow_id` cambia;
-- los votos vigentes de la ronda anterior se invalidan;
-- las invitaciones anteriores se reemplazan;
-- se calcula nuevamente la población desde `requests:approve`;
-- la solicitud vuelve a `QUOTATION_VOTING`.
-
-Los eventos históricos previos se conservan para trazabilidad.
-
-## Compatibilidad con datos históricos
-
-Algunos registros antiguos pueden contener `request_type=SIMPLE` por el default original aunque realmente sean flujos múltiples. La migración:
+Alembic:
 
 ```text
 20260817_0003_backfill_multi_quote_request_type.py
 ```
 
-repara esas filas persistidas. El endpoint canónico de corrección aplica además la misma inferencia defensiva mientras dure la transición.
+repara filas cuyo flag SIMPLE contradice evidencia durable de múltiples cotizaciones.
 
-## Defensa backend
+Feature 007 no requiere migración nueva.
 
-La API canónica compara el payload contra el **tipo canónico** de la solicitud, no contra el estado visual del formulario.
+## Backend
 
-Si el usuario intenta convertir realmente una MULTI_QUOTE en SIMPLE o viceversa durante `resubmit`, devuelve `409 Conflict`.
+`backend/app/api/revision_actions.py`:
 
-## Integración temporal con main.jsx
+- autentica con `current_user`;
+- calcula/valida `can_correct_expense()`;
+- devuelve 403 a terceros;
+- mantiene 409 para cambios reales del tipo;
+- reinicia el flujo conservando evidencia/historial.
 
-`main.jsx` todavía contiene una definición legacy de `ExpenseForm` por deuda histórica. Para evitar que esa implementación vuelva a gobernar la aplicación, `vite.config.js` hace una transformación estructural mínima:
+Un mensaje 403 orienta al aprobador a usar **Enviar a revisión** con comentarios.
 
-1. importa `ExpenseForm` desde `./expense-form.jsx`;
-2. elimina del bundle la función legacy completa comprendida entre `function ExpenseForm` y `function ClosurePanel`;
-3. no parchea el punto de montaje `<ExpenseForm>` ni depende de espacios, indentación o saltos de línea de ese JSX.
+## Frontend temporal
 
-El build falla si no puede aislar la función antigua. CI inspecciona además el `dist/` generado y exige que el bundle contenga las marcas del formulario modular.
+`ExpenseForm` es modular, pero `ExpenseTable` aún vive en `main.jsx`. Durante la transición, `vite.config.js`:
 
-Esta decisión corrige un fallo reproducido en Docker local donde un reemplazo exacto del mount (`ExpenseForm mount`) dejó de coincidir con `main.jsx` y abortó `vite build`.
+- importa/elimina la definición legacy de `ExpenseForm` estructuralmente;
+- usa `x.can_correct` en la tabla legacy;
+- permite montar el formulario si existe `revision`, de forma que el Administrador del sistema productivo pueda corregir aunque no tenga `requests:create`.
 
-## Por qué no se permite cambiar la cantidad de opciones todavía
+El wording de **Enviar a revisión** vive directamente en `home-dashboard.jsx`; no depende de un parche de Vite.
 
-Quitar una cotización que ya tiene documentos o votos implica decisiones de versionado y evidencia. Esta feature evita eliminar evidencia de forma implícita. La edición estructural de una ronda debe especificarse separadamente antes de implementarse.
-
-## Prueba manual obligatoria
+## Prueba manual
 
 ```text
-1. Entrar a Solicitudes.
-2. Dejar seleccionada Solicitud sencilla.
-3. Buscar una solicitud en Votación de cotizaciones.
-4. Pulsar Corregir / reenviar.
-5. Verificar Tipo de solicitud: Múltiples cotizaciones.
-6. Verificar que aparezca Opciones para votación con las opciones existentes.
-7. Verificar que no aparezca el formulario sencillo como estructura principal.
+1. Iniciar sesión como aprobador de una solicitud ajena.
+2. Confirmar que NO aparece Corregir / reenviar.
+3. Abrir la aprobación y seleccionar Enviar a revisión.
+4. Confirmar que el comentario es obligatorio.
+5. Enviar revisión y verificar NEEDS_REVISION inmediato.
+6. Confirmar que otros aprobadores dejan de tener acción vigente.
+7. Iniciar sesión como solicitante y confirmar CORRECT_REQUEST + Corregir / reenviar.
+8. Confirmar que Administrador del sistema también puede corregir desde Solicitudes.
+9. Para MULTI_QUOTE, reenviar y confirmar que el solicitante original no entra en su nueva votación.
 ```
 
-## Validación del bundle local Docker
+## Validación Docker
 
-Después de reconstruir el frontend:
+Después del build:
 
 ```bash
+docker compose exec frontend sh -c "grep -R -l 'Enviar a revisión' /usr/share/nginx/html/assets || true"
 docker compose exec frontend sh -c "grep -R -l 'El tipo no cambia durante una corrección' /usr/share/nginx/html/assets || true"
 ```
 
-Debe devolver el archivo `index-*.js` servido por Nginx. Una salida vacía indica que el contenedor no contiene el formulario modular esperado.
+Ambos comportamientos deben estar presentes en el bundle servido por Nginx.
