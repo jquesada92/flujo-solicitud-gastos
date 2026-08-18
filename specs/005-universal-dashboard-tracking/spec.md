@@ -1,7 +1,7 @@
 # Especificación funcional — Dashboard y seguimiento universal
 
 **Feature:** 005  
-**Constitución:** 2.4.0
+**Constitución:** 2.5.0
 
 ## Objetivo
 
@@ -50,10 +50,11 @@ effective_permissions(active_user)
   ∪ direct permissions
   ∪ direct-role permissions
   ∪ group-role permissions
+  ∪ position-role permissions
   ∪ technical-account policy when applicable
 ```
 
-Eliminar `requests:read` de un rol, grupo o asignación directa no puede retirarlo del usuario activo.
+Eliminar `requests:read` de un rol, grupo, cargo o asignación directa no puede retirarlo del usuario activo.
 
 ### F-005-04 — Lectura no concede acciones
 
@@ -70,10 +71,14 @@ La cancelación no se concede por `requests:create`: se rige por F-005-07.
 
 El dashboard muestra métricas generales de la organización para todos los usuarios activos.
 
-La tarjeta **Acciones que requieren mi atención** solo cuenta acciones que el usuario actual puede realizar:
+La tarjeta **Acciones que requieren mi atención** solo cuenta acciones vigentes que el usuario actual puede ejecutar y que están asignadas a ese usuario dentro del workflow:
 
-- aprobaciones asignadas y votaciones pendientes cuando tiene `requests:approve`;
-- solicitudes aprobadas pendientes de cierre cuando tiene `requests:close`.
+- aprobación pendiente asignada al usuario con `requests:approve`;
+- invitación de votación MULTI_QUOTE aún no respondida con `requests:approve`;
+- solicitud propia en `NEEDS_REVISION` cuando conserva `requests:create`;
+- solicitud `APPROVED` pendiente de factura/cierre cuando el usuario tiene `requests:close`.
+
+Tener el permiso general no basta si la acción concreta no está asignada al usuario. Por ejemplo, `requests:approve` no convierte todas las solicitudes pendientes en acciones personales.
 
 Un usuario de solo lectura debe ver las métricas generales y `0` acciones personales si no tiene tareas ejecutables.
 
@@ -108,6 +113,41 @@ La cancelación requiere motivo, registra `cancelled_at`, `cancelled_by` y `canc
 
 El listado de solicitudes debe exponer una capacidad calculada `can_cancel` para que la interfaz muestre **Cancelar solicitud** solo cuando el backend autorice esa acción. La UI no debe inferir cancelación desde `can_request` ni desde una lista local de cargos/roles.
 
+### F-005-08 — Seleccionar una acción pendiente abre su acción contextual
+
+Las filas de **Inicio → Acciones pendientes** no son simples accesos a la lista de Solicitudes.
+
+Al seleccionar una fila, la interfaz debe abrir una **ventana/modal contextual** para esa solicitud y consultar nuevamente al backend las acciones que siguen vigentes para el usuario autenticado.
+
+El modal muestra únicamente controles correspondientes a acciones actualmente ejecutables por ese usuario:
+
+```text
+APPROVAL_DECISION
+→ Aprobar
+→ Rechazar
+→ Solicitar corrección
+
+QUOTATION_VOTE
+→ revisar opciones y soportes
+→ votar una cotización
+
+CLOSE_REQUEST
+→ cargar factura
+→ notas de cierre
+→ cerrar solicitud
+
+CORRECT_REQUEST
+→ abrir la solicitud propia para corregir y reenviar
+```
+
+**Ver todas** conserva su función independiente de navegar a **Solicitudes**.
+
+El frontend no debe deducir la acción a partir del estado solamente. Debe consumir una respuesta backend específica del usuario, porque una solicitud puede estar globalmente pendiente y no requerir ninguna acción del usuario actual.
+
+Antes de ejecutar una acción y después de registrarla, el sistema debe revalidar el estado vigente. Esto cubre, por ejemplo, que el usuario haya respondido desde un correo, otra pestaña o una sesión distinta.
+
+Después de una mutación exitosa, el dashboard y el detalle del modal se refrescan. Si ya no existe una tarea vigente, el modal informa que no quedan acciones pendientes para esa solicitud.
+
 ## Alcance de seguimiento
 
 Esta feature mantiene el comportamiento vigente de la lista operativa:
@@ -132,6 +172,8 @@ pero `can_view` no es autoridad; el backend resuelve el baseline.
 
 Para cancelación, la tabla debe usar exclusivamente `can_cancel` retornado por el backend. Esto permite que una solicitud `QUOTATION_VOTING` pueda cancelarse por su solicitante o por el Administrador del sistema sin habilitar la acción para los demás usuarios que solo la observan.
 
+Para acciones pendientes, cada fila debe mostrar la acción concreta devuelta por backend —por ejemplo **Responder aprobación** o **Votar cotización**— y abrir el modal contextual al seleccionarla.
+
 En la consola IAM, los permisos efectivos deben mostrar que `requests:read` proviene de:
 
 ```text
@@ -145,6 +187,8 @@ aunque el usuario no tenga un rol o permiso directo de consulta.
 La visibilidad universal aplica dentro del contexto organizacional actual del producto. No autoriza acceso anónimo ni acceso de usuarios inactivos.
 
 La lectura compartida no puede convertir acciones de propietario en acciones globales. En particular, un usuario que pueda ver una solicitud ajena o tenga `requests:create` no puede cancelarla por ese hecho.
+
+La API contextual de acciones debe requerir autenticación y devolver exclusivamente acciones que correspondan al usuario actual. Las decisiones de aprobación no deben requerir exponer al frontend el token bearer usado por los enlaces de correo.
 
 Una futura implementación multi-tenant debe preservar aislamiento entre organizaciones; el baseline no implica lectura entre tenants.
 
