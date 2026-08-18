@@ -1,85 +1,89 @@
 # Criterios de aceptación — Correcciones de solicitudes
 
-**Constitución:** 2.3.3
+**Constitución:** 2.6.0
+
+## Autoridad de corrección
+
+- [x] Solo el solicitante original o el Administrador del sistema pueden ejecutar `resubmit`.
+- [x] `requests:create` no autoriza a corregir una solicitud ajena.
+- [x] `requests:approve` no autoriza a corregir una solicitud ajena.
+- [x] `config:manage` no autoriza a corregir una solicitud ajena.
+- [x] `ExpenseOut` expone `can_correct` calculado por recurso.
+- [x] La tabla usa `can_correct` como señal UX en vez de `canEdit` global.
+- [x] El backend vuelve a autorizar aunque la UI sea manipulada.
+- [x] El Administrador del sistema puede entrar en modo corrección aunque en producción no tenga `requests:create`.
+- [x] Un aprobador ajeno recibe 403 con instrucción de usar **Enviar a revisión**.
+- [ ] Validar manualmente que un aprobador ajeno no vea **Corregir / reenviar**.
+- [ ] Validar manualmente que solicitante y Administrador del sistema sí puedan corregir.
 
 ## Tipo de solicitud
 
-- [x] Corregir una solicitud SIMPLE conserva `request_type=SIMPLE`.
-- [x] Corregir una solicitud MULTI_QUOTE conserva `request_type=MULTI_QUOTE`.
-- [x] El backend rechaza con 409 un intento real de cambiar el tipo durante `resubmit`.
-- [x] El frontend deriva el tipo desde la solicitud al entrar en modo corrección.
-- [x] La pestaña SIMPLE/MULTI_QUOTE seleccionada antes de pulsar Corregir no determina el tipo del editor.
-- [x] Cambiar a otra solicitud en corrección vuelve a derivar el tipo desde esa solicitud.
-- [x] Durante corrección el tipo se muestra como dato de solo lectura, no como selector editable.
+- [x] Corregir SIMPLE conserva `request_type=SIMPLE`.
+- [x] Corregir MULTI_QUOTE conserva `request_type=MULTI_QUOTE`.
+- [x] El backend rechaza con 409 un cambio real del tipo.
+- [x] El frontend deriva el tipo desde la solicitud al entrar en corrección.
+- [x] La pestaña SIMPLE/MULTI_QUOTE previa no determina el editor.
+- [x] Cambiar a otra solicitud vuelve a derivar su tipo.
+- [x] El tipo se muestra como dato de solo lectura.
 
 ## Layout MULTI_QUOTE
 
 - [x] Existe `frontend/src/expense-form.jsx` como formulario canónico.
 - [x] `effectiveRequestType` gobierna layout, validación, payload y uploads.
-- [x] Un draft `QUOTATION_VOTING` renderiza **Opciones para votación**.
-- [x] Un draft con dos o más `quotation_options` renderiza **Opciones para votación** aunque el flag persistido sea legacy.
-- [x] Una corrección MULTI_QUOTE no renderiza los campos SIMPLE de monto/proveedor/soporte único como estructura principal.
-- [x] `vite.config.js` importa el formulario modular y elimina del bundle la función `ExpenseForm` legacy completa.
-- [x] La integración de build no modifica el punto de montaje `<ExpenseForm>` mediante reemplazos sensibles a indentación/texto.
-- [x] `expense-form.jsx` rehidrata por `draft.request_id`/`draft.flow_id`, por lo que no requiere una `key` inyectada por Vite.
+- [x] `QUOTATION_VOTING` o dos/más opciones infieren MULTI_QUOTE.
+- [x] Una corrección MULTI_QUOTE no renderiza el layout SIMPLE como estructura principal.
+- [x] Vite importa el formulario modular y elimina la función legacy completa.
+- [x] El build no parchea el punto de montaje por whitespace.
+- [x] `expense-form.jsx` rehidrata por `draft.request_id`/`flow_id`.
 
-## Compatibilidad de datos históricos
+## Compatibilidad histórica
 
-- [x] Un registro con `request_type=SIMPLE` y estado `QUOTATION_VOTING` se reconoce como MULTI_QUOTE.
-- [x] Un registro con `request_type=SIMPLE` y dos o más `quotation_options` se reconoce como MULTI_QUOTE.
-- [x] El endpoint canónico repara defensivamente `request_type` al corregir un registro legacy inconsistente.
-- [x] Existe Alembic `20260817_0003_backfill_multi_quote_request_type.py` para reparar filas históricas.
-- [x] La cadena Alembic queda `0000 → 0001 → 0002 → 0003` con un único head.
+- [x] Flag SIMPLE + evidencia MULTI_QUOTE se reconoce/repara como MULTI_QUOTE.
+- [x] Existe Alembic `0003` para reparar `request_type` histórico.
+- [x] La cadena global vigente incluye `0000 → 0001 → 0002 → 0003 → 0004`.
 
 ## Cotizaciones y evidencia
 
-- [x] Se restauran proveedor, monto, URL y observaciones de cada opción existente.
-- [x] Un attachment existente satisface la validación de soporte sin exigir volver a seleccionar el archivo local.
-- [x] La UI indica cuando una opción conserva un soporte existente.
-- [x] Los attachments existentes permanecen asociados a los IDs de opciones conservados.
-- [x] Durante esta feature no se permite cambiar la cantidad de opciones en modo corrección.
-- [x] La UI oculta Agregar/Eliminar opción durante una corrección MULTI_QUOTE.
+- [x] Se restauran proveedor, monto, URL y observaciones.
+- [x] Un attachment existente satisface la validación sin volver a seleccionarlo.
+- [x] Attachments conservan asociación con sus opciones.
+- [x] No se cambia la cantidad de opciones durante esta feature.
 
 ## Nueva ronda
 
-- [x] Una corrección genera un `flow_id` nuevo.
-- [x] Los votos vigentes de la ronda anterior dejan de formar parte del estado actual.
-- [x] Las invitaciones anteriores se eliminan/reemplazan.
+- [x] Una corrección genera `flow_id` nuevo.
+- [x] Votos vigentes anteriores se limpian.
+- [x] Invitaciones anteriores se reemplazan.
 - [x] La nueva población se resuelve desde `requests:approve`.
-- [x] La solicitud corregida vuelve a `QUOTATION_VOTING`.
-- [x] `selected_quotation_id`, `supplier` y `amount` seleccionados se limpian antes de la nueva votación.
-- [x] Los eventos históricos append-only no se reescriben.
+- [x] La población siempre excluye al **solicitante original**, incluso si Admin del sistema ejecuta la corrección.
+- [x] La solicitud vuelve a `QUOTATION_VOTING`.
+- [x] Se limpia selección previa de ganador/proveedor/monto.
+- [x] Historial append-only no se reescribe.
 
-## Backend
+## Handoff de revisión
 
-- [x] Existe una ruta canónica `revision_actions.py` registrada antes de `expenses.py` legacy.
-- [x] `resubmit` requiere `requests:create`.
-- [x] Área + Categoría se validan antes de aplicar la corrección.
-- [x] Una solicitud CLOSED no puede corregirse.
-- [x] El backend mantiene el invariant aunque el frontend envíe un tipo incorrecto.
-- [x] El backend no depende de la pestaña visual para decidir SIMPLE/MULTI_QUOTE.
+- [x] Feature 007 separa **Enviar a revisión** de **Corregir / reenviar**.
+- [x] `CORRECT_REQUEST` pertenece al solicitante original en `NEEDS_REVISION`.
+- [x] El Administrador del sistema conserva capacidad administrativa sin convertirse en responsable normal de la tarea.
 
 ## Pruebas
 
-- [x] Existe test HTTP que corrige una MULTI_QUOTE y verifica que sigue siendo MULTI_QUOTE.
-- [x] Existe test HTTP que simula `request_type=SIMPLE` legacy con evidencia MULTI_QUOTE y verifica reparación.
-- [x] El test verifica preservación de attachment.
-- [x] El test verifica limpieza de votos.
-- [x] El test verifica reemplazo de invitación.
-- [x] El test verifica 409 al intentar MULTI_QUOTE → SIMPLE cuando el tipo canónico es múltiple.
-- [x] Existe `test_frontend_revision_contract.py` para verificar el formulario modular y su integración de build.
-- [x] CI verifica el artefacto `dist/` y falla si el bundle no contiene `Tipo de solicitud:` y `Opciones para votación` del formulario modular.
-- [x] Existe regresión que impide reintroducir el reemplazo textual `ExpenseForm mount`.
-- [x] Verificación manual completada: con pestaña **Solicitud sencilla** activa, corregir una MULTI_QUOTE muestra **Tipo de solicitud: Múltiples cotizaciones** y **Opciones para votación**.
-- [x] Verificación manual completada: no aparecen los campos SIMPLE `Monto (USD)`, `Proveedor`, `URL del producto o servicio` y soporte único fuera de las tarjetas de cotización.
-- [x] Verificación local completada: `docker compose build --no-cache frontend` termina correctamente y el flujo MULTI_QUOTE corregido utiliza el formulario modular en Docker local.
+- [x] Test HTTP MULTI_QUOTE preserva tipo y ronda.
+- [x] Test HTTP cubre fila legacy SIMPLE con evidencia MULTI_QUOTE.
+- [x] Test cubre 409 por cambio de tipo.
+- [x] Test cubre 403 para aprobador no propietario.
+- [x] Test cubre corrección del solicitante por propiedad sin depender de `requests:create` global.
+- [x] Test frontend protege formulario modular.
+- [x] Test frontend protege `x.can_correct` mientras la tabla siga legacy.
+- [x] Regresión manual histórica del editor MULTI_QUOTE fue completada previamente.
+- [ ] Suite actual completa ejecutada localmente después de Feature 007.
 
 ## Documentación
 
-- [x] Constitución revisada: el invariant ya existe en 2.3.3 y no requiere nueva regla funcional.
-- [x] Spec funcional revisada: no cambia el requisito funcional.
-- [x] Plan técnico actualizado para retirar el parche textual del mount.
-- [x] Criterios de aceptación actualizados.
-- [x] README/prompt/documentación de correcciones describen la extracción estructural sin parche de mount.
-- [x] HISTORY/CHANGELOG registran la causa del fallo Docker local y la corrección.
-- [x] PR registra la causa y solución final.
+- [x] Constitución actualizada a 2.6.0 por Feature 007.
+- [x] Spec actualizada con propiedad de corrección.
+- [x] Plan actualizado.
+- [x] Feature 007 documenta el handoff de revisión.
+- [ ] README/prompt/docs derivados sincronizados con 2.6.0.
+- [ ] HISTORY/CHANGELOG registran el cambio.
+- [ ] PR #9 registra la regla final.
