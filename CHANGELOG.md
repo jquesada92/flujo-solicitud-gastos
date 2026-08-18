@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-08-18 — Propiedad de corrección y Enviar a revisión
+
+### Added
+- `ExpenseOut.can_correct` como capacidad por solicitud calculada por backend.
+- Feature 007: `revision-handoff-correction-ownership`.
+- Regla explícita `solicitante original OR system_accounts` para **Corregir / reenviar**.
+
+### Changed
+- La tabla de Solicitudes muestra **Corregir / reenviar** únicamente cuando `x.can_correct=true`.
+- `PUT /api/expenses/{request_id}/resubmit` ya no se autoriza por `requests:create`; vuelve a validar propiedad de la solicitud o identidad protegida del Administrador del sistema.
+- Un aprobador que detecta un problema usa **Enviar a revisión** con comentario, en lugar de editar la solicitud ajena.
+- `REVISION_REQUESTED` interrumpe inmediatamente la ronda: solicitud → `NEEDS_REVISION`, aprobaciones restantes PENDING/WAITING → `EXPIRED`, solicitante → `CORRECT_REQUEST`.
+- El comentario de revisión es obligatorio y se incluye en la notificación al solicitante.
+- El Administrador del sistema puede corregir una solicitud ajena como excepción administrativa sin recibir automáticamente la tarea personal del solicitante.
+- El lenguaje de UI/correo distingue **Enviar a revisión** de **Corregir / reenviar**.
+- Constitución actualizada a **2.6.0**.
+
+### Security
+- `requests:create`, `requests:approve`, `config:manage`, Grupo, Rol, Cargo y flags `can_*` legacy no conceden corrección de una solicitud ajena.
+- El backend devuelve 403 a un tercero aunque manipule el frontend.
+- La cuenta técnica se identifica por `system_accounts`, nunca por email/Cargo/UserRole.
+
+### Testing
+- `test_multi_quote_revision.py` cubre tercero denegado y solicitante autorizado por propiedad incluso sin permiso global de creación.
+- `test_pending_actions.py` cubre revisión inmediata, comentario obligatorio y expiración de pasos pares.
+- `test_frontend_dashboard_contract.py` protege `x.can_correct` y el montaje del editor para la excepción administrativa.
+
+### Migrations
+- Feature 007 no agrega migración nueva.
+- La cadena Alembic permanece `0000 → 0001 → 0002 → 0003 → 0004`.
+
+---
+
 ## 2026-08-18 — Modal contextual para Acciones pendientes
 
 ### Added
