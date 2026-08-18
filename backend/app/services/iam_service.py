@@ -25,6 +25,7 @@ CORE_PERMISSION_CODES = (
     'requests:close',
     'config:manage',
 )
+BASELINE_PERMISSION_CODES = {'requests:read'}
 PRODUCTION_SYSTEM_ACCOUNT_PERMISSIONS = {'requests:read', 'config:manage'}
 
 
@@ -36,6 +37,20 @@ def _active_permission_codes(db: Session) -> set[str]:
     return set(db.scalars(
         select(Permission.code).where(Permission.active.is_(True))
     ).all())
+
+
+def _user_is_active(db: Session, user_id: int) -> bool:
+    return bool(db.scalar(select(User.active).where(User.id == user_id)))
+
+
+def _baseline_permission_codes(db: Session, user_id: int) -> set[str]:
+    """Capabilities every active authenticated user receives by product policy."""
+    if not _user_is_active(db, user_id):
+        return set()
+    # requests:read is a product baseline, not an organizational assignment.
+    # Keep the catalog check only to avoid exposing an unknown code if a broken
+    # database is missing the product permission row entirely.
+    return BASELINE_PERMISSION_CODES & _active_permission_codes(db)
 
 
 def _system_account_policy_codes(db: Session) -> set[str]:
@@ -93,9 +108,10 @@ def _unrestricted_permission_codes(db: Session, user_id: int) -> set[str]:
 
 
 def effective_permission_codes(db: Session, user_id: int) -> set[str]:
+    baseline = _baseline_permission_codes(db, user_id)
     if is_system_account(db, user_id):
-        return _system_account_policy_codes(db)
-    return _unrestricted_permission_codes(db, user_id)
+        return _system_account_policy_codes(db) | baseline
+    return _unrestricted_permission_codes(db, user_id) | baseline
 
 
 def has_permission(db: Session, user_id: int, permission_code: str) -> bool:
@@ -111,10 +127,18 @@ def users_with_permission(
 ) -> list[User]:
     """Resolve an active user population from IAM in one SQL query.
 
-    Technical accounts follow the same environment policy as direct endpoint
-    authorization: all active permissions outside production, and only
-    config/read in production.
+    Baseline permissions resolve to every active user. Technical accounts follow
+    the same environment policy as endpoint authorization for non-baseline
+    capabilities.
     """
+    if permission_code in BASELINE_PERMISSION_CODES and permission_code in _active_permission_codes(db):
+        stmt = select(User).where(User.active.is_(True))
+        if exclude_user_id is not None:
+            stmt = stmt.where(User.id != exclude_user_id)
+        if exclude_email:
+            stmt = stmt.where(User.email.ilike(exclude_email).is_(False))
+        return list(db.scalars(stmt.order_by(User.id)).all())
+
     direct = (
         select(UserPermission.user_id.label('user_id'))
         .join(Permission, Permission.id == UserPermission.permission_id)
@@ -166,6 +190,9 @@ def users_with_permission(
 def permission_sources(db: Session, user_id: int) -> dict[str, list[str]]:
     effective = effective_permission_codes(db, user_id)
     sources: dict[str, set[str]] = defaultdict(set)
+
+    if 'requests:read' in effective and _user_is_active(db, user_id):
+        sources['requests:read'].add('Acceso base del producto para usuarios activos')
 
     for code in db.scalars(
         select(Permission.code)
