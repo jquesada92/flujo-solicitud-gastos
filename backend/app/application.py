@@ -9,6 +9,7 @@ from app.api import (
     areas,
     audit,
     auth,
+    cancellation_actions,
     document_actions,
     expenses,
     financial_actions,
@@ -24,7 +25,6 @@ from app.api import (
 from app.core.config import get_settings
 from app.core.rate_limit import authenticated_subject, consume_user_request, policy_for_request
 from app.core.security import require_permission
-from app.services.legacy_iam_bridge import register_legacy_iam_bridge
 
 
 @asynccontextmanager
@@ -37,7 +37,6 @@ async def lifespan(_: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    register_legacy_iam_bridge()
     app = FastAPI(
         title='Approval Workflow API',
         version='0.2.0',
@@ -100,6 +99,7 @@ def create_app() -> FastAPI:
     # executes it in its threadpool instead of blocking the event loop.
     app.include_router(request_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(revision_actions.router, prefix='/api/expenses', tags=['Expenses'])
+    app.include_router(cancellation_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(quotation_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(document_actions.router, prefix='/api/expenses', tags=['Documents'])
     app.include_router(financial_actions.router, prefix='/api/expenses', tags=['Expenses'])
