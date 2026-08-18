@@ -15,6 +15,7 @@ El producto es **neutral respecto al tipo de organización**. Un PH, empresa, co
 - Un Grupo puede heredar Roles y sus miembros reciben esos permisos.
 - Todo usuario activo puede entrar a Inicio y dar seguimiento a las solicitudes mediante el baseline `requests:read`.
 - Ver una solicitud ajena no concede acciones sobre ella.
+- Los KPIs superiores de Inicio son informativos; no navegan ni ejecutan acciones.
 - Las filas de **Inicio → Acciones pendientes** abren una acción contextual del usuario; **Ver todas** navega a Solicitudes.
 - Solo el solicitante original o el Administrador del sistema pueden cancelar una solicitud abierta.
 - La cuenta técnica tiene política explícita por ambiente.
@@ -137,6 +138,8 @@ Todo usuario activo y autenticado puede:
 - consultar solicitudes creadas por otros usuarios para dar seguimiento.
 
 El baseline no concede creación, aprobación, cierre ni configuración.
+
+Los KPIs superiores del Dashboard —incluidos **Acciones que requieren mi atención** y **Solicitudes en proceso**— son solo indicadores. No son botones, no tienen `onClick` y no sustituyen los controles explícitos de la sección **Acciones pendientes**.
 
 ### Acciones pendientes del usuario
 
@@ -554,6 +557,8 @@ Las invitaciones guardadas representan el snapshot de participantes de esa ronda
 
 La bandeja de Inicio presenta tareas concretas del usuario actual.
 
+Los KPIs superiores permanecen informativos. Para actuar, el usuario debe seleccionar una fila concreta de **Acciones pendientes** o usar **Ver todas** para navegar a Solicitudes.
+
 Al hacer clic en una fila se abre un modal contextual, no la lista genérica de Solicitudes. Según el workflow puede mostrar:
 
 ```text
@@ -681,7 +686,7 @@ La suite de seguimiento verifica que cualquier usuario activo reciba `requests:r
 - solicitud propia `NEEDS_REVISION` → `CORRECT_REQUEST`;
 - solicitud `APPROVED` → `CLOSE_REQUEST` solo para usuario con `requests:close`.
 
-`test_frontend_dashboard_contract.py` protege click de fila → modal, los cuatro tipos de acción y la revalidación posterior a una mutación.
+`test_frontend_dashboard_contract.py` protege KPIs superiores informativos, click de fila → modal, **Ver todas** → navegación, los cuatro tipos de acción y la revalidación posterior a una mutación.
 
 La suite de cancelación verifica:
 
@@ -697,13 +702,14 @@ La suite de correcciones verifica además que una MULTI_QUOTE no pueda degradars
 Prueba manual específica de acciones pendientes:
 
 ```text
-1. iniciar sesión con un usuario que tenga una aprobación PENDING asignada;
-2. Inicio → Acciones pendientes → seleccionar la solicitud;
-3. verificar que se abre un modal y NO se navega inmediatamente a Solicitudes;
-4. verificar Responder aprobación con Rechazar / Solicitar corrección / Aprobar;
-5. registrar una decisión y comprobar que dashboard + modal se refrescan;
-6. repetir con una invitación MULTI_QUOTE y verificar selección/voto;
-7. repetir con usuario requests:close y verificar factura/cierre.
+1. confirmar que Acciones que requieren mi atención y Solicitudes en proceso son solo informativas y no responden como botones;
+2. iniciar sesión con un usuario que tenga una aprobación PENDING asignada;
+3. Inicio → Acciones pendientes → seleccionar la solicitud;
+4. verificar que se abre un modal y NO se navega inmediatamente a Solicitudes;
+5. verificar Responder aprobación con Rechazar / Solicitar corrección / Aprobar;
+6. registrar una decisión y comprobar que dashboard + modal se refrescan;
+7. repetir con una invitación MULTI_QUOTE y verificar selección/voto;
+8. repetir con usuario requests:close y verificar factura/cierre.
 ```
 
 Prueba manual específica de herencia de aprobación:
