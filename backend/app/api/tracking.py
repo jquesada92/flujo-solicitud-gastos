@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.api.cancellation_actions import can_cancel_expense
 from app.api.expenses import APP_TIME_ZONE, _as_utc, _present_expense, _user_names
 from app.core.database import get_db
 from app.core.security import require_permission
@@ -33,7 +34,9 @@ def list_trackable_expenses(
     """Return the shared request-tracking view for every active user.
 
     Read access is a product baseline. Organizational roles or requester identity
-    must not reduce the set of requests visible for follow-up.
+    must not reduce the set of requests visible for follow-up. Mutating
+    capabilities such as cancellation are returned per request and remain
+    backend-authoritative.
     """
     open_statuses = (
         ExpenseStatus.SUBMITTED,
@@ -111,7 +114,9 @@ def list_trackable_expenses(
             names,
             event,
             quotation_voter_counts.get(expense.id, 0),
-        )
+        ).model_copy(update={
+            'can_cancel': can_cancel_expense(db, expense, user),
+        })
         if lifecycle_at and (
             not event or lifecycle_at.replace(tzinfo=None) > event.occurred_at.replace(tzinfo=None)
         ):
@@ -138,10 +143,7 @@ def expense_dashboard(
     now_local = datetime.now(ZoneInfo(APP_TIME_ZONE))
     now_utc = now_local.astimezone(timezone.utc).replace(tzinfo=None)
     period_start_utc = (now_local - timedelta(days=30)).replace(
-        hour=0,
-        minute=0,
-        second=0,
-        microsecond=0,
+        hour=0, minute=0, second=0, microsecond=0,
     ).astimezone(timezone.utc).replace(tzinfo=None)
 
     open_statuses = [
