@@ -1,5 +1,44 @@
 # Historial funcional y técnico
 
+## 2026-08-17 — Enlaces de correo local alineados con Docker Compose
+
+### Problema observado
+
+Los correos SMTP locales llegaban correctamente, pero al abrir una acción de aprobación el navegador intentaba acceder a:
+
+```text
+http://localhost:5173/email-action/...
+```
+
+y devolvía `ERR_CONNECTION_REFUSED`.
+
+La causa era una desalineación entre `PUBLIC_URL` y el modo de ejecución: `5173` corresponde al servidor de desarrollo de Vite, mientras que Docker Compose publica el frontend Nginx en `http://localhost:3000`.
+
+### Corrección
+
+`docker-compose.yml` ahora sobreescribe de forma intencional los Settings dependientes del frontend local:
+
+```env
+PUBLIC_URL=${LOCAL_PUBLIC_URL:-http://localhost:3000}
+CORS_ALLOWED_ORIGINS=${LOCAL_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+```
+
+El `.env` raíz documenta `LOCAL_PUBLIC_URL` y `LOCAL_CORS_ALLOWED_ORIGINS`. `backend/.env` sigue almacenando las credenciales y Settings propios de FastAPI.
+
+Se agrega una prueba de regresión que exige que el puerto publicado por Compose (`3000`) y el `PUBLIC_URL` suministrado al backend permanezcan alineados.
+
+### Regla operativa
+
+```text
+Docker Compose → http://localhost:3000
+Vite directo   → http://localhost:5173
+Producción     → URL HTTPS de Vercel
+```
+
+Los correos ya enviados conservan la URL con la que fueron generados; la corrección aplica a correos nuevos después de recrear el backend.
+
+---
+
 ## 2026-08-17 — Google SMTP local y Brevo en producción
 
 ### Problema observado
