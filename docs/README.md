@@ -2,122 +2,93 @@
 
 ## Gobierno y especificaciones
 
-- [Constitución del proyecto](../.specify/memory/constitution.md) — versión vigente 2.5.0.
-- [Política de sincronización documental](DOCUMENTATION_POLICY.md) — los cambios funcionales, técnicos y de autorización deben mantener sincronizados los artefactos gobernados.
+- [Constitución](../.specify/memory/constitution.md) — versión vigente **2.6.0**.
+- [Política documental](DOCUMENTATION_POLICY.md).
 - [Feature 001 — normalización de dominio](../specs/001-domain-normalization/spec.md)
-- [Feature 001 — plan técnico](../specs/001-domain-normalization/plan.md)
-- [Feature 001 — criterios](../specs/001-domain-normalization/checklists/acceptance.md)
 - [Feature 002 — IAM configurable + FastAPI](../specs/002-configurable-iam-fastapi-hardening/spec.md)
-- [Feature 002 — plan técnico](../specs/002-configurable-iam-fastapi-hardening/plan.md)
-- [Feature 002 — criterios](../specs/002-configurable-iam-fastapi-hardening/checklists/acceptance.md)
-- [Feature 003 — correcciones de solicitudes](../specs/003-request-correction-invariants/spec.md)
-- [Feature 003 — plan técnico](../specs/003-request-correction-invariants/plan.md)
-- [Feature 003 — criterios](../specs/003-request-correction-invariants/checklists/acceptance.md)
+- [Feature 003 — invariants de corrección](../specs/003-request-correction-invariants/spec.md)
 - [Feature 004 — correo por ambiente](../specs/004-email-delivery-by-environment/spec.md)
-- [Feature 004 — plan técnico](../specs/004-email-delivery-by-environment/plan.md)
-- [Feature 004 — criterios](../specs/004-email-delivery-by-environment/checklists/acceptance.md)
-- [Feature 005 — dashboard, seguimiento y acciones contextuales](../specs/005-universal-dashboard-tracking/spec.md)
-- [Feature 005 — plan técnico](../specs/005-universal-dashboard-tracking/plan.md)
-- [Feature 005 — criterios](../specs/005-universal-dashboard-tracking/checklists/acceptance.md)
-- [Feature 006 — herencia de permisos por Cargo y Grupo](../specs/006-position-group-role-inheritance/spec.md)
-- [Feature 006 — plan técnico](../specs/006-position-group-role-inheritance/plan.md)
-- [Feature 006 — criterios](../specs/006-position-group-role-inheritance/checklists/acceptance.md)
+- [Feature 005 — dashboard/seguimiento](../specs/005-universal-dashboard-tracking/spec.md)
+- [Feature 006 — Cargo/Grupo → Rol → Permiso](../specs/006-position-group-role-inheritance/spec.md)
+- [Feature 007 — Enviar a revisión + propiedad de corrección](../specs/007-revision-handoff-correction-ownership/spec.md)
 
-## Dominio funcional y seguridad
+Cada feature mantiene `spec.md`, `plan.md` y `checklists/acceptance.md`.
 
-- [Modelo IAM configurable](IAM_MODEL.md) — baseline `requests:read`, Grupo/Cargo → Rol → Permiso, política `TECHNICAL_ADMIN` y fuentes efectivas.
-- [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md) — rutas canónicas, acciones contextuales, resolución IAM, migraciones y separación de runtime/compatibilidad legacy.
-- [Modelo Área + Categoría](CLASSIFICATION_MODEL.md)
-- [Correcciones y reenvío](REQUEST_CORRECTIONS.md)
-- [Seguimiento universal, acciones pendientes y cancelación](REQUEST_TRACKING.md)
-- [Configuración de correo](EMAIL_CONFIGURATION.md)
-- [Terminología funcional](TERMINOLOGY.md)
-- [Historial funcional y técnico](HISTORY.md)
+## Documentos funcionales/técnicos
+
+- [Modelo IAM](IAM_MODEL.md)
+- [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md)
+- [Área + Categoría](CLASSIFICATION_MODEL.md)
+- [Correcciones, reenvío y handoff](REQUEST_CORRECTIONS.md)
+- [Seguimiento y acciones pendientes](REQUEST_TRACKING.md)
+- [Correo por ambiente](EMAIL_CONFIGURATION.md)
+- [Terminología](TERMINOLOGY.md)
+- [Historial](HISTORY.md)
 - [Changelog](../CHANGELOG.md)
-
-## Fuentes operativas
-
 - [README principal](../README.md)
 - [Prompt maestro de reconstrucción](../PROMPT_RECONSTRUCCION.md)
-- `backend/.env.example` — plantilla local sin secretos reales.
-- `render.yaml` — producción declara explícitamente `ENVIRONMENT=production`.
 
-Contrato operativo backend:
-
-```text
-alembic upgrade head
-python -m scripts.bootstrap_admin
-uvicorn app.application:app
-```
-
-Cadena Alembic actual:
-
-```text
-0000 → 0001 → 0002 → 0003 → 0004
-```
-
-- `0003` repara filas históricas MULTI_QUOTE con `request_type=SIMPLE` incorrecto.
-- `0004` agrega `position_roles` e importa una sola vez la configuración legacy de cargos/perfiles hacia relaciones IAM canónicas.
-- El modal contextual de acciones pendientes no requiere una migración adicional.
-
-## IAM vigente
+## Modelo IAM vigente
 
 ```text
 Usuario → Grupo ─────────→ Rol → Permiso
        ↘ Cargo/Posición ─→ Rol → Permiso
        ↘ Rol directo ─────────→ Permiso
        ↘ Permiso directo
-       ↘ Baseline requests:read
+       ↘ baseline requests:read
 ```
 
-Un Cargo puede heredar Roles. El **nombre** del Cargo nunca autoriza directamente. Por ejemplo, `Tesorero` puede recibir `requests:approve` porque existe una relación persistida `Tesorero → Aprobador → requests:approve`, no porque el backend compare la palabra `TESORERO`.
+Cargo/Grupo pueden heredar Roles. El nombre de un Cargo nunca autoriza.
 
-La misma regla aplica a Grupos: los miembros heredan los permisos de los Roles asociados al Grupo.
+La consola autoritativa es **Configuración → Accesos**.
 
-La consola autoritativa es **Configuración → Accesos**:
+## Capacidades por recurso
 
-- Grupos → miembros + Roles heredados;
-- Cargos → Roles heredados;
-- Usuarios → Grupos + Cargos + Roles directos + permisos directos;
-- Permisos efectivos → muestra también el origen.
-
-Ejemplos de origen:
+No son permisos IAM:
 
 ```text
-Cargo Tesorero → Aprobador
-Grupo Junta Directiva → Aprobador
-Rol directo: Comprador
-Asignación directa
+can_cancel
+can_correct
 ```
 
-La pantalla legacy basada en `AccessProfile`, `users.title` y `can_*` es deuda de compatibilidad y no es la fuente autoritativa para nuevos cambios de acceso.
-
-## Política ambiental de la cuenta técnica
+Ambas se calculan por solicitud.
 
 ```text
-ENVIRONMENT=production
-→ TECHNICAL_ADMIN permisos IAM: config:manage + requests:read
-→ las asignaciones accidentales por Grupo/Cargo/Rol/directa no habilitan permisos financieros
-→ no recibe aprobación/votación/cierre como acciones personales
-→ puede cancelar solicitudes abiertas como excepción administrativa de ciclo de vida
-
-ENVIRONMENT!=production
-→ TECHNICAL_ADMIN: todos los permisos activos para testing E2E
+can_cancel → solicitante original OR system_accounts, estado cancelable
+can_correct → solicitante original OR system_accounts, estado corregible
 ```
 
-`RENDER=true` no sustituye `ENVIRONMENT=production` para esta política funcional.
+`requests:create` no concede corrección/cancelación de solicitudes ajenas.
 
-## Seguimiento universal
+## Enviar a revisión
 
-Todo usuario activo recibe `requests:read` como baseline y puede abrir Inicio/Dashboard y Solicitudes para dar seguimiento.
+Distinción canónica:
 
-La lectura no concede mutaciones. En particular, ver una solicitud ajena no autoriza modificarla ni cancelarla.
+```text
+Aprobador
+→ Enviar a revisión + comentario
+→ NEEDS_REVISION inmediato
+→ otros pasos PENDING/WAITING EXPIRED
+→ solicitante recibe CORRECT_REQUEST
 
-Los KPIs superiores del Dashboard son informativos y no son controles interactivos. La interacción se concentra en las filas de **Acciones pendientes** y en **Ver todas**.
+Solicitante/Admin del sistema
+→ Corregir / reenviar
+```
 
-### Acciones pendientes
+Una revisión no espera mayoría y no concede `can_correct` al aprobador.
 
-Las acciones de Inicio no son nuevos permisos IAM. Son tareas concretas resueltas por `pending_action_service.py` desde permiso efectivo + asignación + estado:
+## Dashboard
+
+Todo usuario activo recibe `requests:read`.
+
+Los KPIs superiores son informativos. Interacción:
+
+```text
+fila de Acciones pendientes → modal contextual
+Ver todas                    → Solicitudes
+```
+
+Tareas actuales:
 
 ```text
 APPROVAL_DECISION
@@ -126,96 +97,67 @@ CORRECT_REQUEST
 CLOSE_REQUEST
 ```
 
-En **Inicio → Acciones pendientes**:
+`CORRECT_REQUEST` pertenece al solicitante de una solicitud `NEEDS_REVISION`; no depende de `requests:create`.
+
+## Cuenta técnica
 
 ```text
-clic en una fila
-→ GET /api/expenses/{request_id}/my-actions
-→ modal contextual con las acciones vigentes del usuario
+ENVIRONMENT=production
+→ IAM: config:manage + requests:read
+→ no approval/vote/close
+→ puede cancelar/corregir como excepciones administrativas por recurso
 
-Ver todas
-→ Solicitudes
+ENVIRONMENT!=production
+→ todos los permisos activos para testing E2E
 ```
 
-El modal puede permitir:
-
-- Aprobar / Rechazar / Solicitar corrección;
-- revisar y votar cotizaciones;
-- subir factura y cerrar;
-- abrir una solicitud propia para Corregir / reenviar.
-
-Después de cada mutación se recargan el dashboard y `my-actions`, por lo que una acción atendida desde correo, otra pestaña o sesión deja de presentarse como ejecutable.
-
-La aprobación contextual usa `POST /api/expenses/{request_id}/approval-decision` sin exponer tokens bearer de links de correo.
-
-Para cancelación:
+## Corrección
 
 ```text
-can_cancel = solicitud abierta
-             AND (solicitante original OR system_accounts)
+SIMPLE      → SIMPLE
+MULTI_QUOTE → MULTI_QUOTE
 ```
 
-Estados cancelables: `QUOTATION_VOTING`, `SUBMITTED`, `PENDING_APPROVAL`, `NEEDS_REVISION`, `APPROVED`.
+Una MULTI_QUOTE corregida reinicia la ronda y **excluye siempre al solicitante original**, aunque el Administrador del sistema haya ejecutado la corrección.
 
-Estados no cancelables: `CLOSED`, `CANCELLED`, `REJECTED`.
-
-## Participación en aprobación/votación
-
-La población se resuelve por permiso efectivo `requests:approve` mediante `users_with_permission()`.
-
-Fuentes válidas:
+## Alembic
 
 ```text
-Permiso directo
-Rol directo
-Grupo → Rol → requests:approve
-Cargo → Rol → requests:approve
+0000 → 0001 → 0002 → 0003 → 0004
 ```
 
-El solicitante puede quedar excluido de su propia ronda y la cuenta técnica queda excluida de permisos financieros en producción.
+- `0003`: reparación `request_type` MULTI_QUOTE.
+- `0004`: `position_roles` + importación única de configuración legacy a IAM.
+- Feature 007 no agrega migración.
 
-## Invariant de correcciones
+Contrato de arranque:
 
 ```text
-SIMPLE      → corrección → SIMPLE
-MULTI_QUOTE → corrección → MULTI_QUOTE
+alembic upgrade head
+python -m scripts.bootstrap_admin
+uvicorn app.application:app
 ```
 
-La pestaña de creación seleccionada previamente no puede influir en el editor de corrección. El backend valida nuevamente el tipo canónico.
-
-## Política de correo por ambiente
+## Correo
 
 ```text
-Producción
-Frontend: Vercel
-Backend:  Render
-Correo:   Brevo HTTPS API
-
-Local / development
-Frontend: localhost
-Backend:  FastAPI/Docker local
-Correo:   Google SMTP
+Producción: Brevo / Render
+Local: Google SMTP / Docker
 ```
 
-Las credenciales SMTP/Brevo pertenecen exclusivamente al backend.
+Correo de aprobación usa:
 
-## Términos canónicos
+```text
+Aprobar
+Rechazar
+Enviar a revisión
+```
 
-- Usuario, no Persona como nombre del módulo.
-- Grupo: conjunto configurable de usuarios que puede heredar Roles.
-- Rol: conjunto reutilizable de permisos.
-- Permiso: capacidad atómica.
-- Cargo/Posición: estructura organizacional configurable que puede heredar Roles; el nombre no autoriza.
-- Cuenta técnica / Administrador del sistema: identidad técnica gobernada por ambiente.
-- Área: unidad/contexto organizacional del gasto.
-- Categoría: naturaleza del gasto.
-- Acción pendiente: tarea contextual que requiere intervención del usuario actual; no es un permiso IAM.
-- Corrección / Corregir y reenviar: editar sin cambiar SIMPLE/MULTI_QUOTE.
-- Cancelar solicitud: finalizar una solicitud abierta por solicitante original o Administrador del sistema.
+El solicitante recibe el comentario de revisión.
 
-## Validación durante límite de GitHub Actions
+## GitHub Actions sin cuota
 
-Mientras la cuenta no tenga cuota de Actions, los gates siguen siendo obligatorios localmente:
+Mientras la cuota esté agotada, gates locales obligatorios:
 
 ```text
 python -m unittest discover -s tests -v
@@ -225,8 +167,25 @@ docker compose build --no-cache
 docker compose up -d
 ```
 
-No registrar un run bloqueado por cuota como CI verde.
+No considerar verde un run que no pudo ejecutarse por cuota.
+
+## Deuda explícita
+
+Permanecen temporalmente sin ser autoridad:
+
+```text
+UserRole
+can_*
+AccessProfile
+BOARD_CODES
+/api/users legacy
+main.jsx monolítico
+domain-normalization.js
+bridges Vite
+```
+
+Deuda funcional separada: fórmula completa de mayoría APPROVED/REJECTED, empate MULTI_QUOTE, edición estructural de opciones y outbox/retry persistente.
 
 ## Regla de mantenimiento
 
-Todo cambio funcional/técnico debe revisar y actualizar en el mismo PR los documentos afectados. La matriz está definida en `DOCUMENTATION_POLICY.md` y en la Constitución.
+Todo cambio funcional/técnico debe sincronizar Constitución, specs, checklists, planes, README, prompt maestro, docs, HISTORY, CHANGELOG y PR cuando aplique.
