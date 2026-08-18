@@ -29,6 +29,16 @@ class FrontendClosureContractTests(unittest.TestCase):
         self.assertIn('{x.can_close && x.status === "APPROVED"', vite)
         self.assertNotIn('canClose || filtered.some((item) => item.can_correct)', vite)
 
+    def test_closure_delegation_bridge_is_whitespace_tolerant(self):
+        vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')
+        self.assertIn('source.matchAll(pattern)', vite)
+        self.assertIn('closure delegation extraction expected 1 row action anchor', vite)
+        self.assertIn('row-actions">\\s*', vite)
+        self.assertNotIn(
+            '<div className="row-actions">\\n                        {x.can_correct && <button',
+            vite,
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
