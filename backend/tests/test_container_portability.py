@@ -20,6 +20,18 @@ class ContainerPortabilityTests(unittest.TestCase):
         self.assertIn('condition: service_healthy', compose)
         self.assertIn('/api/health', compose)
 
+    def test_compose_email_links_use_reachable_frontend_port(self):
+        compose = (REPO_ROOT / 'docker-compose.yml').read_text(encoding='utf-8')
+        root_env_example = (REPO_ROOT / '.env.example').read_text(encoding='utf-8')
+
+        self.assertIn('127.0.0.1:3000:80', compose)
+        self.assertIn('PUBLIC_URL: ${LOCAL_PUBLIC_URL:-http://localhost:3000}', compose)
+        self.assertIn('LOCAL_PUBLIC_URL=http://localhost:3000', root_env_example)
+        self.assertIn(
+            'LOCAL_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173',
+            root_env_example,
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
