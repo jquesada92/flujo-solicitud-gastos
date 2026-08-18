@@ -24,6 +24,11 @@ services:
       # Development is intentionally isolated from Neon.
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ph_user}:${POSTGRES_PASSWORD:-ph_password}@db:5432/${POSTGRES_DB:-ph_expenses}
       UPLOAD_DIR: /app/uploads
+      # Docker Compose serves the SPA through Nginx on host port 3000. These
+      # values intentionally override backend/.env so links embedded in local
+      # approval/voting emails always point to the reachable Docker frontend.
+      PUBLIC_URL: ${LOCAL_PUBLIC_URL:-http://localhost:3000}
+      CORS_ALLOWED_ORIGINS: ${LOCAL_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
     volumes:
       - expense_uploads:/app/uploads
     depends_on:
