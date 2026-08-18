@@ -272,6 +272,17 @@ La lectura compartida no concede acciones mutables.
 
 No filtres la lista por `UserRole.REQUESTER` ni por `requested_by == current_user.email`.
 
+### KPIs superiores
+
+Las tarjetas superiores del Dashboard son **indicadores informativos solamente**. En particular, **Acciones que requieren mi atención**, **Solicitudes en proceso** y **Cerradas en 24 horas** deben renderizarse como contenido no interactivo, no como botones.
+
+No les asignes `onClick`, navegación ni apertura de acciones. La interacción debe ocurrir únicamente mediante controles explícitos:
+
+```text
+fila concreta de Acciones pendientes → modal contextual
+Ver todas                            → Solicitudes
+```
+
 ### Bandeja personal de acciones
 
 `pending_my_action` debe contar **acciones concretas vigentes** que requieren intervención del usuario actual, no simplemente solicitudes abiertas ni permisos abstractos.
@@ -739,6 +750,7 @@ Matriz de seguimiento/cancelación:
 
 Matriz de acciones pendientes:
 
+- KPIs superiores son informativos, no botones, y no tienen `onClick`;
 - Approval.PENDING asignado + `requests:approve` produce `APPROVAL_DECISION`;
 - invitación MULTI_QUOTE vigente sin voto produce `QUOTATION_VOTE`;
 - solicitud propia NEEDS_REVISION + `requests:create` produce `CORRECT_REQUEST`;
