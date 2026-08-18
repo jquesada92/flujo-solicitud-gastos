@@ -1,6 +1,6 @@
 # Prompt maestro de reconstrucción
 
-> Constitución vigente: **2.3.3**.
+> Constitución vigente: **2.4.0**.
 
 Reconstruye una aplicación web lista para producción llamada **Flujo de Control de Gastos**, destinada a solicitar, evaluar, aprobar, ejecutar y documentar gastos con evidencia verificable.
 
@@ -48,6 +48,7 @@ Usuario → Grupo → Rol → Permiso
        ↘ Rol directo
        ↘ Permiso directo
        ↘ Cargo/Posición descriptivo
+       ↘ Baseline del producto
 ```
 
 Persistencia:
@@ -72,9 +73,7 @@ Permisos iniciales:
 - `requests:close`
 - `config:manage`
 
-Los permisos atómicos son capacidades del producto. La organización configura desde la UI grupos, roles, cargos, membresías y asignaciones.
-
-Para usuarios operativos, default DENY si una capacidad no está permitida explícitamente.
+`requests:read` es baseline no revocable para todo usuario activo y autenticado. Para las demás capacidades, la organización configura desde la UI grupos, roles, cargos, membresías y asignaciones y aplica default DENY si no existe ALLOW.
 
 ### Prohibiciones
 
@@ -103,7 +102,7 @@ Solo cuando:
 ENVIRONMENT=production
 ```
 
-la cuenta técnica queda restringida a:
+la cuenta técnica queda restringida como permisos IAM a:
 
 ```text
 config:manage
@@ -120,6 +119,8 @@ requests:close
 
 incluso si alguien intenta asignarlos accidentalmente mediante un grupo, rol o permiso directo. Tampoco debe participar en poblaciones financieras de aprobación o votación.
 
+Como excepción explícita de administración del ciclo de vida, el Administrador del sistema puede cancelar una solicitud abierta. Esa facultad se valida por `system_accounts`, no por un permiso financiero, email, cargo o `UserRole.ADMIN`.
+
 ### No producción
 
 Para cualquier `ENVIRONMENT` distinto de `production`, incluidos local, development/dev, test, staging y preview, la cuenta técnica debe recibir **todos los permisos atómicos activos del producto** para probar el sistema end-to-end.
@@ -131,6 +132,7 @@ Debe poder:
 - aprobar y votar;
 - entrar en poblaciones de aprobación/votación cuando corresponda;
 - subir/reemplazar factura y cerrar;
+- cancelar solicitudes abiertas;
 - administrar configuración.
 
 No persistas físicamente todos esos permisos solo para testing si puede resolverse como política ambiental; el mismo dataset debe volverse restrictivo al ejecutar con `ENVIRONMENT=production`.
@@ -181,6 +183,8 @@ El login debe calcular y serializar los permisos efectivos antes del primer rend
 
 Migra progresivamente el frontend a `permission_codes`; retira bypasses visuales como `user.role === "ADMIN"` y `canClose={true}`.
 
+Para acciones dependientes de una solicitud concreta, el backend puede exponer capacidades por recurso, por ejemplo `can_cancel`. La UI debe consumirlas en vez de reconstruir reglas de propiedad localmente.
+
 ## 7. Clasificación Área + Categoría
 
 Área y Categoría son catálogos independientes con relación N:M configurable.
@@ -213,6 +217,53 @@ Cada solicitud conserva como mínimo:
 - timestamps.
 
 Crear/corregir/cargar soporte requiere `requests:create`.
+
+### Seguimiento universal
+
+Todo usuario activo debe poder abrir:
+
+```text
+Inicio / Dashboard
+Solicitudes
+```
+
+y consultar solicitudes de otros usuarios para dar seguimiento. `GET /api/expenses` y `GET /api/expenses/dashboard` deben depender de `requests:read`, cuyo resultado efectivo incluye el baseline.
+
+La lectura universal no concede creación, aprobación, cierre, configuración ni cancelación ajena.
+
+### Cancelación
+
+Una solicitud abierta solo puede ser cancelada por:
+
+```text
+solicitante original
+OR
+Administrador del sistema persistido en system_accounts
+```
+
+No uses `requests:create`, `requests:approve`, `config:manage`, cargo, grupo o rol como sustituto de esta regla.
+
+Estados cancelables:
+
+```text
+QUOTATION_VOTING
+SUBMITTED
+PENDING_APPROVAL
+NEEDS_REVISION
+APPROVED
+```
+
+Estados no cancelables:
+
+```text
+CLOSED
+CANCELLED
+REJECTED
+```
+
+La cancelación exige motivo, registra `cancelled_at`, `cancelled_by` y `cancellation_reason`, y expira aprobaciones abiertas.
+
+El listado canónico debe devolver `can_cancel` por solicitud. El endpoint de cancelación vuelve a validar siempre la regla aunque la UI haya ocultado/mostrado correctamente el botón.
 
 ### Formulario canónico
 
@@ -285,13 +336,16 @@ No conviertas SIMPLE ↔ MULTI_QUOTE como efecto colateral de una corrección. S
 
 ### Integración temporal del monolito
 
-Mientras `main.jsx` conserve una definición histórica de `ExpenseForm`, `vite.config.js` puede realizar una única extracción estructural temporal:
+Mientras `main.jsx` conserve una definición histórica de `ExpenseForm`, `vite.config.js` puede realizar una extracción estructural temporal:
 
 1. importar `ExpenseForm` desde `./expense-form.jsx`;
-2. eliminar del bundle la función legacy completa;
-3. usar una `key` por solicitud/flujo para forzar remount.
+2. eliminar del bundle la función legacy completa.
 
-No vuelvas a depender de múltiples reemplazos granulares de condiciones internas del formulario legacy. La transformación debe fallar el build si no puede aislar esa frontera y debe retirarse cuando `main.jsx` importe el componente modular directamente.
+No inyectes una `key` o parches de montaje por coincidencias exactas de whitespace; el componente modular ya rehidrata desde `draft.request_id`/`flow_id`.
+
+Mientras la tabla legacy siga infiriendo cancelación mediante estados y `can_request`, el build puede sustituir ese guard por `x.can_cancel` usando un patrón semántico tolerante a whitespace y validado para que falle si no encuentra exactamente la frontera esperada.
+
+Estas transformaciones son deuda temporal y deben retirarse cuando `main.jsx` importe directamente componentes modulares.
 
 ## 9. Cotizaciones
 
@@ -347,7 +401,7 @@ Reglas:
 - `lifespan` nunca ejecuta DDL/backfills/seeds de negocio.
 - Alembic para migraciones versionadas.
 - SQLAlchemy síncrono: rutas con DB/filesystem bloqueante deben ser `def` o hacer offload explícito.
-- invariantes de negocio como preservar `request_type` durante una corrección deben vivir también en backend, no solo en estado React.
+- invariantes de negocio como preservar `request_type` y autorizar cancelación por propiedad deben vivir también en backend, no solo en estado React.
 
 ## 13. Passwords y JWT
 
@@ -440,7 +494,7 @@ Cadena Alembic vigente:
 → 0003 backfill MULTI_QUOTE request_type
 ```
 
-`0003` repara filas históricas con evidencia múltiple y default `SIMPLE` incorrecto. No reviertas esa reparación mediante lógica de UI.
+`0003` repara filas históricas con evidencia múltiple y default `SIMPLE` incorrecto. Feature 005 de seguimiento/cancelación no agrega migración de esquema ni debe crear un backfill basado en flags legacy.
 
 No ejecutes el bootstrap como `python scripts/bootstrap_admin.py`.
 
@@ -465,6 +519,7 @@ Usa tests unitarios y `FastAPI TestClient`.
 
 Matriz IAM mínima:
 
+- usuario activo obtiene baseline `requests:read` aunque no tenga asignaciones;
 - no-producción: admin técnico obtiene todos los permisos activos;
 - no-producción: login expone `permission_codes` completos y `can_close=true` si el permiso está activo;
 - no-producción: admin técnico puede entrar en población `requests:approve`;
@@ -476,6 +531,19 @@ Matriz IAM mínima:
 - Grupo→Rol→Permiso cambia acceso inmediatamente;
 - permiso directo es aditivo;
 - rol técnico no se edita desde UI.
+
+Matriz de seguimiento/cancelación mínima:
+
+- usuario activo sin roles puede cargar dashboard;
+- usuario activo puede ver solicitud creada por otro usuario;
+- lectura baseline no concede cierre ni otras mutaciones;
+- solicitante recibe `can_cancel=true` para su solicitud abierta;
+- usuario ajeno recibe `can_cancel=false`;
+- usuario ajeno con `requests:create` recibe 403 al cancelar;
+- solicitante puede cancelar durante `QUOTATION_VOTING`;
+- cuenta técnica puede cancelar cualquier solicitud abierta;
+- `CLOSED`, `CANCELLED` y `REJECTED` no pueden cancelarse;
+- frontend build sustituye el guard legacy de cancelación por `x.can_cancel`.
 
 Matriz de correcciones mínima:
 
@@ -510,16 +578,21 @@ CI ejecuta Python compile, backend tests, frontend build y builds/smoke tests Do
 - rate limiting diferenciado;
 - ORM/consultas parametrizadas;
 - archivos privados;
-- default deny para usuarios operativos;
+- default deny para capacidades mutables de usuarios operativos;
+- `requests:read` baseline para usuarios activos;
 - no bypass por `UserRole.ADMIN`;
 - no autorización por cargo;
-- política ampliada de cuenta técnica únicamente fuera de producción y basada en ambiente.
+- cancelación ajena no se concede por `requests:create`;
+- Administrador del sistema para cancelación se identifica por `system_accounts`;
+- política ampliada de cuenta técnica únicamente fuera de producción y basada en ambiente, salvo la excepción explícita de cancelación administrativa.
 
 ## 19. Auditoría
 
 Eventos significativos deben conservar actor, tiempo, entidad, cambios y motivo. La evolución del IAM debe incorporarse a auditoría para que cambios de roles/grupos/permisos no sean silenciosos.
 
 Una corrección debe conservar el historial de rondas anteriores aunque limpie el estado vigente de votos/invitaciones.
+
+Una cancelación debe conservar `cancelled_at`, `cancelled_by` y `cancellation_reason` y expirar decisiones abiertas sin borrar evidencia histórica.
 
 ## 20. Documentación obligatoria
 
@@ -529,7 +602,7 @@ Un cambio no está terminado hasta revisar y actualizar cuando aplique Constituc
 
 Durante la transición pueden existir `UserRole`, `can_*`, router legacy `/api/users`, `main.jsx` monolítico, `domain-normalization.js` y `modularExpenseFormPlugin`.
 
-`frontend/src/expense-form.jsx` ya es la implementación canónica del formulario; no reconstruyas el esquema anterior de parchear granularmente el ExpenseForm legacy. El plugin temporal solo existe para retirar la definición histórica del bundle hasta que `main.jsx` importe directamente el componente modular.
+`frontend/src/expense-form.jsx` ya es la implementación canónica del formulario; no reconstruyas el esquema anterior de parchear granularmente el ExpenseForm legacy. El plugin temporal retira la definición histórica del bundle y, mientras la tabla siga legacy, adapta el guard de cancelación para consumir `can_cancel`.
 
 No presentes ninguna deuda legacy como arquitectura objetivo. No debe ser fuente de autorización ni de invariantes críticos sin defensa backend.
 
