@@ -159,6 +159,8 @@ class ExpenseOut(BaseModel):
     selected_quotation_id: int | None = None
     can_cancel: bool = False
     can_correct: bool = False
+    can_close: bool = False
+    can_delegate_close: bool = False
 
     class Config:
         from_attributes = True
