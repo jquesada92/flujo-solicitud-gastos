@@ -1,8 +1,8 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.4.0  
-**Vigente desde:** 2026-08-17
+**Versión:** 2.5.0  
+**Vigente desde:** 2026-08-18
 
 ## 1. Evolucionar, no reconstruir sin necesidad
 
@@ -26,10 +26,10 @@ La estructura organizacional tampoco puede quedar codificada mediante nombres co
 ## 3. Terminología canónica
 
 - **Usuario**: cuenta que interactúa con el sistema.
-- **Grupo**: conjunto configurable de usuarios.
+- **Grupo**: conjunto configurable de usuarios que puede heredar uno o más Roles.
 - **Rol**: conjunto configurable de permisos.
 - **Permiso**: capacidad atómica implementada por el producto.
-- **Cargo / Posición**: metadato organizacional descriptivo; no concede permisos.
+- **Cargo / Posición**: elemento configurable de la estructura organizacional que puede heredar uno o más Roles. El nombre del Cargo nunca autoriza por sí mismo.
 - **Área**: unidad, departamento o función organizacional asociada al gasto.
 - **Categoría**: naturaleza del bien o servicio adquirido.
 
@@ -42,10 +42,10 @@ La autorización canónica se resuelve mediante permisos efectivos persistidos e
 Modelo:
 
 ```text
-Usuario → Grupo → Rol → Permiso
-       ↘ Rol directo
+Usuario → Grupo ─────────→ Rol → Permiso
+       ↘ Cargo/Posición ─→ Rol → Permiso
+       ↘ Rol directo ─────────→ Permiso
        ↘ Permiso directo
-       ↘ Cargo/Posición (descriptivo solamente)
        ↘ Capacidades base del producto
 ```
 
@@ -54,9 +54,12 @@ Para usuarios operativos, los permisos efectivos son la unión de:
 1. capacidades base del producto aplicables al usuario activo;
 2. permisos directos del usuario;
 3. permisos de roles asignados directamente;
-4. permisos de roles heredados a través de grupos activos.
+4. permisos de roles heredados a través de grupos activos;
+5. permisos de roles heredados a través de cargos/posiciones activos asignados al usuario.
 
-Para capacidades mutables no concedidas explícitamente, el resultado es **DENY**.
+Un mismo Rol puede reutilizarse simultáneamente en Grupos, Cargos y asignaciones directas. Por ejemplo, un Rol `Aprobador` con `requests:approve` puede asociarse a los Cargos Presidente/Tesorero y también al Grupo Junta Directiva sin duplicar la definición del permiso.
+
+Para capacidades mutables no concedidas explícitamente por una de estas relaciones, el resultado es **DENY**.
 
 El producto define las capacidades atómicas disponibles. Cada organización configura desde la interfaz sus grupos, roles, cargos, membresías y asignaciones.
 
@@ -87,17 +90,19 @@ La lectura universal no concede ninguna acción mutable. Un usuario puede tener 
 - subir factura/cerrar (`requests:close`);
 - administrar configuración (`config:manage`).
 
-Un rol o grupo puede incluir `requests:read` por compatibilidad o claridad, pero quitarlo de esos conjuntos **no puede retirar** la capacidad base de un usuario activo. Los usuarios inactivos no pueden autenticarse ni ejercer el baseline.
+Un rol, grupo o cargo puede terminar heredando `requests:read` por claridad, pero quitarlo de esas relaciones **no puede retirar** la capacidad base de un usuario activo. Los usuarios inactivos no pueden autenticarse ni ejercer el baseline.
 
 No autorizar por:
 
 - `UserRole.ADMIN`, `REQUESTER`, `APPROVER` o `VIEWER`;
 - `can_request`, `can_approve`, `can_view`, `can_configure` como fuente de verdad;
-- nombre de rol, grupo, cargo o perfil;
+- comparar el nombre/código de un rol, grupo, cargo o perfil;
 - correo fijo;
 - ID mágico;
 - listas de cargos como PRESIDENTE/TESORERO/etc.;
 - conceptos inmobiliarios.
+
+**Sí está permitido** autorizar por permisos heredados desde relaciones persistidas `Cargo → Rol → Permiso`; lo prohibido es que el código pregunte si el cargo se llama Presidente, Tesorero, CFO o cualquier otro nombre concreto.
 
 Los campos legacy pueden existir temporalmente durante una migración, pero no pueden ser autoridad de autorización ni limitar el baseline universal de seguimiento.
 
@@ -120,7 +125,9 @@ En producción no puede obtener ni ejercer:
 - `requests:approve`;
 - `requests:close`.
 
-Esta restricción prevalece incluso si una configuración posterior intenta otorgarle permisos financieros mediante grupo, rol o permiso directo. Tampoco participa en poblaciones financieras de aprobación o votación.
+Esta restricción prevalece incluso si una configuración posterior intenta otorgarle permisos financieros mediante grupo, cargo, rol o permiso directo. Tampoco participa en poblaciones financieras de aprobación o votación.
+
+La cuenta técnica puede cancelar una solicitud abierta como **acción administrativa del ciclo de vida**, no como permiso financiero. Esta excepción se identifica por `system_accounts`; no le concede `requests:create`, `requests:approve` ni `requests:close`.
 
 ### No producción
 
@@ -144,6 +151,8 @@ La interfaz debe permitir administrar, sin despliegue de código:
 - cargos/posiciones;
 - membresías de grupos;
 - roles de grupos;
+- roles de cargos/posiciones;
+- cargos/posiciones asignados a usuarios;
 - roles directos de usuario;
 - permisos directos de usuario;
 - visualización de permisos efectivos y su origen;
@@ -151,6 +160,15 @@ La interfaz debe permitir administrar, sin despliegue de código:
 - políticas de aprobación y demás configuración organizacional cuando corresponda.
 
 La interfaz IAM debe distinguir las capacidades configurables de las capacidades base del producto. No debe presentar `requests:read` como una capacidad que pueda revocarse efectivamente a un usuario activo.
+
+La vista de permisos efectivos debe explicar el origen, por ejemplo:
+
+```text
+Cargo Tesorero → Aprobador
+Grupo Junta Directiva → Aprobador
+Rol directo: Comprador
+Asignación directa
+```
 
 Una organización futura puede tener estructuras completamente distintas a la configuración inicial del PH.
 
@@ -160,6 +178,8 @@ El frontend puede ocultar o mostrar acciones por UX, pero el backend es la autor
 
 - autorización;
 - capacidades base;
+- herencia Grupo → Rol → Permiso;
+- herencia Cargo → Rol → Permiso;
 - transiciones;
 - población de participantes;
 - acceso a documentos;
@@ -169,6 +189,8 @@ El frontend puede ocultar o mostrar acciones por UX, pero el backend es la autor
 - invariantes del tipo de solicitud durante una corrección.
 
 Una operación sensible debe declarar una dependencia de permiso explícita o pasar por un servicio que la aplique. Las rutas de lectura del dashboard y seguimiento deben depender de `requests:read`, cuya resolución efectiva incluye el baseline para usuarios activos.
+
+Las poblaciones de workflow (`users_with_permission`) deben utilizar la misma resolución de permisos efectivos que los endpoints. Un aprobador heredado por Cargo o Grupo debe ser tan elegible como uno con Rol directo, salvo exclusiones intrínsecas del flujo como el propio solicitante o la cuenta técnica en producción.
 
 ## 8. Arquitectura FastAPI
 
@@ -227,7 +249,7 @@ Debe existir una forma de probar el transporte de correo independientemente del 
 
 Toda acción significativa debe poder reconstruirse con actor, fecha/hora, entidad, cambios, estado anterior/nuevo y motivo cuando aplique. Los eventos históricos relevantes son append-only.
 
-Los cambios futuros de membresías, roles y permisos deben incorporarse al modelo de auditoría de acceso; una asignación de autorización no debe cambiar silenciosamente.
+Los cambios futuros de membresías, roles, cargos con herencia y permisos deben incorporarse al modelo de auditoría de acceso; una asignación de autorización no debe cambiar silenciosamente.
 
 ## 11. Evidencia documental
 
@@ -235,11 +257,32 @@ Los documentos son evidencia privada. Deben validarse por contenido real, almace
 
 Una corrección no debe obligar a descartar o volver a cargar evidencia válida ya asociada a la solicitud únicamente porque el navegador no pueda prellenar un control de archivo.
 
-## 12. Solicitudes, clasificación, seguimiento y correcciones
+## 12. Solicitudes, clasificación, seguimiento, cancelación y correcciones
 
 Cada solicitud se clasifica por **Área + Categoría**. La clasificación histórica no cambia retroactivamente porque un catálogo se renombre, desactive o cambie.
 
 El seguimiento de solicitudes es compartido: la identidad del solicitante no restringe la visibilidad de la solicitud para otros usuarios activos. Los permisos de acción continúan siendo independientes.
+
+### Cancelación
+
+Una solicitud abierta puede cancelarse únicamente por:
+
+- su solicitante original; o
+- la cuenta protegida Administrador del sistema identificada mediante `system_accounts`.
+
+Tener `requests:create`, `requests:approve`, `config:manage`, un Rol, Grupo o Cargo concreto no autoriza por sí solo a cancelar una solicitud ajena.
+
+Estados cancelables:
+
+- `QUOTATION_VOTING`;
+- `SUBMITTED`;
+- `PENDING_APPROVAL`;
+- `NEEDS_REVISION`;
+- `APPROVED`.
+
+`CLOSED`, `CANCELLED` y `REJECTED` no son cancelables. La cancelación exige motivo y conserva actor/timestamp/razón.
+
+### Correcciones
 
 La solicitud simple contiene una opción/cotización. `MULTI_QUOTE` mantiene la selección de cotización separada conceptualmente del proceso de aprobación.
 
@@ -265,6 +308,8 @@ El backend debe hacer cumplir estas reglas incluso si la UI falla al hidratar el
 ## 13. Participantes y decisiones
 
 La población elegible de una ronda debe congelarse/versionarse. Para votación de cotizaciones, las invitaciones de la ronda representan el snapshot de participantes hasta que exista un modelo explícito de rondas.
+
+La población inicial debe resolverse por permisos efectivos, incluyendo herencia por Grupo y Cargo. Ningún título concreto es requisito del motor.
 
 Para una ronda de aprobación:
 
@@ -308,6 +353,8 @@ La dependencia entre servicios locales debe basarse en health checks cuando el c
 
 Antes de retirar datos: respaldo, inventario, migración versionada, validación y recuperación real.
 
+Las migraciones de compatibilidad pueden leer estructuras legacy una sola vez para convertirlas a relaciones IAM canónicas. Después del upgrade, el runtime no puede depender de esos nombres/flags legacy.
+
 ## 16. Seguridad y rendimiento
 
 Como mínimo:
@@ -336,13 +383,18 @@ Los cambios incluyen pruebas proporcionales al riesgo. Para IAM son obligatorias
 - `users_with_permission('requests:read')` incluye a todos los usuarios activos;
 - permisos directos;
 - herencia Grupo → Rol → Permiso;
+- herencia Cargo/Posición → Rol → Permiso;
+- origen de permisos efectivo distinguible entre Grupo, Cargo, Rol directo y asignación directa;
+- cargo inactivo no concede permisos;
 - cuenta técnica con todos los permisos activos en no producción;
 - cuenta técnica incluida en poblaciones de aprobación/votación fuera de producción;
 - cuenta técnica restringida a `config:manage` + `requests:read` en producción;
-- operaciones financieras negadas a la cuenta técnica en producción incluso con asignación accidental;
+- operaciones financieras negadas a la cuenta técnica en producción incluso con asignación accidental por grupo/cargo/rol/directa;
 - endpoints `config:manage`;
 - cambios de permisos efectivos sin reiniciar la app;
 - login/respuesta de usuario exponiendo permisos efectivos coherentes con el ambiente.
+
+Para cancelación son obligatorias pruebas que demuestren que el solicitante puede cancelar su solicitud abierta, otro usuario no puede hacerlo por tener permisos mutables, la cuenta técnica puede ejecutar la excepción administrativa y una solicitud cerrada no puede cancelarse.
 
 Para correcciones son obligatorias pruebas que demuestren que `request_type` no cambia, que una MULTI_QUOTE reinicia su ronda, que evidencia existente no se pierde por la hidratación del formulario, que el tipo del editor no depende de la pestaña seleccionada previamente y que un registro legacy con evidencia MULTI_QUOTE no se degrada por un default `SIMPLE` incorrecto.
 
@@ -395,10 +447,11 @@ Una feature está terminada cuando:
 
 - comportamiento implementado coincide con requisitos y criterios;
 - autorización no depende de nombres organizacionales hardcodeados;
+- herencia de permisos por Grupo y Cargo utiliza relaciones configurables, no comparaciones de nombres;
 - `requests:read` permanece disponible para todo usuario activo y no se filtra por identidad del solicitante;
 - dashboard y seguimiento compartido están protegidos por pruebas cuando se modifica acceso/solicitudes;
 - la política de cuenta técnica está probada en producción y no producción;
-- invariantes de corrección están protegidos en backend y probados;
+- invariantes de cancelación/corrección están protegidos en backend y probados;
 - el editor de corrección deriva su tipo de la solicitud y no conserva la pestaña de creación previa;
 - la configuración de correo por ambiente está documentada y puede diagnosticarse sin exponer secretos;
 - migraciones son versionadas y desplegables;
