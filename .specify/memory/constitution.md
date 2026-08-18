@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.5.0  
+**Versión:** 2.6.0  
 **Vigente desde:** 2026-08-18
 
 ## 1. Evolucionar, no reconstruir sin necesidad
@@ -59,7 +59,7 @@ Para usuarios operativos, los permisos efectivos son la unión de:
 
 Un mismo Rol puede reutilizarse simultáneamente en Grupos, Cargos y asignaciones directas. Por ejemplo, un Rol `Aprobador` con `requests:approve` puede asociarse a los Cargos Presidente/Tesorero y también al Grupo Junta Directiva sin duplicar la definición del permiso.
 
-Para capacidades mutables no concedidas explícitamente por una de estas relaciones, el resultado es **DENY**.
+Para capacidades mutables no concedidas explícitamente por una de estas relaciones, el resultado es **DENY**, salvo reglas de recurso explícitas definidas por esta Constitución, como cancelar o corregir una solicitud propia y las excepciones administrativas de la cuenta técnica.
 
 El producto define las capacidades atómicas disponibles. Cada organización configura desde la interfaz sus grupos, roles, cargos, membresías y asignaciones.
 
@@ -85,10 +85,12 @@ Por tanto, todo usuario activo debe poder:
 
 La lectura universal no concede ninguna acción mutable. Un usuario puede tener únicamente `requests:read` y seguir sin poder:
 
-- crear o corregir solicitudes (`requests:create`);
+- crear nuevas solicitudes (`requests:create`);
 - aprobar o votar (`requests:approve`);
 - subir factura/cerrar (`requests:close`);
 - administrar configuración (`config:manage`).
+
+**Corregir / reenviar no se concede por `requests:create` sobre solicitudes ajenas.** Es una capacidad por recurso reservada al solicitante original y a la cuenta protegida Administrador del sistema según la sección 12.
 
 Un rol, grupo o cargo puede terminar heredando `requests:read` por claridad, pero quitarlo de esas relaciones **no puede retirar** la capacidad base de un usuario activo. Los usuarios inactivos no pueden autenticarse ni ejercer el baseline.
 
@@ -127,7 +129,7 @@ En producción no puede obtener ni ejercer:
 
 Esta restricción prevalece incluso si una configuración posterior intenta otorgarle permisos financieros mediante grupo, cargo, rol o permiso directo. Tampoco participa en poblaciones financieras de aprobación o votación.
 
-La cuenta técnica puede cancelar una solicitud abierta como **acción administrativa del ciclo de vida**, no como permiso financiero. Esta excepción se identifica por `system_accounts`; no le concede `requests:create`, `requests:approve` ni `requests:close`.
+La cuenta técnica puede cancelar o corregir/reenviar una solicitud abierta como **acciones administrativas del ciclo de vida**, no como permisos financieros. Estas excepciones se identifican por `system_accounts`; no le conceden `requests:create`, `requests:approve` ni `requests:close`.
 
 ### No producción
 
@@ -186,9 +188,11 @@ El frontend puede ocultar o mostrar acciones por UX, pero el backend es la autor
 - decisiones;
 - configuración IAM;
 - política ambiental de cuentas técnicas;
-- invariantes del tipo de solicitud durante una corrección.
+- propiedad/capacidades por recurso como cancelación y corrección;
+- invariantes del tipo de solicitud durante una corrección;
+- interrupción del flujo cuando un aprobador envía una solicitud a revisión.
 
-Una operación sensible debe declarar una dependencia de permiso explícita o pasar por un servicio que la aplique. Las rutas de lectura del dashboard y seguimiento deben depender de `requests:read`, cuya resolución efectiva incluye el baseline para usuarios activos.
+Una operación sensible debe declarar una dependencia de permiso explícita o pasar por un servicio que aplique su regla de recurso. Las rutas de lectura del dashboard y seguimiento deben depender de `requests:read`, cuya resolución efectiva incluye el baseline para usuarios activos.
 
 Las poblaciones de workflow (`users_with_permission`) deben utilizar la misma resolución de permisos efectivos que los endpoints. Un aprobador heredado por Cargo o Grupo debe ser tan elegible como uno con Rol directo, salvo exclusiones intrínsecas del flujo como el propio solicitante o la cuenta técnica en producción.
 
@@ -251,6 +255,8 @@ Toda acción significativa debe poder reconstruirse con actor, fecha/hora, entid
 
 Los cambios futuros de membresías, roles, cargos con herencia y permisos deben incorporarse al modelo de auditoría de acceso; una asignación de autorización no debe cambiar silenciosamente.
 
+Una acción **Enviar a revisión** debe conservar el aprobador que la ejecutó, timestamp y comentario obligatorio; la corrección posterior debe conservar actor/fecha y generar una nueva versión/ronda del flujo según corresponda.
+
 ## 11. Evidencia documental
 
 Los documentos son evidencia privada. Deben validarse por contenido real, almacenarse fuera del acceso público directo, descargarse con autorización backend, conservar versiones al sustituirse y registrar actor/fecha/motivo.
@@ -286,6 +292,15 @@ Estados cancelables:
 
 La solicitud simple contiene una opción/cotización. `MULTI_QUOTE` mantiene la selección de cotización separada conceptualmente del proceso de aprobación.
 
+**Corregir / reenviar es una capacidad por recurso.** Solo pueden ejecutarla:
+
+- el solicitante original de la solicitud; o
+- la cuenta protegida Administrador del sistema identificada mediante `system_accounts`.
+
+`requests:create`, `requests:approve`, `config:manage`, un Grupo, Rol o Cargo concreto **no** autorizan a corregir una solicitud ajena. Los aprobadores/revisores que detecten un problema deben utilizar **Enviar a revisión** con comentario obligatorio; no deben editar la solicitud directamente.
+
+La tarea personal `CORRECT_REQUEST` después de una revisión pertenece al **solicitante original**. El Administrador del sistema conserva la capacidad administrativa de corregir desde la solicitud, pero no sustituye al solicitante como responsable normal de la tarea de revisión.
+
 **Corregir / reenviar MUST conservar el `request_type` original.** Un valor por defecto del frontend, un campo legacy o un payload incorrecto no puede convertir silenciosamente una solicitud entre `SIMPLE` y `MULTI_QUOTE`.
 
 La pestaña SIMPLE/MULTI_QUOTE usada para crear una solicitud nueva es **solo estado de creación**. Al entrar en modo corrección, ese estado previo MUST descartarse: el editor debe derivar y fijar su tipo desde la solicitud que se está corrigiendo. La pestaña que estaba seleccionada antes de pulsar **Corregir / reenviar** no puede influir en el editor.
@@ -297,6 +312,7 @@ Reglas mínimas de corrección:
 - cambiar deliberadamente entre tipos requiere una operación funcional explícita distinta;
 - una corrección MULTI_QUOTE genera un `flow_id` nuevo;
 - los votos e invitaciones vigentes de la ronda anterior dejan de ser estado activo;
+- al reconstruir una ronda MULTI_QUOTE siempre se excluye al solicitante original de la población elegible, incluso si el Administrador del sistema fue quien ejecutó la corrección;
 - los eventos históricos previos se conservan;
 - los soportes existentes se conservan;
 - mientras no exista una especificación de edición estructural de rondas, la corrección MULTI_QUOTE conserva la cantidad de opciones existente y permite editar su contenido.
@@ -314,15 +330,29 @@ La población inicial debe resolverse por permisos efectivos, incluyendo herenci
 Para una ronda de aprobación:
 
 - `response_rate = valid_responses / eligible_participants`;
-- solo se resuelve cuando `response_rate > 0.50`;
+- solo se resuelve aprobación/rechazo cuando `response_rate > 0.50`;
 - `approval_rate = approvals / valid_decision_responses`;
 - `rejection_rate = rejections / valid_decision_responses`;
 - aprobar si `approval_rate > 0.50`;
 - rechazar si `rejection_rate > 0.50`;
-- empate o falta de mayoría permanece pendiente;
-- solicitar corrección es una transición separada.
+- empate o falta de mayoría permanece pendiente.
 
-Las reglas de selección de cotización no se presumen iguales a las reglas de aprobación. Si el código legacy aún difiere de esta regla, debe documentarse como deuda funcional y no presentarse como resuelto por un refactor de arquitectura.
+### Enviar a revisión
+
+**Enviar a revisión es una interrupción del flujo, no una decisión sometida a mayoría.**
+
+Cualquier aprobador que tenga un paso `PENDING` asignado puede detectar un problema y ejecutar `REVISION_REQUESTED` siempre que incluya un comentario de al menos tres caracteres indicando qué debe revisar/corregir el solicitante.
+
+Al registrarse una sola solicitud válida de revisión:
+
+1. la solicitud pasa inmediatamente a `NEEDS_REVISION`;
+2. el paso del aprobador queda en `REVISION_REQUESTED` con su comentario;
+3. las demás aprobaciones `PENDING/WAITING` de la ronda quedan `EXPIRED`;
+4. el solicitante recibe la notificación con el comentario;
+5. la tarea `CORRECT_REQUEST` se asigna al solicitante original;
+6. ningún otro aprobador obtiene facultad para editar la solicitud por haber solicitado la revisión.
+
+Aprobar/rechazar continúan sujetos a sus reglas de respuesta/mayoría. Las reglas de selección de cotización no se presumen iguales a las reglas de aprobación. Si el código legacy aún difiere de la fórmula de mayoría anterior, debe documentarse como deuda funcional y no presentarse como resuelto por un refactor de arquitectura.
 
 ## 14. Aprobado no significa cerrado
 
@@ -360,6 +390,7 @@ Las migraciones de compatibilidad pueden leer estructuras legacy una sola vez pa
 Como mínimo:
 
 - default deny para capacidades mutables; `requests:read` es la excepción base explícita para usuarios activos;
+- reglas de recurso explícitas para corrección/cancelación en lugar de ampliar permisos globales;
 - backend authoritative;
 - rate limiting diferenciado;
 - CORS restrictivo;
@@ -396,7 +427,26 @@ Los cambios incluyen pruebas proporcionales al riesgo. Para IAM son obligatorias
 
 Para cancelación son obligatorias pruebas que demuestren que el solicitante puede cancelar su solicitud abierta, otro usuario no puede hacerlo por tener permisos mutables, la cuenta técnica puede ejecutar la excepción administrativa y una solicitud cerrada no puede cancelarse.
 
-Para correcciones son obligatorias pruebas que demuestren que `request_type` no cambia, que una MULTI_QUOTE reinicia su ronda, que evidencia existente no se pierde por la hidratación del formulario, que el tipo del editor no depende de la pestaña seleccionada previamente y que un registro legacy con evidencia MULTI_QUOTE no se degrada por un default `SIMPLE` incorrecto.
+Para correcciones son obligatorias pruebas que demuestren que:
+
+- solo el solicitante original o el Administrador del sistema pueden corregir/reenviar;
+- un tercero con `requests:create`, `requests:approve` o `config:manage` no puede corregir una solicitud ajena;
+- el solicitante conserva la capacidad de corregir su propia solicitud aunque la autorización no dependa de un permiso global de edición;
+- `request_type` no cambia;
+- una MULTI_QUOTE reinicia su ronda;
+- al reiniciar MULTI_QUOTE se excluye al solicitante original y no simplemente al actor que ejecutó la corrección;
+- evidencia existente no se pierde por la hidratación del formulario;
+- el tipo del editor no depende de la pestaña seleccionada previamente;
+- un registro legacy con evidencia MULTI_QUOTE no se degrada por un default `SIMPLE` incorrecto.
+
+Para **Enviar a revisión** son obligatorias pruebas que demuestren que:
+
+- el comentario es obligatorio;
+- una sola `REVISION_REQUESTED` válida interrumpe una ronda `MAJORITY` y lleva la solicitud a `NEEDS_REVISION`;
+- las demás aprobaciones de la ronda quedan expiradas;
+- el comentario queda persistido/auditado;
+- la tarea de corrección aparece para el solicitante y no para los demás aprobadores;
+- ningún aprobador adquiere `can_correct` por enviar una solicitud a revisión.
 
 Para correo/configuración son obligatorias comprobaciones que demuestren que:
 
@@ -452,6 +502,8 @@ Una feature está terminada cuando:
 - dashboard y seguimiento compartido están protegidos por pruebas cuando se modifica acceso/solicitudes;
 - la política de cuenta técnica está probada en producción y no producción;
 - invariantes de cancelación/corrección están protegidos en backend y probados;
+- solo solicitante/Admin del sistema pueden corregir solicitudes y los aprobadores usan **Enviar a revisión** con comentario;
+- una solicitud válida de revisión interrumpe la ronda y devuelve la tarea al solicitante;
 - el editor de corrección deriva su tipo de la solicitud y no conserva la pestaña de creación previa;
 - la configuración de correo por ambiente está documentada y puede diagnosticarse sin exponer secretos;
 - migraciones son versionadas y desplegables;
