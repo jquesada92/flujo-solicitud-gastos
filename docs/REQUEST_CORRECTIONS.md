@@ -60,6 +60,8 @@ OR status == QUOTATION_VOTING
 OR existen 2 o más quotation_options
 ```
 
+El propio componente rehidrata cuando cambia `draft.request_id` o `draft.flow_id`; no necesita una `key` inyectada por un reemplazo textual de build.
+
 ## Cómo debe verse una corrección MULTI_QUOTE
 
 Debe aparecer explícitamente:
@@ -128,13 +130,15 @@ Si el usuario intenta convertir realmente una MULTI_QUOTE en SIMPLE o viceversa 
 
 ## Integración temporal con main.jsx
 
-`main.jsx` todavía contiene una definición legacy de `ExpenseForm` por deuda histórica. Para evitar que esa implementación vuelva a gobernar la aplicación, `vite.config.js` hace una única transformación estructural:
+`main.jsx` todavía contiene una definición legacy de `ExpenseForm` por deuda histórica. Para evitar que esa implementación vuelva a gobernar la aplicación, `vite.config.js` hace una transformación estructural mínima:
 
 1. importa `ExpenseForm` desde `./expense-form.jsx`;
-2. elimina del bundle la función legacy completa;
-3. añade una `key` por solicitud/flujo para forzar remount al cambiar de corrección.
+2. elimina del bundle la función legacy completa comprendida entre `function ExpenseForm` y `function ClosurePanel`;
+3. no parchea el punto de montaje `<ExpenseForm>` ni depende de espacios, indentación o saltos de línea de ese JSX.
 
-Esto reemplaza el esquema anterior de múltiples sustituciones internas sobre el formulario legacy. El build falla si no puede aislar la función antigua, evitando degradación silenciosa.
+El build falla si no puede aislar la función antigua. CI inspecciona además el `dist/` generado y exige que el bundle contenga las marcas del formulario modular.
+
+Esta decisión corrige un fallo reproducido en Docker local donde un reemplazo exacto del mount (`ExpenseForm mount`) dejó de coincidir con `main.jsx` y abortó `vite build`.
 
 ## Por qué no se permite cambiar la cantidad de opciones todavía
 
@@ -151,3 +155,13 @@ Quitar una cotización que ya tiene documentos o votos implica decisiones de ver
 6. Verificar que aparezca Opciones para votación con las opciones existentes.
 7. Verificar que no aparezca el formulario sencillo como estructura principal.
 ```
+
+## Validación del bundle local Docker
+
+Después de reconstruir el frontend:
+
+```bash
+docker compose exec frontend sh -c "grep -R -l 'El tipo no cambia durante una corrección' /usr/share/nginx/html/assets || true"
+```
+
+Debe devolver el archivo `index-*.js` servido por Nginx. Una salida vacía indica que el contenedor no contiene el formulario modular esperado.
