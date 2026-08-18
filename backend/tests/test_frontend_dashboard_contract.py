@@ -14,6 +14,14 @@ class FrontendDashboardContractTests(unittest.TestCase):
         self.assertIn('role="dialog"', source)
         self.assertIn('ACCIÓN PENDIENTE', source)
 
+    def test_summary_kpis_are_informational_not_interactive(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'home-dashboard.jsx').read_text(encoding='utf-8')
+        self.assertIn('<article className="dashboard-kpi attention">', source)
+        self.assertIn('<article className="dashboard-kpi"><span>Solicitudes en proceso</span>', source)
+        self.assertNotIn('<button className="dashboard-kpi attention"', source)
+        self.assertNotIn('<button className="dashboard-kpi" onClick={onOpenRequests}', source)
+        self.assertIn('<button className="secondary" onClick={onOpenRequests}>Ver todas</button>', source)
+
     def test_modal_supports_all_current_user_action_types(self):
         source = (REPO_ROOT / 'frontend' / 'src' / 'home-dashboard.jsx').read_text(encoding='utf-8')
         for code in (
