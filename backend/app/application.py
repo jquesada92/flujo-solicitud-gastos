@@ -18,6 +18,7 @@ from app.api import (
     request_actions,
     revision_actions,
     rules,
+    tracking,
     users,
 )
 from app.core.config import get_settings
@@ -100,6 +101,7 @@ def create_app() -> FastAPI:
     app.include_router(quotation_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(document_actions.router, prefix='/api/expenses', tags=['Documents'])
     app.include_router(financial_actions.router, prefix='/api/expenses', tags=['Expenses'])
+    app.include_router(tracking.router, prefix='/api/expenses', tags=['Request Tracking'])
     app.include_router(expenses.router, prefix='/api/expenses', tags=['Expenses (legacy compatibility)'])
     app.include_router(approvals.router, prefix='/api/approvals', tags=['Approvals'])
     app.include_router(
