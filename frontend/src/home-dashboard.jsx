@@ -102,10 +102,10 @@ function ApprovalAction({ request, busy, onSubmit }) {
   const [comment, setComment] = useState("");
   return <section className="pending-action-block">
     <div><p className="pending-action-eyebrow">DECISIÓN DE APROBACIÓN</p><h3>Registra tu decisión</h3></div>
-    <label className="pending-action-field">Comentario<textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Comentario opcional" /></label>
+    <label className="pending-action-field">Comentario<textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Para enviar a revisión, indica qué debe corregir el solicitante" /></label>
     <div className="pending-action-buttons">
       <button className="pending-action-danger" disabled={busy} onClick={() => onSubmit("REJECTED", comment)}>Rechazar</button>
-      <button className="pending-action-review" disabled={busy} onClick={() => onSubmit("REVISION_REQUESTED", comment)}>Solicitar corrección</button>
+      <button className="pending-action-review" disabled={busy || comment.trim().length < 3} onClick={() => onSubmit("REVISION_REQUESTED", comment)}>Enviar a revisión</button>
       <button className="pending-action-primary" disabled={busy} onClick={() => onSubmit("APPROVED", comment)}>Aprobar</button>
     </div>
     {(request.item_url || request.supports?.length) && <div className="pending-supports"><strong>Soportes</strong>{request.item_url && <a href={request.item_url} target="_blank" rel="noreferrer">Ver cotización en línea</a>}</div>}
@@ -149,7 +149,7 @@ function CloseRequestAction({ busy, onCloseRequest }) {
 function CorrectRequestAction({ busy, onOpenRequests }) {
   return <section className="pending-action-block">
     <div><p className="pending-action-eyebrow">CORRECCIÓN REQUERIDA</p><h3>La solicitud necesita cambios antes de continuar</h3></div>
-    <p className="pending-action-muted">Abre la solicitud para revisar el comentario de corrección, modificarla y reenviarla conservando su tipo de flujo.</p>
+    <p className="pending-action-muted">Abre la solicitud para revisar el comentario de revisión, modificarla y reenviarla conservando su tipo de flujo.</p>
     <div className="pending-action-buttons"><button className="pending-action-primary" disabled={busy} onClick={onOpenRequests}>Abrir para corregir / reenviar</button></div>
   </section>;
 }
