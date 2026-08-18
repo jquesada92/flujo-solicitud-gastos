@@ -15,6 +15,7 @@ from app.api import (
     financial_actions,
     iam,
     iam_users,
+    position_access,
     quotation_actions,
     request_actions,
     revision_actions,
@@ -127,6 +128,9 @@ def create_app() -> FastAPI:
         dependencies=[Depends(require_permission('config:manage'))],
     )
     app.include_router(iam_users.router, prefix='/api/iam/users', tags=['Access Management'])
+    # Position access must precede the generic IAM router because it enriches
+    # GET /positions with inherited role ids while legacy CRUD remains behind it.
+    app.include_router(position_access.router, prefix='/api/iam', tags=['Access Management'])
     app.include_router(iam.router, prefix='/api/iam', tags=['Access Management'])
 
     @app.get('/api/health')
