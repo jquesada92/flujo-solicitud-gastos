@@ -152,9 +152,12 @@ class MultiQuoteRevisionTests(unittest.TestCase):
             db.commit()
 
             self.admin_id = admin.id
+            self.approver_id = approver.id
+            self.approver_email = approver.email
             self.expense_id = expense.id
             self.option_one_id = option_one.id
             self.token = create_token(admin)
+            self.approver_token = create_token(approver)
 
     def _user(self, db, email: str) -> User:
         user = User(
@@ -174,8 +177,8 @@ class MultiQuoteRevisionTests(unittest.TestCase):
         db.add(user)
         return user
 
-    def auth(self):
-        return {'Authorization': f'Bearer {self.token}'}
+    def auth(self, token: str | None = None):
+        return {'Authorization': f'Bearer {token or self.token}'}
 
     def multi_payload(self):
         return {
@@ -242,6 +245,30 @@ class MultiQuoteRevisionTests(unittest.TestCase):
             )).all())
             self.assertEqual(len(invitations), 1)
             self.assertNotEqual(invitations[0].token, 'old-voting-token')
+
+    def test_non_owner_approver_cannot_correct_somebody_elses_request(self):
+        response = self.client.put(
+            '/api/expenses/multi-revision-test/resubmit',
+            headers=self.auth(self.approver_token),
+            json=self.multi_payload(),
+        )
+        self.assertEqual(response.status_code, 403, response.text)
+        self.assertIn('Solo el solicitante original o el Administrador del sistema', response.json()['detail'])
+        self.assertIn('Enviar a revisión', response.json()['detail'])
+
+    def test_original_requester_can_correct_without_global_create_permission(self):
+        with self.Session() as db:
+            expense = db.get(Expense, self.expense_id)
+            expense.requested_by = self.approver_email
+            db.commit()
+
+        response = self.client.put(
+            '/api/expenses/multi-revision-test/resubmit',
+            headers=self.auth(self.approver_token),
+            json=self.multi_payload(),
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['status'], 'QUOTATION_VOTING')
 
     def test_legacy_simple_flag_is_inferred_as_multi_quote_from_durable_evidence(self):
         with self.Session() as db:
