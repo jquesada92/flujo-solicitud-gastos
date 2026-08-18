@@ -25,11 +25,13 @@ CORE_PERMISSION_CODES = (
     'requests:read',
     'requests:create',
     'requests:approve',
-    'requests:close',
+    'requests:close',  # inactive legacy after 0005
+    'areas:manage',
     'config:manage',
 )
 BASELINE_PERMISSION_CODES = {'requests:read'}
-PRODUCTION_SYSTEM_ACCOUNT_PERMISSIONS = {'requests:read', 'config:manage'}
+SYSTEM_ONLY_PERMISSION_CODES = {'config:manage'}
+PRODUCTION_SYSTEM_ACCOUNT_PERMISSIONS = {'requests:read', 'areas:manage', 'config:manage'}
 
 
 def is_system_account(db: Session, user_id: int) -> bool:
@@ -125,7 +127,10 @@ def effective_permission_codes(db: Session, user_id: int) -> set[str]:
     baseline = _baseline_permission_codes(db, user_id)
     if is_system_account(db, user_id):
         return _system_account_policy_codes(db) | baseline
-    return _unrestricted_permission_codes(db, user_id) | baseline
+    # Technical configuration is never inherited by ordinary users, even if a
+    # stale legacy assignment still points at config:manage.
+    inherited = _unrestricted_permission_codes(db, user_id) - SYSTEM_ONLY_PERMISSION_CODES
+    return inherited | baseline
 
 
 def has_permission(db: Session, user_id: int, permission_code: str) -> bool:
@@ -139,13 +144,29 @@ def users_with_permission(
     exclude_user_id: int | None = None,
     exclude_email: str | None = None,
 ) -> list[User]:
-    """Resolve the active population that effectively owns a permission.
+    """Resolve active users who effectively own one permission."""
+    active_codes = _active_permission_codes(db)
+    if permission_code not in active_codes:
+        return []
 
-    Sources include direct user permissions, direct roles, group roles and
-    position roles. Technical accounts remain governed by environment policy.
-    """
-    if permission_code in BASELINE_PERMISSION_CODES and permission_code in _active_permission_codes(db):
+    if permission_code in BASELINE_PERMISSION_CODES:
         stmt = select(User).where(User.active.is_(True))
+        if exclude_user_id is not None:
+            stmt = stmt.where(User.id != exclude_user_id)
+        if exclude_email:
+            stmt = stmt.where(User.email.ilike(exclude_email).is_(False))
+        return list(db.scalars(stmt.order_by(User.id)).all())
+
+    # System-only permissions deliberately ignore stale direct/group/role/cargo
+    # assignments. Only protected persisted system accounts can own them.
+    if permission_code in SYSTEM_ONLY_PERMISSION_CODES:
+        if permission_code not in _system_account_policy_codes(db):
+            return []
+        stmt = (
+            select(User)
+            .join(SystemAccount, SystemAccount.user_id == User.id)
+            .where(User.active.is_(True))
+        )
         if exclude_user_id is not None:
             stmt = stmt.where(User.id != exclude_user_id)
         if exclude_email:
