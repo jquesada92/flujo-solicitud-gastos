@@ -19,6 +19,69 @@ function replaceCancellationVisibility(source) {
   return source.replace(pattern, "{x.can_cancel && (");
 }
 
+function replaceCorrectionVisibility(source) {
+  const pattern = /\{canEdit\s*&&\s*x\.status\s*!==\s*"CLOSED"\s*&&\s*<button/g;
+  const matches = source.match(pattern) || [];
+  if (matches.length !== 1) {
+    throw new Error(
+      `Legacy main.jsx correction extraction expected 1 correction guard, found ${matches.length}`,
+    );
+  }
+  return source.replace(pattern, "{x.can_correct && <button");
+}
+
+function replaceCorrectionFormAvailability(source) {
+  const pattern = /\{canCreate\s*&&\s*\(\s*<ExpenseForm/g;
+  const matches = source.match(pattern) || [];
+  if (matches.length !== 1) {
+    throw new Error(
+      `Legacy main.jsx correction form extraction expected 1 ExpenseForm guard, found ${matches.length}`,
+    );
+  }
+  return source.replace(pattern, "{(canCreate || revision) && (\n              <ExpenseForm");
+}
+
+function replaceCorrectionActionColumn(source) {
+  let next = replaceRequired(
+    source,
+    '{canEdit && <col className="col-actions" />}',
+    '{(canEdit || canClose || filtered.some((item) => item.can_correct)) && <col className="col-actions" />}',
+    "correction action column",
+  );
+  next = replaceRequired(
+    next,
+    '{canEdit && <th>Acción</th>}',
+    '{(canEdit || canClose || filtered.some((item) => item.can_correct)) && <th>Acción</th>}',
+    "correction action header",
+  );
+  next = replaceRequired(
+    next,
+    '{(canEdit || canClose) && (',
+    '{(canEdit || canClose || x.can_correct) && (',
+    "correction action cell",
+  );
+  return next;
+}
+
+function dashboardActionWordingPlugin() {
+  return {
+    name: "dashboard-action-wording",
+    enforce: "pre",
+    transform(code, id) {
+      const normalized = id.replaceAll("\\", "/").split("?", 1)[0];
+      if (!normalized.endsWith("/src/home-dashboard.jsx")) return null;
+      const marker = '>Solicitar corrección</button>';
+      if (!code.includes(marker)) {
+        throw new Error("Dashboard action wording could not find revision button");
+      }
+      return {
+        code: code.replace(marker, '>Enviar a revisión</button>'),
+        map: null,
+      };
+    },
+  };
+}
+
 function modularExpenseFormPlugin() {
   return {
     name: "modular-expense-form",
@@ -58,10 +121,12 @@ function modularExpenseFormPlugin() {
       // handlers so the modal contract remains maintainable and testable.
       next = `${next.slice(0, dashboardStart)}${next.slice(dashboardEnd)}`;
 
-      // The legacy table previously inferred cancellation from a fixed status
-      // list plus can_request. The backend now returns can_cancel per request,
-      // so the UI follows that authoritative capability instead.
+      // Resource-specific capabilities are returned by the backend. The legacy
+      // table must not infer cancellation/correction from global create rights.
       next = replaceCancellationVisibility(next);
+      next = replaceCorrectionVisibility(next);
+      next = replaceCorrectionFormAvailability(next);
+      next = replaceCorrectionActionColumn(next);
 
       return { code: next, map: null };
     },
@@ -69,5 +134,5 @@ function modularExpenseFormPlugin() {
 }
 
 export default defineConfig({
-  plugins: [modularExpenseFormPlugin(), react()],
+  plugins: [dashboardActionWordingPlugin(), modularExpenseFormPlugin(), react()],
 });
