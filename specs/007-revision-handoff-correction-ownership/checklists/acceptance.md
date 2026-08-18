@@ -63,14 +63,14 @@
 - [x] Feature 007 spec creada.
 - [x] Feature 007 plan creado.
 - [x] Feature 007 criterios creados.
-- [ ] Feature 003 revisada/actualizada.
-- [ ] Feature 005 revisada/actualizada.
-- [ ] README actualizado.
-- [ ] PROMPT_RECONSTRUCCION actualizado.
-- [ ] `docs/REQUEST_CORRECTIONS.md` actualizado.
-- [ ] `docs/REQUEST_TRACKING.md` actualizado.
-- [ ] `docs/FASTAPI_ARCHITECTURE.md` revisado/actualizado.
-- [ ] `docs/README.md` actualizado.
-- [ ] HISTORY actualizado.
-- [ ] CHANGELOG actualizado.
-- [ ] PR #9 actualizado.
+- [x] Feature 003 revisada/actualizada.
+- [x] Feature 005 revisada/actualizada.
+- [x] README actualizado.
+- [x] PROMPT_RECONSTRUCCION actualizado.
+- [x] `docs/REQUEST_CORRECTIONS.md` actualizado.
+- [x] `docs/REQUEST_TRACKING.md` actualizado.
+- [x] `docs/FASTAPI_ARCHITECTURE.md` revisado/actualizado.
+- [x] `docs/README.md` actualizado.
+- [x] HISTORY actualizado.
+- [x] CHANGELOG actualizado.
+- [ ] PR #9 actualizado con Feature 007 / Constitución 2.6.0.
