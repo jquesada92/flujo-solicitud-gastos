@@ -330,7 +330,58 @@ Una corrección debe reconocer soportes existentes sin exigir que un `<input typ
 
 ## 15. Correo
 
-Centraliza configuración en Settings. Producción usa preferiblemente API HTTPS de Brevo. Mantén console/SMTP para desarrollo si existe. Branding base neutral.
+Centraliza toda la configuración en `Settings` y conserva un único servicio de plantillas/entrega con transporte seleccionable por `EMAIL_MODE`.
+
+### Producción
+
+La arquitectura productiva es:
+
+```text
+Frontend: Vercel
+Backend:  Render
+Correo:   Brevo HTTPS API
+```
+
+Usa en Render/backend:
+
+```env
+ENVIRONMENT=production
+EMAIL_MODE=brevo
+EMAIL_FROM=<REMITENTE_VERIFICADO>
+BREVO_API_KEY=<SECRET>
+BREVO_SENDER_NAME=Gestión de Solicitudes
+```
+
+Nunca expongas `BREVO_API_KEY` en Vite/Vercel.
+
+### Local / development
+
+La aplicación local debe poder enviar correo real mediante Gmail/Google Workspace SMTP:
+
+```env
+ENVIRONMENT=development
+EMAIL_MODE=smtp
+EMAIL_FROM=<CUENTA_GOOGLE>
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURITY=ssl
+SMTP_USER=<CUENTA_GOOGLE>
+SMTP_PASSWORD=<APP_PASSWORD_GOOGLE>
+```
+
+También puede usarse `587 + starttls`.
+
+No uses ni versionees la contraseña normal de Google. Usa App Password cuando la cuenta Google lo requiera y mantenla únicamente en `backend/.env`.
+
+`EMAIL_MODE=console` es solo un fallback de desarrollo/test sin entrega real; nunca debe interpretarse como correo enviado.
+
+Debe existir un diagnóstico independiente del workflow que use exactamente el mismo `Settings` y servicio de correo:
+
+```bash
+python -m scripts.test_email --to destino@example.com
+```
+
+Así se valida primero el transporte y luego las notificaciones SIMPLE/MULTI_QUOTE. Un fallo de entrega puede registrarse sin revertir el workflow, por lo que la observabilidad de correo y el estado de aprobación deben poder investigarse por separado.
 
 ## 16. Migraciones, Docker y despliegue
 
@@ -402,6 +453,14 @@ Matriz de correcciones mínima:
 - MULTI_QUOTE → SIMPLE por `resubmit` devuelve 409;
 - frontend build falla si la hidratación legacy deja de poder parchearse;
 - topología Alembic exige `0003` como único head.
+
+Matriz de correo mínima:
+
+- `EMAIL_MODE=smtp` requiere credenciales SMTP;
+- local documenta Google SMTP 465/SSL y App Password;
+- producción documenta Brevo en Render;
+- secretos de correo no aparecen en frontend/Vercel;
+- `scripts.test_email` usa el transporte real configurado sin imprimir secretos.
 
 CI ejecuta Python compile, backend tests, frontend build y builds/smoke tests Docker.
 
