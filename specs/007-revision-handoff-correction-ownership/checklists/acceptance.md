@@ -73,4 +73,4 @@
 - [x] `docs/README.md` actualizado.
 - [x] HISTORY actualizado.
 - [x] CHANGELOG actualizado.
-- [ ] PR #9 actualizado con Feature 007 / Constitución 2.6.0.
+- [x] PR #9 actualizado con Feature 007 / Constitución 2.6.0.
