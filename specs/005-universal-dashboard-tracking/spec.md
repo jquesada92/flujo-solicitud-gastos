@@ -1,29 +1,29 @@
 # Especificación funcional — Dashboard y seguimiento universal
 
 **Feature:** 005  
-**Constitución:** 2.6.0
+**Constitución:** 2.7.0
 
 ## Objetivo
 
-Todo usuario activo y autenticado debe poder entrar al producto y entender el estado general de las solicitudes sin depender de su rol, grupo, cargo o de haber creado personalmente la solicitud.
+Todo usuario activo y autenticado debe poder entrar al producto y entender el estado general de las solicitudes sin depender de rol, grupo, cargo o de haber creado personalmente la solicitud.
 
-La visibilidad de seguimiento es una capacidad base. Las acciones mutables continúan controladas por permisos configurables o reglas explícitas por recurso.
+La visibilidad de seguimiento es una capacidad base. Las acciones mutables continúan controladas por permisos configurables o reglas/delegaciones por recurso.
 
 ## Historia principal
 
-**Como usuario activo**, quiero ver un dashboard al iniciar sesión y consultar las solicitudes de la organización, **para dar seguimiento aunque no las haya creado ni tenga permiso para aprobarlas o cerrarlas**.
+Como usuario activo, quiero ver un dashboard al iniciar sesión y consultar las solicitudes de la organización para dar seguimiento aunque no las haya creado.
 
 ## Reglas funcionales
 
 ### F-005-01 — Inicio disponible para todos
 
-Todo usuario activo y autenticado puede acceder a **Inicio** y cargar el dashboard sin pertenecer a un grupo ni tener un rol configurado.
+Todo usuario activo y autenticado accede a **Inicio** sin requerir grupo/rol.
 
 ### F-005-02 — Solicitudes disponibles para todos
 
-Todo usuario activo puede entrar a **Solicitudes** y consultar solicitudes de la organización para seguimiento. No se filtra por `UserRole.REQUESTER` ni por `requested_by == current_user.email`.
+Todo usuario activo consulta solicitudes de la organización. No filtrar por `UserRole.REQUESTER` ni `requested_by == current_user.email`.
 
-### F-005-03 — `requests:read` es baseline
+### F-005-03 — `requests:read` baseline
 
 ```text
 effective_permissions(active_user)
@@ -32,128 +32,92 @@ effective_permissions(active_user)
   ∪ direct-role permissions
   ∪ group-role permissions
   ∪ position-role permissions
-  ∪ technical-account policy when applicable
 ```
 
-Eliminar `requests:read` de un rol, grupo, cargo o asignación directa no puede retirarlo del usuario activo.
+No puede revocarse a un usuario activo.
 
-### F-005-04 — Lectura no concede acciones
+### F-005-04 — Lectura no concede mutaciones
 
-Un usuario con solo baseline no puede:
+Solo lectura no concede crear (`requests:create`), aprobar/votar (`requests:approve`), configurar (`config:manage`), corregir/cancelar solicitudes ajenas ni gestionar cierre/factura ajena.
 
-- crear nuevas solicitudes sin `requests:create`;
-- aprobar/votar sin `requests:approve`;
-- subir factura/cerrar sin `requests:close`;
-- administrar configuración sin `config:manage`.
-
-**Corregir una solicitud existente no se concede por `requests:create` global.** Solo solicitante original o Administrador del sistema pueden hacerlo según Feature 007.
-
-La cancelación tampoco se concede por `requests:create`; se rige por F-005-07.
+Corrección se rige por Feature 007. Cierre/factura/delegación se rige por Feature 008.
 
 ### F-005-05 — Dashboard compartido + acciones personales
 
-El dashboard muestra métricas generales de la organización y una bandeja personal de tareas vigentes:
+Tareas vigentes:
 
-- `APPROVAL_DECISION`: aprobación pendiente asignada al usuario con `requests:approve`;
-- `QUOTATION_VOTE`: invitación MULTI_QUOTE vigente y no respondida con `requests:approve`;
-- `CORRECT_REQUEST`: solicitud propia en `NEEDS_REVISION`;
-- `CLOSE_REQUEST`: solicitud `APPROVED` para usuario con `requests:close`.
+- `APPROVAL_DECISION`: `requests:approve` + aprobación PENDING asignada;
+- `QUOTATION_VOTE`: `requests:approve` + invitación vigente sin voto;
+- `CORRECT_REQUEST`: solicitud propia `NEEDS_REVISION`;
+- `CLOSE_REQUEST`: solicitud `APPROVED` propia o con delegación activa al usuario.
 
-`CORRECT_REQUEST` se asigna por **propiedad de la solicitud**, no por `requests:create`. El Administrador del sistema conserva capacidad administrativa de corrección desde Solicitudes, pero no recibe automáticamente la tarea personal de solicitudes ajenas.
+`CORRECT_REQUEST` no depende de `requests:create`.
 
-Tener un permiso general no basta si la acción concreta no está asignada al usuario.
+`CLOSE_REQUEST` **no depende de `requests:close`**. Feature 008 retira ese permiso como autoridad global. El Administrador del sistema conserva facultad administrativa de cierre desde Solicitudes, pero no recibe todas las solicitudes aprobadas como tareas personales.
 
 ### F-005-06 — Usuarios inactivos
 
-Un usuario inactivo no puede iniciar sesión ni usar el baseline.
+Un usuario inactivo no puede autenticarse ni usar baseline/delegación.
 
-### F-005-07 — Cancelación de solicitud abierta
+### F-005-07 — Cancelación
 
-Solo pueden cancelar:
+Solo solicitante original o Administrador del sistema. Cancelables: `QUOTATION_VOTING`, `SUBMITTED`, `PENDING_APPROVAL`, `NEEDS_REVISION`, `APPROVED`. No cancelables: `CLOSED`, `CANCELLED`, `REJECTED`.
 
-1. solicitante original; o
-2. Administrador del sistema identificado mediante `system_accounts`.
+### F-005-08 — Acción pendiente contextual
 
-Estados cancelables: `QUOTATION_VOTING`, `SUBMITTED`, `PENDING_APPROVAL`, `NEEDS_REVISION`, `APPROVED`.
-
-No cancelables: `CLOSED`, `CANCELLED`, `REJECTED`.
-
-La cancelación exige motivo y el listado expone `can_cancel` calculado por backend.
-
-### F-005-08 — Seleccionar una acción pendiente abre su acción contextual
-
-Una fila de **Inicio → Acciones pendientes** abre un modal y reconsulta:
+Una fila de **Acciones pendientes** reconsulta:
 
 ```text
 GET /api/expenses/{request_id}/my-actions
 ```
 
-El modal muestra únicamente acciones aún ejecutables:
+El modal muestra únicamente acciones ejecutables:
 
 ```text
-APPROVAL_DECISION
-→ Aprobar
-→ Rechazar
-→ Enviar a revisión + comentario obligatorio
-
-QUOTATION_VOTE
-→ revisar opciones y soportes
-→ votar una cotización
-
-CLOSE_REQUEST
-→ cargar factura
-→ notas de cierre
-→ cerrar solicitud
-
-CORRECT_REQUEST
-→ abrir la solicitud propia para corregir / reenviar
+APPROVAL_DECISION → Aprobar / Rechazar / Enviar a revisión
+QUOTATION_VOTE    → revisar/votar
+CLOSE_REQUEST     → factura/notas/cerrar
+CORRECT_REQUEST   → abrir propia para corregir/reenviar
 ```
 
-**Enviar a revisión** (`REVISION_REQUESTED`) es una interrupción inmediata del flujo según Feature 007: no espera mayoría, lleva la solicitud a `NEEDS_REVISION`, expira las demás aprobaciones vigentes y entrega `CORRECT_REQUEST` al solicitante original.
+Enviar a revisión es interrupción inmediata según Feature 007.
 
-**Ver todas** conserva su función independiente de navegar a **Solicitudes**.
+**Ver todas** navega a Solicitudes.
 
-El frontend no deduce acciones solo por estado. Después de una mutación, dashboard y `my-actions` se refrescan para evitar acciones obsoletas.
+### F-005-09 — KPIs superiores informativos
 
-### F-005-09 — KPIs superiores solo informativos
-
-Las tarjetas superiores —incluidas **Acciones que requieren mi atención**, **Solicitudes en proceso** y **Cerradas en 24 horas**— son indicadores informativos.
-
-No son botones, no tienen `onClick` y no ejecutan navegación ni workflow.
-
-Interacción explícita:
-
-```text
-fila de Acciones pendientes → modal contextual
-Ver todas                    → Solicitudes
-```
+**Acciones que requieren mi atención**, **Solicitudes en proceso** y **Cerradas en 24 horas** no son botones ni tienen `onClick`.
 
 ## Interfaz
 
-La navegación **Inicio** y **Solicitudes** está disponible para cualquier usuario activo.
-
-La tabla usa capacidades backend por recurso:
+La tabla usa capacidades backend:
 
 ```text
 can_cancel
 can_correct
+can_close
+can_delegate_close
 ```
 
-`can_correct` solo puede ser true para solicitante original o Administrador del sistema en estados corregibles. Ver una solicitud ajena nunca habilita su edición.
+- `can_correct`: solicitante/Admin en estados corregibles.
+- `can_close`: solicitante/Admin/delegado activo en `APPROVED`/`CLOSED`.
+- `can_delegate_close`: solicitante original.
+
+Ver una solicitud ajena nunca habilita acciones por sí solo.
 
 ## Seguridad
 
-La API contextual exige autenticación y devuelve solo acciones del usuario actual.
+La API contextual devuelve solo tareas del usuario actual. Aprobación contextual no expone tokens bearer de correo. Cierre y factura vuelven a validar el actor en backend aunque la UI esté manipulada.
 
-La aprobación contextual no expone tokens bearer de links de correo. **Enviar a revisión** requiere comentario mínimo y el backend vuelve a validarlo.
+## Dependencias posteriores
 
-Una futura implementación multi-tenant debe preservar aislamiento entre organizaciones.
+- Feature 007 define Enviar a revisión y propiedad de corrección.
+- Feature 008 define cierre/factura por solicitante/Admin/delegación y desactiva `requests:close` como autoridad global.
 
 ## Fuera de alcance
 
-- completar la fórmula constitucional de quorum/mayoría para aprobar/rechazar;
-- cambiar estructura de una MULTI_QUOTE durante corrección;
-- hacer permisos mutables universales;
+- fórmula completa quorum/mayoría APPROVED/REJECTED;
+- edición estructural MULTI_QUOTE;
 - tenancy/multi-organización;
 - historial paginado completo;
-- retirar todo `UserRole` legacy en esta feature.
+- retiro físico completo de legacy.
