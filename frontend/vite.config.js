@@ -30,14 +30,11 @@ function modularExpenseFormPlugin() {
       if (formStart < 0 || formEnd < 0 || formEnd <= formStart) {
         throw new Error("Legacy main.jsx extraction could not isolate ExpenseForm");
       }
-      next = `${next.slice(0, formStart)}${next.slice(formEnd)}`;
 
-      next = replaceRequired(
-        next,
-        `              <ExpenseForm\n                onCreated={created}`,
-        `              <ExpenseForm\n                key={revision ? revision.request_id + ":" + (revision.flow_id || revision.status || "draft") : "new-request"}\n                onCreated={created}`,
-        "ExpenseForm mount",
-      );
+      // Replace the complete legacy implementation with the imported modular
+      // component. Do not patch the JSX mount by exact whitespace/text: the
+      // modular component already rehydrates when draft/request/flow changes.
+      next = `${next.slice(0, formStart)}${next.slice(formEnd)}`;
 
       return { code: next, map: null };
     },
