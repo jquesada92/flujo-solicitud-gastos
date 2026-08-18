@@ -31,7 +31,8 @@ class FrontendRevisionContractTests(unittest.TestCase):
         self.assertIn('function ExpenseForm({', vite_config)
         self.assertIn('function ClosurePanel(', vite_config)
         self.assertIn('modular-expense-form', vite_config)
-        self.assertIn('key={revision ? revision.request_id', vite_config)
+        self.assertNotIn('ExpenseForm mount', vite_config)
+        self.assertNotIn('key={revision ? revision.request_id', vite_config)
 
     def test_type_selector_is_creation_only(self):
         form_source = (REPO_ROOT / 'frontend' / 'src' / 'expense-form.jsx').read_text(encoding='utf-8')
