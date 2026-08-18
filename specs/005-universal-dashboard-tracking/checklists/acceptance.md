@@ -129,12 +129,12 @@
 - [x] Spec funcional actualizada.
 - [x] Plan técnico actualizado.
 - [x] Criterios de aceptación actualizados.
-- [x] README revisado para mantener el Dashboard como resumen y las filas como interacción.
-- [x] PROMPT_RECONSTRUCCION revisado con la misma regla UX.
+- [x] README actualizado para mantener el Dashboard como resumen y las filas como interacción.
+- [x] PROMPT_RECONSTRUCCION actualizado con la misma regla UX.
 - [x] IAM_MODEL no requiere cambio semántico por este ajuste visual.
 - [x] FASTAPI_ARCHITECTURE no requiere cambio backend por este ajuste visual.
 - [x] `docs/REQUEST_TRACKING.md` actualizado.
 - [x] HISTORY actualizado preservando las entradas anteriores.
 - [x] CHANGELOG actualizado.
-- [x] docs/README revisado.
-- [ ] PR #9 actualizado con contrato final y nota de cuota agotada de Actions.
+- [x] docs/README actualizado.
+- [x] PR #9 actualizado con contrato final y nota de cuota agotada de Actions.
