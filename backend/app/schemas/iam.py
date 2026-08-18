@@ -76,9 +76,7 @@ class PositionOut(BaseModel):
     name: str
     description: str | None = None
     active: bool
-
-    class Config:
-        from_attributes = True
+    role_ids: list[int] = Field(default_factory=list)
 
 
 class EffectiveAccessOut(BaseModel):
