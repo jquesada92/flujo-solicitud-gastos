@@ -30,6 +30,22 @@ function replaceCorrectionVisibility(source) {
   return source.replace(pattern, "{x.can_correct && <button");
 }
 
+function replaceClosureVisibility(source) {
+  let next = replaceRequired(
+    source,
+    '{canClose && x.status === "CLOSED" && x.attachments.some((a) => a.document_type === "INVOICE") && <button',
+    '{x.can_close && x.status === "CLOSED" && x.attachments.some((a) => a.document_type === "INVOICE") && <button',
+    "closed invoice correction guard",
+  );
+  next = replaceRequired(
+    next,
+    '{canClose && x.status === "APPROVED" && (',
+    '{x.can_close && x.status === "APPROVED" && (',
+    "approved closure guard",
+  );
+  return next;
+}
+
 function replaceCorrectionFormAvailability(source) {
   const pattern = /\{canCreate\s*&&\s*\(\s*<ExpenseForm/g;
   const matches = source.match(pattern) || [];
@@ -41,26 +57,36 @@ function replaceCorrectionFormAvailability(source) {
   return source.replace(pattern, "{(canCreate || revision) && (\n              <ExpenseForm");
 }
 
-function replaceCorrectionActionColumn(source) {
+function replaceResourceActionColumn(source) {
+  const anyResourceAction = 'filtered.some((item) => item.can_correct || item.can_cancel || item.can_close || item.can_delegate_close)';
   let next = replaceRequired(
     source,
     '{canEdit && <col className="col-actions" />}',
-    '{(canEdit || canClose || filtered.some((item) => item.can_correct)) && <col className="col-actions" />}',
-    "correction action column",
+    `{${anyResourceAction} && <col className="col-actions" />}`,
+    "resource action column",
   );
   next = replaceRequired(
     next,
     '{canEdit && <th>Acción</th>}',
-    '{(canEdit || canClose || filtered.some((item) => item.can_correct)) && <th>Acción</th>}',
-    "correction action header",
+    `{${anyResourceAction} && <th>Acción</th>}`,
+    "resource action header",
   );
   next = replaceRequired(
     next,
     '{(canEdit || canClose) && (',
-    '{(canEdit || canClose || x.can_correct) && (',
-    "correction action cell",
+    '{(x.can_correct || x.can_cancel || x.can_close || x.can_delegate_close) && (',
+    "resource action cell",
   );
   return next;
+}
+
+function injectClosureDelegationButton(source) {
+  return replaceRequired(
+    source,
+    '<div className="row-actions">\n                        {x.can_correct && <button',
+    '<div className="row-actions">\n                        {x.can_delegate_close && <ClosureDelegationButton expense={x} api={api} onChanged={onChanged} />}\n                        {x.can_correct && <button',
+    "closure delegation action",
+  );
 }
 
 function modularExpenseFormPlugin() {
@@ -76,7 +102,7 @@ function modularExpenseFormPlugin() {
       next = replaceRequired(
         next,
         reactImport,
-        `${reactImport}\nimport ExpenseForm from "./expense-form.jsx";\nimport HomeDashboard from "./home-dashboard.jsx";`,
+        `${reactImport}\nimport ExpenseForm from "./expense-form.jsx";\nimport HomeDashboard from "./home-dashboard.jsx";\nimport ClosureDelegationButton from "./closure-delegation.jsx";`,
         "React import",
       );
 
@@ -96,13 +122,15 @@ function modularExpenseFormPlugin() {
 
       next = `${next.slice(0, dashboardStart)}${next.slice(dashboardEnd)}`;
 
-      // The table still lives in the legacy monolith. Keep only the resource
-      // capability bridge here until ExpenseTable is modularized; dashboard
-      // wording/behavior lives directly in home-dashboard.jsx.
+      // ExpenseTable still lives in the legacy monolith. Keep only capability
+      // bridges here until that table is modularized; authorization remains in
+      // the backend and the transformed UI consumes per-request booleans.
+      next = replaceResourceActionColumn(next);
       next = replaceCancellationVisibility(next);
       next = replaceCorrectionVisibility(next);
+      next = replaceClosureVisibility(next);
+      next = injectClosureDelegationButton(next);
       next = replaceCorrectionFormAvailability(next);
-      next = replaceCorrectionActionColumn(next);
 
       return { code: next, map: null };
     },
