@@ -61,7 +61,7 @@ jobs:
           tags: approval-backend:ci
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
-      - name: Smoke test backend entrypoint and bootstrap imports
+      - name: Smoke test backend entrypoint and operational module imports
         run: |
           docker run --rm --entrypoint /bin/sh approval-backend:ci -c \
             'test -x /app/scripts/start.sh && test "$(head -n 1 /app/scripts/start.sh)" = "#!/bin/sh"'
@@ -69,7 +69,7 @@ jobs:
             -e DATABASE_URL=sqlite:////tmp/ci.db \
             --entrypoint python \
             approval-backend:ci \
-            -c 'import app; import scripts.bootstrap_admin'
+            -c 'import app; import scripts.bootstrap_admin; import scripts.test_email'
       - uses: docker/build-push-action@v6
         with:
           context: frontend
