@@ -67,9 +67,9 @@
 - [x] El test verifica reemplazo de invitación.
 - [x] El test verifica 409 al intentar MULTI_QUOTE → SIMPLE cuando el tipo canónico es múltiple.
 - [x] Existe `test_frontend_revision_contract.py` para verificar el formulario modular y su integración de build.
+- [x] CI del head modular pasó Backend, Frontend build y Docker images en run `32088911340`.
 - [ ] Verificar manualmente: con pestaña **Solicitud sencilla** activa, corregir una MULTI_QUOTE debe mostrar **Tipo de solicitud: Múltiples cotizaciones** y **Opciones para votación**.
 - [ ] Verificar manualmente que no aparezcan los campos SIMPLE `Monto (USD)`, `Proveedor`, `URL del producto o servicio` y soporte único fuera de las tarjetas de cotización.
-- [ ] Confirmar CI verde del head final de esta corrección.
 
 ## Documentación
 
@@ -77,9 +77,9 @@
 - [x] Spec funcional actualizada con formulario modular.
 - [x] Plan técnico actualizado.
 - [x] Criterios de aceptación actualizados.
-- [ ] README actualizado para retirar la descripción del parche granular anterior.
-- [ ] Prompt maestro actualizado con la implementación modular.
-- [ ] `docs/REQUEST_CORRECTIONS.md` actualizado.
-- [ ] HISTORY actualizado.
-- [ ] CHANGELOG actualizado.
+- [x] README actualizado para retirar la descripción del parche granular anterior.
+- [x] Prompt maestro actualizado con la implementación modular.
+- [x] `docs/REQUEST_CORRECTIONS.md` actualizado.
+- [x] HISTORY actualizado.
+- [x] CHANGELOG actualizado.
 - [ ] PR actualizado con la causa y solución final.
