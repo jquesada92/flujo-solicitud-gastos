@@ -10,7 +10,7 @@ os.environ.setdefault('ENVIRONMENT', 'test')
 os.environ.setdefault('EMAIL_MODE', 'console')
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -71,15 +71,18 @@ class PendingActionTests(unittest.TestCase):
 
             self.requester = self._user(db, 'requester@example.com')
             self.approver = self._user(db, 'approver@example.com')
+            self.reviewer_two = self._user(db, 'reviewer-two@example.com')
             self.closer = self._user(db, 'closer@example.com')
             db.flush()
             self._grant(db, self.requester, permissions['requests:create'])
             self._grant(db, self.approver, permissions['requests:approve'])
+            self._grant(db, self.reviewer_two, permissions['requests:approve'])
             self._grant(db, self.closer, permissions['requests:close'])
             db.commit()
 
             self.requester_token = create_token(self.requester)
             self.approver_token = create_token(self.approver)
+            self.reviewer_two_token = create_token(self.reviewer_two)
             self.closer_token = create_token(self.closer)
 
     def _user(self, db, email: str) -> User:
@@ -161,6 +164,79 @@ class PendingActionTests(unittest.TestCase):
         refreshed = self.client.get('/api/expenses/REQ-APPROVE/my-actions', headers=self.auth(self.approver_token))
         self.assertEqual(refreshed.status_code, 200, refreshed.text)
         self.assertEqual(refreshed.json()['actions'], [])
+
+    def test_single_revision_request_interrupts_majority_and_hands_task_to_requester(self):
+        with self.Session() as db:
+            expense = self._expense(db, 'REQ-REVIEW', ExpenseStatus.PENDING_APPROVAL, self.requester.email)
+            db.add_all([
+                Approval(
+                    expense_id=expense.id,
+                    flow_id=expense.flow_id,
+                    approver_email=self.approver.email,
+                    approver_role='requests:approve',
+                    step=1,
+                    approval_mode='MAJORITY',
+                    token='review-token-one',
+                    status=ApprovalStatus.PENDING,
+                ),
+                Approval(
+                    expense_id=expense.id,
+                    flow_id=expense.flow_id,
+                    approver_email=self.reviewer_two.email,
+                    approver_role='requests:approve',
+                    step=2,
+                    approval_mode='MAJORITY',
+                    token='review-token-two',
+                    status=ApprovalStatus.PENDING,
+                ),
+            ])
+            db.commit()
+
+        missing_comment = self.client.post(
+            '/api/expenses/REQ-REVIEW/approval-decision',
+            headers=self.auth(self.approver_token),
+            json={'decision': 'REVISION_REQUESTED', 'comment': '  '},
+        )
+        self.assertEqual(missing_comment.status_code, 409, missing_comment.text)
+        self.assertIn('Debes indicar qué debe corregir', missing_comment.json()['detail'])
+
+        decision = self.client.post(
+            '/api/expenses/REQ-REVIEW/approval-decision',
+            headers=self.auth(self.approver_token),
+            json={
+                'decision': 'REVISION_REQUESTED',
+                'comment': 'La cotización no coincide con el alcance solicitado.',
+            },
+        )
+        self.assertEqual(decision.status_code, 200, decision.text)
+        self.assertEqual(decision.json()['status'], 'NEEDS_REVISION')
+
+        with self.Session() as db:
+            expense = db.scalar(select(Expense).where(Expense.request_id == 'REQ-REVIEW'))
+            approvals = list(db.scalars(
+                select(Approval).where(Approval.expense_id == expense.id).order_by(Approval.step)
+            ).all())
+            self.assertEqual(expense.status, ExpenseStatus.NEEDS_REVISION)
+            self.assertEqual(approvals[0].status, ApprovalStatus.REVISION_REQUESTED)
+            self.assertEqual(approvals[0].comment, 'La cotización no coincide con el alcance solicitado.')
+            self.assertEqual(approvals[1].status, ApprovalStatus.EXPIRED)
+
+        requester_dashboard = self.client.get(
+            '/api/expenses/dashboard',
+            headers=self.auth(self.requester_token),
+        )
+        requester_items = {
+            item['request_id']: item['actions']
+            for item in requester_dashboard.json()['pending_items']
+        }
+        self.assertEqual(requester_items['REQ-REVIEW'], ['CORRECT_REQUEST'])
+
+        other_reviewer = self.client.get(
+            '/api/expenses/REQ-REVIEW/my-actions',
+            headers=self.auth(self.reviewer_two_token),
+        )
+        self.assertEqual(other_reviewer.status_code, 200, other_reviewer.text)
+        self.assertEqual(other_reviewer.json()['actions'], [])
 
     def test_quotation_invitation_is_reported_as_vote_action(self):
         with self.Session() as db:
