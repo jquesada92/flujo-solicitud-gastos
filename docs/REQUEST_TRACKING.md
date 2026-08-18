@@ -1,15 +1,15 @@
-# Seguimiento universal, acciones pendientes, revisión y capacidades por recurso
+# Seguimiento universal, acciones pendientes y capacidades por recurso
 
 ## Objetivo
 
-Todo usuario activo puede consultar dashboard y solicitudes para seguimiento. La lectura compartida no convierte acciones mutables en universales.
+Todo usuario activo puede consultar dashboard y solicitudes para seguimiento. La lectura compartida no convierte las acciones mutables en universales.
 
 ```text
 información compartida
 vs
 acciones concretas del usuario
 vs
-capacidades por recurso
+capacidades/delegaciones por recurso
 ```
 
 ## Baseline
@@ -21,8 +21,6 @@ active user
 → GET /api/expenses
 ```
 
-Los permisos mutables siguen siendo configurables por asignación directa, Rol directo, Grupo → Rol o Cargo → Rol.
-
 ## Dashboard
 
 Los KPIs superiores son informativos:
@@ -33,7 +31,7 @@ Solicitudes en proceso
 Cerradas en 24 horas
 ```
 
-No son botones ni ejecutan navegación.
+No son botones.
 
 ```text
 fila de Acciones pendientes → modal contextual
@@ -42,28 +40,38 @@ Ver todas                    → Solicitudes
 
 ## Tareas contextuales
 
-`backend/app/services/pending_action_service.py` resuelve:
+`pending_action_service.py` resuelve:
 
 ### `APPROVAL_DECISION`
 
-`requests:approve` + `Approval.PENDING` asignado al usuario + solicitud `PENDING_APPROVAL`.
+`requests:approve` + `Approval.PENDING` asignado + `PENDING_APPROVAL`.
 
 ### `QUOTATION_VOTE`
 
-`requests:approve` + invitación vigente + `QUOTATION_VOTING` + sin voto vigente.
+`requests:approve` + invitación vigente + `QUOTATION_VOTING` + sin voto.
 
 ### `CORRECT_REQUEST`
 
 ```text
-solicitud NEEDS_REVISION
+NEEDS_REVISION
 AND requested_by == current_user.email
 ```
 
-No depende de `requests:create`. La tarea pertenece al solicitante original.
+La tarea pertenece al solicitante original.
 
 ### `CLOSE_REQUEST`
 
-`requests:close` + solicitud `APPROVED`.
+```text
+APPROVED
+AND (
+  requested_by == current_user.email
+  OR delegación de cierre activa para current_user
+)
+```
+
+No depende de `requests:close`.
+
+El Administrador del sistema puede cerrar por excepción administrativa desde Solicitudes, pero no recibe todas las solicitudes aprobadas como tareas personales.
 
 ## Modal contextual
 
@@ -83,155 +91,110 @@ Rechazar
 Enviar a revisión
 ```
 
-**Enviar a revisión** exige comentario mínimo de 3 caracteres. El botón permanece deshabilitado sin comentario válido y el backend vuelve a validarlo.
+Enviar a revisión exige comentario mínimo de 3 caracteres y usa `POST /api/expenses/{request_id}/approval-decision`.
 
-La decisión usa:
-
-```text
-POST /api/expenses/{request_id}/approval-decision
-```
-
-sin exponer el token bearer de los enlaces de correo.
-
-### Enviar a revisión
-
-`REVISION_REQUESTED` es una interrupción inmediata del flujo:
+Una revisión válida:
 
 ```text
-aprobación actual      → REVISION_REQUESTED
-solicitud               → NEEDS_REVISION
-otras PENDING/WAITING   → EXPIRED
-solicitante             → CORRECT_REQUEST
+aprobación actual    → REVISION_REQUESTED
+solicitud            → NEEDS_REVISION
+otras PENDING/WAITING → EXPIRED
+solicitante          → CORRECT_REQUEST
 ```
-
-No espera mayoría. El comentario, actor y timestamp quedan auditados y el solicitante recibe el comentario por notificación.
-
-Los otros aprobadores dejan de tener acción vigente.
 
 ### Votación
 
-```text
-QUOTATION_VOTE
-→ revisar opciones/soportes
-→ votar una opción
-```
+`QUOTATION_VOTE` permite revisar opciones/soportes y votar.
 
 ### Cierre
 
-```text
-CLOSE_REQUEST
-→ factura
-→ notas
-→ cerrar
-```
+`CLOSE_REQUEST` permite subir factura, notas y cerrar; solo aparece para solicitante o delegado activo.
 
 ### Corrección
 
-```text
-CORRECT_REQUEST
-→ Abrir para corregir / reenviar
-```
-
-La tarea aparece al solicitante original. El Administrador del sistema puede corregir administrativamente desde Solicitudes mediante `can_correct`, pero no recibe automáticamente la tarea personal de solicitudes ajenas.
+`CORRECT_REQUEST` abre la solicitud propia para corregir/reenviar.
 
 ## Después de una acción
 
-El frontend recarga:
-
-```text
-GET /api/expenses/dashboard
-GET /api/expenses/{request_id}/my-actions
-```
-
-Una tarea atendida desde correo/otra sesión deja de mostrarse como ejecutable.
+El frontend recarga dashboard + `my-actions`; una tarea atendida desde correo/otra sesión deja de mostrarse.
 
 ## Lista de solicitudes
 
-`GET /api/expenses` no filtra por requester y devuelve capacidades por recurso:
+`GET /api/expenses` no filtra por requester y devuelve:
 
-```json
-{
-  "can_cancel": true,
-  "can_correct": true
-}
+```text
+can_cancel
+can_correct
+can_close
+can_delegate_close
 ```
 
 ### `can_cancel`
 
-Solo solicitante original o Administrador del sistema, en estados cancelables.
+Solicitante original o Administrador del sistema, en estados cancelables.
 
 ### `can_correct`
 
-Solo solicitante original o Administrador del sistema, en estados corregibles.
+Solicitante original o Administrador del sistema, en estados corregibles.
 
-`requests:create`, `requests:approve`, `config:manage`, Grupo, Rol o Cargo no permiten editar una solicitud ajena.
+### `can_close`
+
+```text
+APPROVED/CLOSED
+AND (solicitante OR system_accounts OR delegado activo)
+```
+
+### `can_delegate_close`
+
+Solo el solicitante original puede administrar la delegación de esa solicitud.
+
+## Delegación de cierre/factura
+
+API:
+
+```text
+GET    /api/expenses/{request_id}/closure-delegation
+PUT    /api/expenses/{request_id}/closure-delegation
+DELETE /api/expenses/{request_id}/closure-delegation
+```
+
+Solo el solicitante crea/cambia/revoca. Una única delegación activa por solicitud; cambiar/revocar conserva historial.
+
+El delegado:
+
+- debe ser activo;
+- no puede ser el solicitante;
+- no puede ser `system_accounts`;
+- obtiene autoridad únicamente sobre esa solicitud.
+
+Ver `docs/CLOSURE_DELEGATION.md`.
 
 ## Cancelación
 
-Cancelables:
+Cancelables: `QUOTATION_VOTING`, `SUBMITTED`, `PENDING_APPROVAL`, `NEEDS_REVISION`, `APPROVED`.
 
-```text
-QUOTATION_VOTING
-SUBMITTED
-PENDING_APPROVAL
-NEEDS_REVISION
-APPROVED
-```
+No cancelables: `CLOSED`, `CANCELLED`, `REJECTED`.
 
-No cancelables:
-
-```text
-CLOSED
-CANCELLED
-REJECTED
-```
-
-Endpoint:
-
-```text
-POST /api/expenses/{request_id}/cancel
-```
-
-Exige motivo y persiste actor/timestamp/razón.
+`POST /api/expenses/{request_id}/cancel` exige motivo.
 
 ## Corrección
 
-Corregibles por solicitante/Admin:
+Corregibles por solicitante/Admin: `QUOTATION_VOTING`, `SUBMITTED`, `PENDING_APPROVAL`, `NEEDS_REVISION`, `APPROVED`, `REJECTED`.
 
-```text
-QUOTATION_VOTING
-SUBMITTED
-PENDING_APPROVAL
-NEEDS_REVISION
-APPROVED
-REJECTED
-```
+No corregibles: `CLOSED`, `CANCELLED`.
 
-No corregibles:
-
-```text
-CLOSED
-CANCELLED
-```
-
-Endpoint:
-
-```text
-PUT /api/expenses/{request_id}/resubmit
-```
-
-vuelve a autorizar en backend y mantiene invariants SIMPLE/MULTI_QUOTE.
+`PUT /api/expenses/{request_id}/resubmit` vuelve a autorizar en backend.
 
 ## Administrador del sistema en producción
 
-IAM efectivo:
+IAM máximo:
 
 ```text
 requests:read
 config:manage
 ```
 
-No participa en aprobación/votación/cierre. Cancelar y corregir son excepciones administrativas por recurso basadas en `system_accounts`, no permisos financieros.
+No participa en aprobación/votación. Cancelar, corregir y gestionar cierre/factura son excepciones administrativas por recurso basadas en `system_accounts`.
 
 ## Frontend
 
@@ -240,49 +203,34 @@ Componentes:
 ```text
 frontend/src/home-dashboard.jsx
 frontend/src/home-dashboard.css
+frontend/src/closure-delegation.jsx
 ```
-
-**Enviar a revisión** y la validación mínima de comentario viven directamente en el source modular.
 
 Mientras `ExpenseTable` siga legacy, Vite mantiene bridges para:
 
 ```text
 x.can_cancel
 x.can_correct
-canCreate || revision
+x.can_close
+x.can_delegate_close
 ```
 
-No debe parchear wording/handlers internos del Dashboard.
-
-## Accesibilidad
-
-- KPIs informativos no entran al tab order como botones.
-- Modal usa `role="dialog"` y `aria-modal="true"`.
-- Escape cierra cuando no hay una mutación ocupada.
+La autorización sigue en backend.
 
 ## Pruebas
 
-Cobertura principal:
+Cobertura relevante:
 
 ```text
 test_universal_tracking.py
 test_request_cancellation.py
 test_pending_actions.py
-test_frontend_dashboard_contract.py
 test_multi_quote_revision.py
+test_closure_delegation.py
+test_frontend_dashboard_contract.py
+test_frontend_closure_contract.py
 ```
 
-Debe demostrar:
-
-- lectura universal;
-- KPIs informativos;
-- fila → modal;
-- `my-actions` backend-authoritative;
-- revisión inmediata con comentario y expiración de pares;
-- `CORRECT_REQUEST` al solicitante;
-- tercero sin `can_correct`;
-- solicitante/Admin con capacidad de corrección;
-- cancelación por solicitante/Admin;
-- revalidación posterior a mutación.
+Debe demostrar lectura universal, tareas personales correctas, revisión inmediata, corrección/cancelación por recurso, cierre requester/Admin/delegado y revocación de delegación.
 
 Mientras GitHub Actions no tenga cuota, backend tests, `npm run build` y Docker build/smoke son gates locales obligatorios.
