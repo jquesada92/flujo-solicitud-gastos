@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.entities import User
-from app.services.iam_service import effective_permission_codes, has_permission
+from app.services.iam_service import effective_permission_codes, has_permission, is_system_account
 
 bearer = HTTPBearer(auto_error=False)
 password_hash = PasswordHash.recommended()
@@ -93,13 +93,7 @@ def create_token(user: User) -> str:
 
 
 def apply_effective_permissions_to_user(db: Session, user: User) -> User:
-    """Attach effective IAM permissions to the current user response view.
-
-    The legacy can_* properties remain transient compatibility aliases. They are
-    derived on every authenticated response and are never the authorization
-    source of truth. `permission_codes` is the canonical frontend capability
-    list, including `requests:close` which has no legacy can_* column.
-    """
+    """Attach canonical effective permissions and technical-account metadata."""
     permissions = effective_permission_codes(db, user.id)
     user.can_view = 'requests:read' in permissions
     user.can_request = 'requests:create' in permissions
@@ -107,6 +101,7 @@ def apply_effective_permissions_to_user(db: Session, user: User) -> User:
     user.can_configure = 'config:manage' in permissions
     user.can_close = 'requests:close' in permissions
     user.permission_codes = sorted(permissions)
+    user.is_system_account = is_system_account(db, user.id)
     return user
 
 
@@ -152,13 +147,7 @@ def current_user(
 
 
 def require_permission(permission_code: str):
-    """Authorize solely from effective permissions persisted in PostgreSQL.
-
-    System-account environment policy is resolved by IAM: outside production a
-    technical account may exercise every active product permission for testing;
-    production keeps strict segregation of duties. No authorization depends on
-    user email, role name, position name or numeric ID.
-    """
+    """Authorize solely from effective permissions persisted in PostgreSQL."""
     canonical_code = LEGACY_PERMISSION_ALIASES.get(permission_code, permission_code)
 
     def dependency(
@@ -170,6 +159,16 @@ def require_permission(permission_code: str):
         return user
 
     return dependency
+
+
+def require_system_account(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Protect technical administration independently of mutable IAM assignments."""
+    if not is_system_account(db, user.id):
+        raise HTTPException(status_code=403, detail='Esta función está reservada al Administrador del sistema')
+    return user
 
 
 def normalize_email(email: str) -> str:
