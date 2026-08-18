@@ -130,4 +130,4 @@
 - [x] HISTORY actualizado preservando las entradas anteriores.
 - [x] CHANGELOG actualizado.
 - [x] docs/README actualizado.
-- [x] PR #9 actualizado con contrato final y nota de cuota agotada de Actions.
+- [ ] PR #9 actualizado con contrato final y nota de cuota agotada de Actions.
