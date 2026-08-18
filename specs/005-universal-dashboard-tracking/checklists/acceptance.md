@@ -122,12 +122,12 @@
 - [x] Spec funcional actualizada.
 - [x] Plan técnico actualizado.
 - [x] Criterios de aceptación actualizados.
-- [ ] README actualizado con el modal contextual.
-- [ ] PROMPT_RECONSTRUCCION actualizado con el modal contextual.
-- [ ] IAM_MODEL revisado/actualizado si corresponde.
-- [ ] FASTAPI_ARCHITECTURE actualizado con `my_actions.py` / `pending_action_service.py`.
-- [ ] `docs/REQUEST_TRACKING.md` actualizado.
-- [ ] HISTORY actualizado.
-- [ ] CHANGELOG actualizado.
-- [ ] docs/README actualizado.
+- [x] README actualizado con el modal contextual.
+- [x] PROMPT_RECONSTRUCCION actualizado con el modal contextual.
+- [x] IAM_MODEL actualizado para distinguir tareas contextuales de permisos IAM.
+- [x] FASTAPI_ARCHITECTURE actualizado con `my_actions.py` / `pending_action_service.py`.
+- [x] `docs/REQUEST_TRACKING.md` actualizado.
+- [x] HISTORY actualizado preservando las entradas anteriores.
+- [x] CHANGELOG actualizado.
+- [x] docs/README actualizado.
 - [ ] PR #9 actualizado con contrato final y nota de cuota agotada de Actions.
