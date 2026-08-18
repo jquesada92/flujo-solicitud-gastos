@@ -249,6 +249,38 @@ requests:close
 config:manage
 ```
 
+### Correo local con Google SMTP
+
+El entorno local debe usar correo real mediante Gmail/Google Workspace SMTP. Copia `backend/.env.example` como `backend/.env` y completa:
+
+```env
+ENVIRONMENT=development
+EMAIL_MODE=smtp
+EMAIL_FROM=<TU_CUENTA_GOOGLE>
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURITY=ssl
+SMTP_USER=<TU_CUENTA_GOOGLE>
+SMTP_PASSWORD=<APP_PASSWORD_DE_GOOGLE>
+```
+
+Alternativa soportada:
+
+```env
+SMTP_PORT=587
+SMTP_SECURITY=starttls
+```
+
+Para cuentas Google con Verificación en 2 pasos, usa una **App Password**; no guardes la contraseña normal de Google ni la App Password en Git.
+
+Prueba el transporte antes de crear una solicitud:
+
+```bash
+docker compose exec backend python -m scripts.test_email --to destino@example.com
+```
+
+Si el comando termina correctamente, Google aceptó el correo. Luego prueba el flujo SIMPLE/MULTI_QUOTE. Ver `docs/EMAIL_CONFIGURATION.md` y `specs/004-email-delivery-by-environment/`.
+
 ### Backend sin Docker
 
 ```bash
@@ -312,6 +344,8 @@ ADMIN_PASSWORD=<12+ SECURE CHARS>
 UPLOAD_DIR=/app/uploads
 MAX_UPLOAD_STORAGE_MB=450
 ```
+
+Las variables Brevo viven únicamente en el backend/Render. No colocar `BREVO_API_KEY` ni secretos SMTP en Vercel/Vite.
 
 `render.yaml` productivo establece explícitamente `ENVIRONMENT=production`.
 
@@ -460,6 +494,7 @@ Documentos principales:
 - `docs/IAM_MODEL.md`
 - `docs/FASTAPI_ARCHITECTURE.md`
 - `docs/REQUEST_CORRECTIONS.md`
+- `docs/EMAIL_CONFIGURATION.md`
 - `docs/HISTORY.md`
 - `CHANGELOG.md`
 - `PROMPT_RECONSTRUCCION.md`
