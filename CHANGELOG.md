@@ -1,359 +1,158 @@
 # Changelog
 
-## 2026-08-18 — Propiedad de corrección y Enviar a revisión
+## 2026-08-18 — Cierre/factura por solicitante, Admin o delegación
 
 ### Added
-- `ExpenseOut.can_correct` como capacidad por solicitud calculada por backend.
-- Feature 007: `revision-handoff-correction-ownership`.
-- Regla explícita `solicitante original OR system_accounts` para **Corregir / reenviar**.
+- `ExpenseClosureDelegation` en `backend/app/models/closure.py`.
+- `closure_service.py` con autorización por recurso y administración de delegación.
+- `closure_delegation.py` con GET/PUT/DELETE por solicitud.
+- `ClosureDelegationContextOut` y schemas asociados.
+- `ExpenseOut.can_close` y `ExpenseOut.can_delegate_close`.
+- `frontend/src/closure-delegation.jsx` con selección/cambio/revocación.
+- Alembic `20260818_0005_closure_delegation.py`.
+- `test_closure_delegation.py` y `test_frontend_closure_contract.py`.
+- Feature 008 y `docs/CLOSURE_DELEGATION.md`.
 
 ### Changed
-- La tabla de Solicitudes muestra **Corregir / reenviar** únicamente cuando `x.can_correct=true`.
-- `PUT /api/expenses/{request_id}/resubmit` ya no se autoriza por `requests:create`; vuelve a validar propiedad de la solicitud o identidad protegida del Administrador del sistema.
-- Un aprobador que detecta un problema usa **Enviar a revisión** con comentario, en lugar de editar la solicitud ajena.
-- `REVISION_REQUESTED` interrumpe inmediatamente la ronda: solicitud → `NEEDS_REVISION`, aprobaciones restantes PENDING/WAITING → `EXPIRED`, solicitante → `CORRECT_REQUEST`.
-- El comentario de revisión es obligatorio y se incluye en la notificación al solicitante.
-- El Administrador del sistema puede corregir una solicitud ajena como excepción administrativa sin recibir automáticamente la tarea personal del solicitante.
-- El lenguaje de UI/correo distingue **Enviar a revisión** de **Corregir / reenviar**.
-- Constitución actualizada a **2.6.0**.
+- Cerrar, adjuntar factura y corregir/reemplazar factura pasan a autorización por solicitud:
+  ```text
+  solicitante original
+  OR Administrador del sistema
+  OR delegado activo de esa solicitud
+  ```
+- `financial_actions.py` deja `require_permission('requests:close')` y revalida con `current_user + can_manage_closure()`.
+- `CLOSE_REQUEST` se asigna al solicitante o delegado activo de una solicitud `APPROVED`.
+- El Administrador del sistema conserva facultad administrativa desde Solicitudes, pero no recibe todos los cierres como tareas personales.
+- La delegación solo se ofrece en `APPROVED`/`CLOSED`.
+- La tabla usa `x.can_close` y `x.can_delegate_close` en lugar de la capacidad global legacy.
+- Constitución actualizada a **2.7.0**.
 
-### Security
-- `requests:create`, `requests:approve`, `config:manage`, Grupo, Rol, Cargo y flags `can_*` legacy no conceden corrección de una solicitud ajena.
-- El backend devuelve 403 a un tercero aunque manipule el frontend.
-- La cuenta técnica se identifica por `system_accounts`, nunca por email/Cargo/UserRole.
-
-### Testing
-- `test_multi_quote_revision.py` cubre tercero denegado y solicitante autorizado por propiedad incluso sin permiso global de creación.
-- `test_pending_actions.py` cubre revisión inmediata, comentario obligatorio y expiración de pasos pares.
-- `test_frontend_dashboard_contract.py` protege `x.can_correct` y el montaje del editor para la excepción administrativa.
+### Security / Audit
+- Solo el solicitante original puede crear/cambiar/revocar delegación.
+- Una sola delegación activa por solicitud mediante índice parcial.
+- Cambiar/revocar conserva fila histórica con actor/timestamp.
+- Un tercero con `requests:close` legacy no puede cerrar una solicitud ajena.
+- El delegado debe estar activo, ser distinto del solicitante y no ser `system_accounts`.
 
 ### Migrations
-- Feature 007 no agrega migración nueva.
-- La cadena Alembic permanece `0000 → 0001 → 0002 → 0003 → 0004`.
+- Cadena actual: `0000 → 0001 → 0002 → 0003 → 0004 → 0005`.
+- `0005` crea `expense_closure_delegations` y marca `requests:close` como inactivo/legacy sin borrar asignaciones históricas.
+
+### Testing
+- Requester/Admin/delegado positivos.
+- `requests:close` legacy sin delegación negativo.
+- revocación retira autoridad.
+- Dashboard entrega `CLOSE_REQUEST` al requester/delegado.
+- contratos frontend protegen `x.can_close` / `x.can_delegate_close`.
 
 ---
 
-## 2026-08-18 — Modal contextual para Acciones pendientes
+## 2026-08-18 — Propiedad de corrección y Enviar a revisión
 
 ### Added
-- `backend/app/services/pending_action_service.py` para resolver tareas concretas del usuario desde permiso efectivo + asignación + estado.
-- Códigos contextuales `APPROVAL_DECISION`, `QUOTATION_VOTE`, `CORRECT_REQUEST` y `CLOSE_REQUEST`; no son permisos IAM nuevos.
-- `backend/app/api/my_actions.py` con `GET /api/expenses/{request_id}/my-actions` y `POST /api/expenses/{request_id}/approval-decision`.
-- `frontend/src/home-dashboard.jsx` como Dashboard modular con modal de acciones.
-- `frontend/src/home-dashboard.css` para el modal responsive.
-- `backend/tests/test_pending_actions.py`.
-- `backend/tests/test_frontend_dashboard_contract.py`.
+- `ExpenseOut.can_correct` como capacidad por solicitud.
+- Feature 007.
 
 ### Changed
-- Los KPIs superiores **Acciones que requieren mi atención**, **Solicitudes en proceso** y **Cerradas en 24 horas** son informativos: se renderizan como contenido, sin `onClick` ni navegación.
-- **Inicio → Acciones pendientes** deja de navegar genéricamente a Solicitudes al seleccionar una fila.
-- Seleccionar una fila abre un modal y vuelve a consultar al backend las acciones todavía vigentes para el usuario autenticado.
-- **Ver todas** conserva navegación a Solicitudes.
-- `pending_my_action` cuenta acciones concretas y `pending_items` devuelve sus códigos.
-- El modal permite, según el workflow, Aprobar/Rechazar/Solicitar corrección, votar una cotización, subir factura/cerrar o abrir una solicitud propia para corregir y reenviar.
-- Después de cada mutación se recargan dashboard + `my-actions` para evitar controles obsoletos.
-- `vite.config.js` importa el `HomeDashboard` modular y elimina la definición legacy completa entre `function HomeDashboard` y `function App()` durante build.
+- **Corregir / reenviar** solo para solicitante original o `system_accounts`.
+- Un aprobador usa **Enviar a revisión** con comentario; no edita solicitud ajena.
+- `REVISION_REQUESTED` interrumpe inmediatamente: `NEEDS_REVISION`, pares PENDING/WAITING → `EXPIRED`, solicitante → `CORRECT_REQUEST`.
+- Constitución **2.6.0**.
 
 ### Security
-- Las acciones del Dashboard requieren capacidad IAM y asignación concreta; `requests:approve` por sí solo no convierte todas las solicitudes pendientes en tareas personales.
-- La aprobación contextual no expone el token bearer usado por los enlaces de correo.
-- El backend vuelve a validar la acción aunque la tarjeta del Dashboard haya quedado desactualizada por otra sesión/canal.
-
-### Testing / CI
-- `test_frontend_dashboard_contract.py` falla si los KPIs superiores vuelven a implementarse como botones interactivos.
-- La cuota de GitHub Actions se agotó durante el PR; los runs bloqueados no se consideran CI verde.
-- Hasta recuperar cuota, suite backend, `npm run build` y Docker build/smoke son gates locales obligatorios antes de merge/deploy.
-
-### Migrations
-- Este modal/contextual resolver no agrega migración.
-- La rama conserva `0004` de Feature 006 como head Alembic.
+- `/resubmit` devuelve 403 a terceros aunque tengan `requests:create`, `requests:approve`, `config:manage`, Rol/Grupo/Cargo.
 
 ---
 
 ## 2026-08-18 — Permisos heredados por Cargo y Grupo
 
 ### Added
-- Nueva relación persistente `position_roles` para `Cargo/Posición → Rol`.
-- `PositionRole` en el modelo SQLAlchemy IAM.
-- `users_with_permission()` reconoce permisos heredados por Cargos activos además de Grupos, Roles directos y permisos directos.
-- `permission_sources()` muestra orígenes como `Cargo Tesorero → Aprobador`.
-- `backend/app/api/position_access.py` expone asignación/quita de Roles por Cargo.
-- `PositionOut.role_ids` para administrar herencia desde la UI.
-- **Configuración → Accesos → Cargos** permite seleccionar Roles heredados.
-- `backend/tests/test_position_role_inheritance.py` cubre Cargo/Grupo → Rol → Permiso y Cargo inactivo.
-- Feature 006 con spec, plan y criterios de aceptación.
+- `position_roles`, `PositionRole`, API/UI de Roles heredados por Cargo.
+- `users_with_permission()` reconoce Cargo→Rol además de Grupo/directos.
+- Migración `0004` importa una sola vez perfiles/títulos legacy a IAM canónico.
+- Feature 006.
 
 ### Changed
-- El modelo IAM operativo pasa a:
-  ```text
-  Usuario → Grupo ─────────→ Rol → Permiso
-         ↘ Cargo/Posición ─→ Rol → Permiso
-         ↘ Rol directo ─────────→ Permiso
-         ↘ Permiso directo
-  ```
-- Cargo deja de ser exclusivamente descriptivo: puede heredar Roles configurables. **El nombre del Cargo sigue sin ser autoridad de autorización.**
-- El mismo Rol puede reutilizarse en múltiples Cargos y Grupos.
-- La población de aprobación/votación reconoce `requests:approve` independientemente de si proviene de Cargo, Grupo, Rol directo o permiso directo.
-- Constitución actualizada a 2.5.0.
-- La consola IAM es la pantalla autoritativa de acceso; `AccessProfile/can_*` legacy quedan solo como compatibilidad/migración.
+- Modelo IAM permite Grupo→Rol→Permiso y Cargo→Rol→Permiso sin autorizar por nombres.
+- Constitución **2.5.0**.
 
 ### Fixed
-- Se corrige la brecha productiva donde Tesorero/Vicepresidente podían aparecer con **Aprobar** en la pantalla legacy pero no formar parte de `users_with_permission('requests:approve')`.
-- La configuración existente de cargos aprobadores se puede convertir al IAM canónico sin volver a usar `can_approve` como autoridad runtime.
-
-### Migrations
-- Nueva `20260818_0004_position_role_inheritance.py`.
-- Crea `position_roles`.
-- Importa una sola vez `access_profiles.can_*` y `users.title` hacia `Position`, `Role`, `RolePermission`, `PositionRole` y `UserPosition`.
-- Traduce `can_approve=true` legacy a un Rol con `requests:approve`.
-- Excluye `system_accounts` de asignaciones organizacionales migradas.
-- La cadena Alembic pasa a `0000 → 0001 → 0002 → 0003 → 0004`.
-
-### Compatibility / Technical debt
-- `AccessProfile`, `BOARD_CODES`, `users.title` y `can_*` permanecen físicamente de forma transitoria, pero no son autoridad runtime.
-- La pantalla legacy que mezcla Cargo y permisos debe retirarse o convertirse en compatibilidad de solo lectura para evitar nuevas divergencias.
+- Brecha donde Tesorero/Vicepresidente aparecían como aprobadores legacy pero no tenían `requests:approve` canónico.
 
 ---
 
-## 2026-08-17 — Seguimiento universal y cancelación por solicitante/Admin del sistema
+## 2026-08-18 — Dashboard contextual y KPIs informativos
 
 ### Added
-- `requests:read` pasa a ser baseline efectivo para todo usuario activo y autenticado.
-- `backend/app/api/tracking.py` sirve el dashboard y listado compartido de solicitudes sin filtrar por solicitante.
-- `backend/app/api/cancellation_actions.py` implementa cancelación canónica antes del router legacy.
-- `ExpenseOut.can_cancel` expone la capacidad de cancelación por solicitud para la UX.
-- `backend/tests/test_request_cancellation.py` cubre propiedad, cuenta técnica y estados terminales.
-- `specs/005-universal-dashboard-tracking/` y `docs/REQUEST_TRACKING.md` documentan el contrato.
+- `pending_action_service.py`, `my_actions.py`, `home-dashboard.jsx` y modal contextual.
 
 ### Changed
-- Todo usuario activo puede entrar a **Inicio / Dashboard** y **Solicitudes** para dar seguimiento a solicitudes creadas por otros usuarios.
-- `pending_my_action` solo incluye acciones ejecutables por el usuario actual.
-- Solo el solicitante original o el Administrador del sistema identificado mediante `system_accounts` pueden cancelar una solicitud abierta.
-- `requests:create`, `requests:approve` y `config:manage` no conceden por sí mismos cancelación de solicitudes ajenas.
-- `QUOTATION_VOTING`, `SUBMITTED`, `PENDING_APPROVAL`, `NEEDS_REVISION` y `APPROVED` son cancelables por esos actores; `CLOSED`, `CANCELLED` y `REJECTED` no lo son.
-- El frontend usa `can_cancel` retornado por backend para mostrar **Cancelar solicitud**, en lugar de inferirlo desde `can_request` y una lista fija de estados.
-- En producción la cuenta técnica mantiene como permisos IAM únicamente `config:manage + requests:read`; la cancelación administrativa es una excepción explícita de ciclo de vida, no un permiso financiero.
-
-### Fixed
-- Una solicitud MULTI_QUOTE abierta en `QUOTATION_VOTING` puede cancelarse por su solicitante original o por el Administrador del sistema.
-- Se retiró un import transitorio a un bridge legacy inexistente que apareció durante la investigación.
-- El diagnóstico de aprobadores fue refinado posteriormente por Feature 006: la pantalla observada era legacy y reflejaba `can_approve`, no necesariamente el permiso IAM efectivo `requests:approve`.
-
-### Migrations
-- Feature 005 por sí sola no agregaba migración de esquema.
-- Feature 006 agrega posteriormente `0004` para la herencia por Cargo y la conversión de configuración legacy.
+- Filas de Acciones pendientes abren modal; **Ver todas** abre Solicitudes.
+- KPIs superiores dejan de ser botones.
+- Todo usuario activo recibe baseline `requests:read` para seguimiento compartido.
 
 ---
 
-## 2026-08-17 — ExpenseForm modular para correcciones MULTI_QUOTE
+## 2026-08-17 — Seguimiento universal y cancelación por recurso
 
-### Fixed
-- Una corrección MULTI_QUOTE ya no depende de sustituciones granulares sobre el formulario sencillo legacy.
-- `frontend/src/expense-form.jsx` es ahora la implementación canónica del formulario de solicitudes.
-- `resolveRequestType(draft)` reconoce `MULTI_QUOTE` por `request_type`, estado `QUOTATION_VOTING` o dos/más `quotation_options`.
-- `effectiveRequestType` gobierna layout, validaciones, payload y uploads durante una corrección.
-- Un draft MULTI_QUOTE renderiza directamente **Opciones para votación** y no el layout SIMPLE.
-- Se restauran proveedor, monto, URL, observaciones y metadata de soportes existentes por opción.
+### Added
+- `tracking.py`, `cancellation_actions.py`, `ExpenseOut.can_cancel`.
 
 ### Changed
-- `vite.config.js` deja de parchear condiciones internas de `ExpenseForm`; durante la transición importa el componente modular y elimina del bundle la definición legacy completa.
-- El componente modular rehidrata por `draft.request_id`/`flow_id`; no se inyecta una `key` mediante reemplazo textual del montaje.
-
-### Testing
-- `test_frontend_revision_contract.py` ahora verifica el componente modular, inferencia MULTI_QUOTE, restauración de soportes y extracción del formulario legacy durante build.
+- Todos los usuarios activos pueden consultar solicitudes ajenas.
+- Cancelación solo requester/Admin del sistema en estados cancelables.
 
 ---
 
-## 2026-08-17 — Corrección MULTI_QUOTE usa tipo efectivo autoritativo
-
-### Fixed
-- Una solicitud en `QUOTATION_VOTING` ya no puede renderizar el formulario SIMPLE durante **Corregir / reenviar** por conservar temporalmente el estado React `requestType`.
-- Durante una corrección, `effectiveRequestType` se deriva del draft/evidencia durable y gobierna render, validaciones, payload y uploads.
-- El payload de `resubmit` ya no toma `request_type` del selector/pestaña de creación cuando existe un draft.
-- La UI muestra el tipo de solicitud corregida como dato de solo lectura y no ofrece cambiar SIMPLE ↔ MULTI_QUOTE durante una corrección.
+## 2026-08-17 — Corrección MULTI_QUOTE preserva tipo y evidencia
 
 ### Added
-- `backend/tests/test_frontend_revision_contract.py` protege el contrato frontend durante la transición del monolito.
-
----
-
-## 2026-08-17 — Enlaces de aprobación local usan el frontend Docker correcto
+- `expense-form.jsx`, `revision_actions.py`, migración `0003`, regresiones de corrección.
 
 ### Fixed
-- Docker Compose ya no permite que un `PUBLIC_URL=http://localhost:5173` heredado desde `backend/.env` genere enlaces inválidos mientras el frontend real está publicado en `localhost:3000`.
-- El backend recibe por defecto `PUBLIC_URL=http://localhost:3000` bajo Compose.
-- `CORS_ALLOWED_ORIGINS` local incluye `localhost:3000` y `localhost:5173` para soportar Compose y Vite directo.
-
-### Added
-- `.env.example` raíz documenta `LOCAL_PUBLIC_URL` y `LOCAL_CORS_ALLOWED_ORIGINS`.
-- Regresión en `test_container_portability.py` que exige coherencia entre el puerto publicado por Compose y el `PUBLIC_URL` usado por los correos.
-- Documentación de diagnóstico para `ERR_CONNECTION_REFUSED` causado por desalineación entre puerto 3000/5173.
-
-### Behavior
-- Docker Compose → links nuevos `http://localhost:3000/email-action/...`.
-- Vite directo → `http://localhost:5173/email-action/...` si ese es el `PUBLIC_URL` configurado.
-- Producción → URL HTTPS de Vercel configurada en Render.
+- `SIMPLE → SIMPLE` y `MULTI_QUOTE → MULTI_QUOTE` durante corrección.
+- Pestaña de creación ya no decide el editor.
+- Ronda MULTI_QUOTE corregida reinicia votos/invitaciones con nuevo `flow_id` y conserva soportes.
 
 ---
 
-## 2026-08-17 — Correo por ambiente: Google SMTP local / Brevo producción
+## 2026-08-17 — Correo por ambiente
 
 ### Changed
-- Desarrollo local pasa a documentarse con `EMAIL_MODE=smtp` para enviar correos reales mediante Gmail/Google Workspace.
-- Producción conserva `EMAIL_MODE=brevo` en el backend desplegado en Render.
-- Las credenciales de correo permanecen exclusivamente en backend; Vercel/frontend no recibe `SMTP_PASSWORD` ni `BREVO_API_KEY`.
+- Producción: Brevo HTTPS API en Render.
+- Local: Gmail/Workspace SMTP.
+- Docker local usa `PUBLIC_URL=http://localhost:3000`.
 
 ### Added
-- `docs/EMAIL_CONFIGURATION.md` con matriz de ambientes, configuración SMTP y diagnóstico.
-- `specs/004-email-delivery-by-environment/` con spec, plan técnico y criterios de aceptación.
-- `python -m scripts.test_email --to <correo>` para probar el transporte configurado sin depender del workflow de solicitudes.
-
-### Local configuration
-- Google SMTP recomendado: `smtp.gmail.com`, puerto `465`, `ssl`.
-- Alternativa: puerto `587`, `starttls`.
-- `SMTP_PASSWORD` se documenta como App Password de Google; nunca se versiona.
-
-### Diagnostics
-- `EMAIL_MODE=console` se reconoce explícitamente como modo sin entrega real.
-- La entrega de correo se puede validar por separado antes de probar SIMPLE o MULTI_QUOTE.
-
----
-
-## 2026-08-17 — Correcciones MULTI_QUOTE preservan el flujo
-
-### Fixed
-- **Corregir / reenviar** ya no depende de la pestaña SIMPLE/MULTI_QUOTE seleccionada antes de editar.
-- Si **Solicitud sencilla** está activa y se corrige una solicitud MULTI_QUOTE, el editor se remonta y abre directamente como MULTI_QUOTE.
-- El frontend deriva el tipo inicial desde la solicitud/evidencia durable y no reutiliza el estado React de creación.
-- El frontend restaura opciones de cotización y soportes existentes al hidratar una corrección.
-- El backend canónico deriva un tipo canónico de solicitud y rechaza con `409` cualquier intento real de cambiarlo durante `resubmit`.
-- Registros legacy con `request_type=SIMPLE` pero evidencia MULTI_QUOTE se reconocen y reparan correctamente.
-- Una corrección MULTI_QUOTE reinicia correctamente la ronda: nuevo `flow_id`, votos vigentes limpiados, invitaciones reemplazadas y estado `QUOTATION_VOTING`.
-- Los attachments existentes permanecen asociados a sus opciones.
-
-### Added
-- `backend/app/api/revision_actions.py` como ruta canónica de correcciones registrada antes del router legacy.
-- `backend/tests/test_multi_quote_revision.py` con regresión HTTP de preservación/reparación de tipo, evidencia y ronda.
-- Test específico de fila legacy con `request_type=SIMPLE` y evidencia MULTI_QUOTE.
-- `20260817_0003_backfill_multi_quote_request_type.py` para reparar solicitudes históricas inconsistentes.
-- `specs/003-request-correction-invariants/`.
-- `docs/REQUEST_CORRECTIONS.md`.
-
-### Behavior
-- `SIMPLE → corrección → SIMPLE`.
-- `MULTI_QUOTE → corrección → MULTI_QUOTE`.
-- La pestaña seleccionada antes de pulsar **Corregir / reenviar** no influye en el editor.
-- Durante esta feature una MULTI_QUOTE corregida conserva la misma cantidad de opciones; se pueden editar proveedor, monto, URL y observaciones.
-- Cambiar deliberadamente SIMPLE ↔ MULTI_QUOTE queda fuera de `Corregir / reenviar`.
-
-### Migrations
-- La cadena Alembic pasa a `0000 → 0001 → 0002 → 0003`.
-- `0003` cambia a `MULTI_QUOTE` filas con `QUOTATION_VOTING` o dos/más opciones que aún tengan el default `SIMPLE`.
-
-### Compatibility / Technical debt
-- `modularExpenseFormPlugin` es temporal y debe retirarse cuando `main.jsx` importe directamente `frontend/src/expense-form.jsx`.
-- Editar estructuralmente una ronda (agregar/eliminar opciones con evidencia/versionado explícito) requiere una feature separada.
+- `python -m scripts.test_email` y documentación de diagnóstico.
 
 ---
 
 ## 2026-08-17 — IAM configurable + FastAPI hardening
 
 ### Added
-- Modelo IAM persistido: Permissions, Roles, Groups, Memberships, direct Roles/Permissions, Positions y System Accounts.
-- Permisos atómicos `requests:read`, `requests:create`, `requests:approve`, `requests:close`, `config:manage`.
-- Consola gráfica **Configuración → Accesos**.
-- API neutral `/api/iam/*` y `/api/iam/users`.
-- Vista de permisos efectivos y fuentes de herencia.
-- Política ambiental explícita para `TECHNICAL_ADMIN`.
-- `UserOut.permission_codes` y alias temporal `can_close`.
-- Pydantic Settings centralizado con distinción entre `is_production_environment` e `is_production`.
-- Argon2 mediante `pwdlib` con upgrade transparente de PBKDF2 legacy.
-- Alembic y migraciones versionadas con baseline explícito para bases nuevas.
-- Entry point Docker que migra/bootstrap antes de Uvicorn.
-- `FastAPI TestClient` para matriz de autorización IAM.
-- Tests específicos de política productiva/no-productiva de la cuenta técnica.
-- Test de topología que exige un solo head Alembic y la cadena esperada.
-- Test de regresión de portabilidad Windows→Linux para scripts y healthchecks de Docker Compose.
-- Smoke tests Docker de entrypoint Linux e import de `scripts.bootstrap_admin`.
-- Servicios canónicos para resolución de aprobadores, documentos y votación.
-- `docs/IAM_MODEL.md` y `docs/FASTAPI_ARCHITECTURE.md`.
-- Spec/plan/checklist de `002-configurable-iam-fastapi-hardening`.
+- Pydantic Settings, Argon2, application factory, Alembic `0000/0001/0002`, system accounts, consola IAM, TestClient y hardening Docker.
 
 ### Changed
-- Autorización runtime consulta permisos efectivos/política de cuenta técnica; `UserRole.ADMIN` no es autoridad.
-- **Producción:** la cuenta técnica queda limitada a `config:manage` + `requests:read`.
-- **No producción:** la cuenta técnica recibe todos los permisos atómicos activos para pruebas end-to-end.
-- Fuera de producción la cuenta técnica puede participar en poblaciones de aprobación/votación.
-- En producción las asignaciones financieras accidentales a la cuenta técnica siguen siendo filtradas.
-- `RENDER=true` mantiene endurecimiento de secretos/CORS, pero ya no implica por sí solo política funcional de producción; solo `ENVIRONMENT=production` activa segregación financiera.
-- Login y `current_user()` derivan permisos efectivos para el contrato del frontend.
-- Población canónica de aprobadores/votantes se resuelve por `requests:approve`, no por cargos fijos.
-- Crear solicitudes exige `requests:create`.
-- Cerrar/reemplazar factura exige `requests:close`.
-- Configuración de acceso se administra desde la UI y no mediante nombres codificados.
-- `app/main.py` queda como alias mínimo del application factory.
-- Lifespan deja de crear/migrar esquemas y hacer backfills.
-- Operaciones canónicas con SQLAlchemy/filesystem síncrono utilizan path functions `def`.
-- Modelos de clasificación se movieron fuera de `api/areas.py`.
-- Servicio de correo usa Settings y branding organizacional neutral.
-- Docker Compose local espera a que `/api/health` del backend esté sano antes de iniciar Nginx.
-- `.gitattributes` fuerza LF y Docker normaliza CRLF.
-- El bootstrap técnico se ejecuta como `python -m scripts.bootstrap_admin`.
-
-### Security
-- En producción System Accounts filtran permisos financieros incluso ante asignaciones accidentales.
-- Fuera de producción el acceso completo de la cuenta técnica se concede únicamente por política `SystemAccount + ENVIRONMENT` para testing.
-- Roles técnicos `system_managed` no se pueden modificar desde la interfaz.
-- Default deny para usuarios operativos.
-- Backend mantiene autoridad sobre acciones aunque el frontend o campos legacy indiquen otra cosa.
-
-### Testing
-- No-producción: cuenta técnica obtiene todos los permisos activos.
-- No-producción: login expone `permission_codes`, `can_request`, `can_approve`, `can_view`, `can_configure` y `can_close` efectivos.
-- No-producción: cuenta técnica puede entrar en población `requests:approve`.
-- Producción: cuenta técnica queda en config/read.
-- Producción: `requests:close` directo accidental es filtrado y el endpoint de cierre devuelve 403.
-- Producción: cuenta técnica queda fuera de población de aprobación.
-
-### Migrations
-- `20260817_0000_application_baseline.py` define un baseline property-free para instalaciones limpias y conserva tablas productivas que ya existen.
-- `20260817_0001_iam_foundation.py` crea IAM y migra flags legacy a permisos como operación única de compatibilidad.
-- `20260817_0002_system_accounts.py` identifica cuentas técnicas existentes.
-- `20260817_0003_backfill_multi_quote_request_type.py` repara el tipo de solicitudes MULTI_QUOTE históricas.
-- La cadena de esta feature quedó en `0000 → 0001 → 0002 → 0003`; Feature 006 agrega posteriormente `0004`.
-- `scripts.bootstrap_admin` crea/asocia idempotentemente la cuenta técnica fuera del lifespan.
-- El smoke test contra PostgreSQL/Neon real continúa siendo requisito previo al despliegue productivo.
-
-### Compatibility / Technical debt
-- `UserRole`, `title` y `can_*` permanecen temporalmente como metadatos/puente; no son autoridad de acceso.
-- `/api/users` legacy permanece mientras migra el frontend operacional.
-- `frontend/src/main.jsx` continúa monolítico en otras áreas.
-- El monolito todavía contiene bypasses visuales legacy `user.role === "ADMIN"` y `canClose={true}`; el backend no confía en ellos y deben migrarse a `permission_codes`.
-- `domain-normalization.js` sigue temporalmente.
-- El refactor no declara corregida la fórmula legacy de quorum/mayoría ni la regla de empate MULTI_QUOTE.
+- autorización runtime por permisos efectivos/políticas, no `UserRole`/`can_*`.
+- producción y no-producción separadas por `ENVIRONMENT`.
 
 ---
 
 ## 2026-08-17 — Normalización de dominio
 
-### Added
-- Catálogo global de Categorías independiente de Áreas.
-- Relación configurable Área ↔ Categoría.
-- Terminología canónica **Usuario / Usuarios**.
-- Constitución del proyecto y documentación gobernada por specs/checklists.
-
 ### Changed
-- Segundo selector funcional → **Categoría**.
-- Primer nivel → **Área**.
-- Documentación forma parte del Definition of Done.
-- CI ejecuta regresión backend, build frontend e imágenes Docker.
-
-### Compatibility
-- `expenses.expense_type` → Área.
-- `expenses.expense_subcategory` → Categoría.
-- Tablas legacy de clasificación permanecen como puente temporal.
+- clasificación canónica Área + Categoría.
+- Usuario/Grupo/Rol/Permiso/Cargo como terminología neutral.
 
 ### Removed / Retired
-- Retiro progresivo de conceptos inmobiliarios específicos.
-- `Subárea` deja de ser término funcional del segundo nivel.
-- `Persona / Personas` deja de ser término funcional del módulo de cuentas.
+- dominio inmobiliario activo (`Apartment`, `UserApartment`, `OwnershipRole`, etc.).
+- Persona/Personas como nombre del módulo y Subárea como segundo nivel funcional.
+
+---
+
+## Compatibility / Technical debt
+
+Permanecen temporalmente sin autoridad runtime: `UserRole`, `can_*`, `AccessProfile`, `BOARD_CODES`, `users.title`, `/api/users` legacy, `requests:close` inactivo, `main.jsx`, `domain-normalization.js` y bridges Vite.
+
+Pendientes separados: fórmula completa de mayoría APPROVED/REJECTED, empate MULTI_QUOTE, edición estructural de opciones y outbox/retry persistente.
