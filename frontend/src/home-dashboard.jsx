@@ -278,8 +278,8 @@ export default function HomeDashboard({ refreshKey, onOpenRequests }) {
   return <>
     <div className="dashboard-layout">
       <section className="dashboard-kpis">
-        <button className="dashboard-kpi attention" onClick={() => data.pending_items[0] ? openAction(data.pending_items[0]) : onOpenRequests()}><span>Acciones que requieren mi atención</span><strong>{data.pending_my_action}</strong><small>Acciones de flujo que esperan tu respuesta</small></button>
-        <button className="dashboard-kpi" onClick={onOpenRequests}><span>Solicitudes en proceso</span><strong>{data.in_process}</strong><small>Abiertas actualmente</small></button>
+        <article className="dashboard-kpi attention"><span>Acciones que requieren mi atención</span><strong>{data.pending_my_action}</strong><small>Acciones de flujo que esperan tu respuesta</small></article>
+        <article className="dashboard-kpi"><span>Solicitudes en proceso</span><strong>{data.in_process}</strong><small>Abiertas actualmente</small></article>
         <article className="dashboard-kpi success"><span>Cerradas en 24 horas</span><strong>{data.closed_last_24h}</strong></article>
       </section>
       <section className="card dashboard-month"><div className="card-heading"><div><p className="eyebrow">ÚLTIMOS 31 DÍAS</p><h2>Resumen de solicitudes</h2></div></div>
