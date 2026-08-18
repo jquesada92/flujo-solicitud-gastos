@@ -157,6 +157,7 @@ class ExpenseOut(BaseModel):
     quotation_votes: list[QuotationVoteOut] = Field(default_factory=list)
     quotation_voter_count: int = 0
     selected_quotation_id: int | None = None
+    can_cancel: bool = False
 
     class Config:
         from_attributes = True
