@@ -219,7 +219,9 @@ e importa el componente modular. No se parchean handlers internos por coincidenc
 
 ### Comportamiento
 
-- **Ver todas** continúa ejecutando `onOpenRequests` y navega a Solicitudes.
+- los KPIs superiores **Acciones que requieren mi atención**, **Solicitudes en proceso** y **Cerradas en 24 horas** son elementos informativos (`article`), no botones;
+- los KPIs no tienen `onClick`, no navegan y no abren acciones;
+- **Ver todas** continúa ejecutando `onOpenRequests` y navega a Solicitudes;
 - una fila de `pending_items` ejecuta `openAction(item)`;
 - `openAction` consulta `/{request_id}/my-actions`;
 - el modal muestra resumen de la solicitud y únicamente controles vigentes;
@@ -227,7 +229,15 @@ e importa el componente modular. No se parchean handlers internos por coincidenc
 - después de una mutación se recargan en paralelo dashboard + detalle contextual;
 - si la acción ya fue respondida desde otro canal, el modal muestra que ya no quedan acciones pendientes.
 
-Controles:
+La separación de interacción es deliberada:
+
+```text
+KPI superior          → información solamente
+Fila acción pendiente → modal contextual
+Ver todas             → navegación a Solicitudes
+```
+
+Controles del modal:
 
 - aprobación: comentario + Rechazar / Solicitar corrección / Aprobar;
 - votación: opciones, soportes y botón de voto por opción;
@@ -269,6 +279,8 @@ Ninguno de esos elementos puede limitar la lectura base, ampliar cancelación ni
 `backend/tests/test_frontend_dashboard_contract.py` protege:
 
 - click de fila → `openAction(item)`;
+- KPIs superiores renderizados como `article` y sin `onClick`;
+- **Ver todas** permanece como control explícito de navegación;
 - presencia del modal contextual;
 - los cuatro códigos actuales;
 - endpoints usados por aprobación/voto/cierre;
@@ -277,7 +289,7 @@ Ninguno de esos elementos puede limitar la lectura base, ampliar cancelación ni
 
 ## Datos y migraciones
 
-El modal contextual y el resolver de acciones no requieren columnas nuevas.
+El modal contextual, los KPIs informativos y el resolver de acciones no requieren columnas nuevas.
 
 La rama contiene además Feature 006, cuya migración `20260818_0004_position_role_inheritance.py` es independiente de este cambio. La cadena global de la rama es:
 
@@ -293,6 +305,7 @@ No crear un backfill adicional para las acciones pendientes.
 2. Ejecutar `npm run build` del frontend.
 3. Construir imágenes Docker localmente.
 4. Probar en Docker:
+   - confirmar que los KPIs superiores no son clicables ni navegan;
    - iniciar sesión como usuario con aprobación pendiente;
    - seleccionar una fila en **Acciones pendientes**;
    - confirmar apertura del modal, no navegación inmediata a Solicitudes;
