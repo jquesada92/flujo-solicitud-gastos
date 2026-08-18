@@ -10,6 +10,7 @@ from app.api import (
     audit,
     auth,
     cancellation_actions,
+    closure_delegation,
     document_actions,
     expenses,
     financial_actions,
@@ -102,6 +103,7 @@ def create_app() -> FastAPI:
     app.include_router(request_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(revision_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(cancellation_actions.router, prefix='/api/expenses', tags=['Expenses'])
+    app.include_router(closure_delegation.router, prefix='/api/expenses', tags=['Closure Delegation'])
     app.include_router(quotation_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(document_actions.router, prefix='/api/expenses', tags=['Documents'])
     app.include_router(financial_actions.router, prefix='/api/expenses', tags=['Expenses'])
