@@ -28,14 +28,22 @@
 
 - [x] `python -m scripts.test_email --to <correo>` permite probar entrega sin crear una solicitud.
 - [x] El comando equivalente dentro de Docker Compose está documentado.
+- [x] CI importa `scripts.test_email` dentro de la imagen backend construida.
 - [ ] Validar manualmente con las credenciales locales reales que Google acepta el correo de prueba.
 - [ ] Validar después una solicitud SIMPLE que llegue a un usuario con `requests:approve`.
 - [ ] Validar después una MULTI_QUOTE que entregue la invitación de votación.
 
 ## Documentación
 
+- [x] Constitución actualizada a 2.3.3.
 - [x] Feature spec creada.
 - [x] Plan técnico creado.
 - [x] Criterios de aceptación creados.
+- [x] README actualizado.
+- [x] Prompt maestro actualizado.
+- [x] `docs/EMAIL_CONFIGURATION.md` creado e indexado.
+- [x] HISTORY actualizado.
+- [x] CHANGELOG actualizado.
 - [x] `backend/.env.example` refleja SMTP Google local y Brevo producción.
 - [x] Configuración productiva/local no mezcla secretos del frontend con el backend.
+- [x] Descripción del PR sincronizada con Feature 004.
