@@ -81,4 +81,4 @@
 - [x] docs/README actualizado.
 - [x] HISTORY actualizado preservando el historial previo.
 - [x] CHANGELOG actualizado.
-- [ ] PR #9 actualizado con el contrato final.
+- [x] PR #9 actualizado con el contrato final.
