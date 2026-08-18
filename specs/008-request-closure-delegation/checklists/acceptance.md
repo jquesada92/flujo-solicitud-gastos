@@ -25,6 +25,7 @@
 - [x] cambiar delegado revoca/flush primero el anterior.
 - [x] revocación conserva actor/timestamp.
 - [x] historial no se borra físicamente.
+- [x] la delegación se ofrece únicamente en `APPROVED`/`CLOSED`.
 
 ## Dashboard
 
@@ -58,7 +59,7 @@
 
 ## Pruebas
 
-- [x] `test_closure_delegation.py` agregado.
+- [x] `test_closure_delegation.py` agregado y corregido para sembrar baseline `requests:read`.
 - [x] `test_pending_actions.py` actualizado a requester/delegate.
 - [x] `test_universal_tracking.py` prueba que lectura no concede cierre ajeno.
 - [x] `test_frontend_closure_contract.py` protege capacidades por recurso.
@@ -72,14 +73,15 @@
 
 - [x] Constitución actualizada a 2.7.0.
 - [x] Feature 008 spec/plan/checklist creados.
-- [ ] README actualizado.
-- [ ] PROMPT_RECONSTRUCCION actualizado.
-- [ ] `docs/CLOSURE_DELEGATION.md` creado.
-- [ ] `docs/FASTAPI_ARCHITECTURE.md` actualizado.
-- [ ] `docs/IAM_MODEL.md` actualizado.
-- [ ] `docs/REQUEST_TRACKING.md` actualizado.
-- [ ] `docs/TERMINOLOGY.md` actualizado.
-- [ ] `docs/README.md` actualizado.
-- [ ] HISTORY actualizado.
-- [ ] CHANGELOG actualizado.
+- [x] README actualizado.
+- [x] PROMPT_RECONSTRUCCION actualizado.
+- [x] `docs/CLOSURE_DELEGATION.md` creado.
+- [x] `docs/FASTAPI_ARCHITECTURE.md` actualizado.
+- [x] `docs/IAM_MODEL.md` actualizado.
+- [x] `docs/REQUEST_TRACKING.md` actualizado.
+- [x] `docs/TERMINOLOGY.md` actualizado.
+- [x] `docs/README.md` actualizado.
+- [x] Feature 005 revisada para `CLOSE_REQUEST` por propiedad/delegación.
+- [x] HISTORY actualizado.
+- [x] CHANGELOG actualizado.
 - [ ] PR #9 actualizado.
