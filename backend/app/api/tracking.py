@@ -10,18 +10,15 @@ from app.api.expenses import APP_TIME_ZONE, _as_utc, _present_expense, _user_nam
 from app.core.database import get_db
 from app.core.security import require_permission
 from app.models.entities import (
-    Approval,
-    ApprovalStatus,
     ApprovalStepEvent,
     Expense,
     ExpenseAttachment,
     ExpenseStatus,
-    QuotationVote,
-    QuotationVotingInvitation,
     User,
 )
 from app.schemas.expense import ExpenseOut
-from app.services.iam_service import has_permission, is_system_account
+from app.services.iam_service import is_system_account
+from app.services.pending_action_service import pending_actions_by_expense
 
 router = APIRouter()
 
@@ -91,11 +88,18 @@ def list_trackable_expenses(
 
         quotation_voter_counts = dict(db.execute(
             select(
-                QuotationVotingInvitation.expense_id,
-                func.count(QuotationVotingInvitation.id),
+                Expense.id,
+                func.count(),
             )
-            .where(QuotationVotingInvitation.expense_id.in_(expense_ids))
-            .group_by(QuotationVotingInvitation.expense_id)
+            .select_from(Expense)
+            .join_from(
+                Expense,
+                Expense.quotation_options.property.mapper.class_,
+                Expense.quotation_options.property.mapper.class_.expense_id == Expense.id,
+                isouter=True,
+            )
+            .where(Expense.id.in_(expense_ids))
+            .group_by(Expense.id)
         ).all())
 
     output: list[ExpenseOut] = []
@@ -169,34 +173,8 @@ def expense_dashboard(
         )
     ) or 0
 
-    pending_ids: set[int] = set()
-    if has_permission(db, user.id, 'requests:approve'):
-        pending_ids.update(db.scalars(
-            select(Approval.expense_id).where(
-                func.lower(Approval.approver_email) == user.email.lower(),
-                Approval.status == ApprovalStatus.PENDING,
-            )
-        ).all())
-
-        invited = select(QuotationVotingInvitation.expense_id).where(
-            QuotationVotingInvitation.voter_user_id == user.id,
-        )
-        voted = select(QuotationVote.expense_id).where(
-            QuotationVote.voter_user_id == user.id,
-        )
-        pending_ids.update(db.scalars(
-            select(Expense.id).where(
-                Expense.status == ExpenseStatus.QUOTATION_VOTING,
-                Expense.id.in_(invited),
-                Expense.id.not_in(voted),
-            )
-        ).all())
-
-    if has_permission(db, user.id, 'requests:close'):
-        pending_ids.update(db.scalars(
-            select(Expense.id).where(Expense.status == ExpenseStatus.APPROVED)
-        ).all())
-
+    action_map = pending_actions_by_expense(db, user)
+    pending_ids = set(action_map)
     pending_items = (
         list(db.scalars(
             select(Expense)
@@ -222,7 +200,7 @@ def expense_dashboard(
 
     return {
         'timezone': APP_TIME_ZONE,
-        'pending_my_action': len(pending_ids),
+        'pending_my_action': sum(len(actions) for actions in action_map.values()),
         'in_process': in_process,
         'closed_last_24h': closed_24h,
         'last_31_days': {
@@ -241,6 +219,7 @@ def expense_dashboard(
                 'urgency': item.urgency,
                 'status': item.status.value,
                 'created_at': _as_utc(item.created_at),
+                'actions': action_map.get(item.id, []),
             }
             for item in pending_items
         ],
