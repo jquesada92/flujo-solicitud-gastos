@@ -2,8 +2,8 @@
 
 ## Gobierno y especificaciones
 
-- [Constitución del proyecto](../.specify/memory/constitution.md) — versión vigente 2.4.0.
-- [Política de sincronización documental](DOCUMENTATION_POLICY.md) — los defectos de estado UI que pueden cambiar semántica de negocio se tratan como cambios funcionales.
+- [Constitución del proyecto](../.specify/memory/constitution.md) — versión vigente 2.5.0.
+- [Política de sincronización documental](DOCUMENTATION_POLICY.md) — los cambios funcionales, técnicos y de autorización deben mantener sincronizados los artefactos gobernados.
 - [Feature 001 — normalización de dominio](../specs/001-domain-normalization/spec.md)
 - [Feature 001 — plan técnico](../specs/001-domain-normalization/plan.md)
 - [Feature 001 — criterios](../specs/001-domain-normalization/checklists/acceptance.md)
@@ -19,15 +19,18 @@
 - [Feature 005 — dashboard y seguimiento universal](../specs/005-universal-dashboard-tracking/spec.md)
 - [Feature 005 — plan técnico](../specs/005-universal-dashboard-tracking/plan.md)
 - [Feature 005 — criterios](../specs/005-universal-dashboard-tracking/checklists/acceptance.md)
+- [Feature 006 — herencia de permisos por Cargo y Grupo](../specs/006-position-group-role-inheritance/spec.md)
+- [Feature 006 — plan técnico](../specs/006-position-group-role-inheritance/plan.md)
+- [Feature 006 — criterios](../specs/006-position-group-role-inheritance/checklists/acceptance.md)
 
 ## Dominio funcional y seguridad
 
-- [Modelo IAM configurable](IAM_MODEL.md) — incluye baseline `requests:read`, política `TECHNICAL_ADMIN` por ambiente y cancelación por propiedad/cuenta técnica.
-- [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md) — incluye separación `is_production_environment` / endurecimiento de runtime, rutas canónicas y Alembic `0003`.
+- [Modelo IAM configurable](IAM_MODEL.md) — baseline `requests:read`, Grupo/Cargo → Rol → Permiso, política `TECHNICAL_ADMIN` y fuentes efectivas.
+- [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md) — rutas canónicas, resolución IAM, migraciones y separación de runtime/compatibilidad legacy.
 - [Modelo Área + Categoría](CLASSIFICATION_MODEL.md)
-- [Correcciones y reenvío](REQUEST_CORRECTIONS.md) — invariantes SIMPLE/MULTI_QUOTE, aislamiento del estado de pestañas, compatibilidad legacy y reinicio de rondas.
-- [Seguimiento universal y cancelación](REQUEST_TRACKING.md) — lectura compartida, `can_cancel` y regla solicitante/Admin del sistema.
-- [Configuración de correo](EMAIL_CONFIGURATION.md) — Google SMTP en local/desarrollo y Brevo en producción.
+- [Correcciones y reenvío](REQUEST_CORRECTIONS.md)
+- [Seguimiento universal y cancelación](REQUEST_TRACKING.md)
+- [Configuración de correo](EMAIL_CONFIGURATION.md)
 - [Terminología funcional](TERMINOLOGY.md)
 - [Historial funcional y técnico](HISTORY.md)
 - [Changelog](../CHANGELOG.md)
@@ -36,8 +39,8 @@
 
 - [README principal](../README.md)
 - [Prompt maestro de reconstrucción](../PROMPT_RECONSTRUCCION.md)
-- `backend/.env.example` — plantilla de variables local sin secretos reales.
-- `render.yaml` — declara explícitamente `ENVIRONMENT=production` para el servicio productivo.
+- `backend/.env.example` — plantilla local sin secretos reales.
+- `render.yaml` — producción declara explícitamente `ENVIRONMENT=production`.
 
 Contrato operativo backend:
 
@@ -50,10 +53,98 @@ uvicorn app.application:app
 Cadena Alembic actual:
 
 ```text
-0000 → 0001 → 0002 → 0003
+0000 → 0001 → 0002 → 0003 → 0004
 ```
 
-`0003` repara filas históricas MULTI_QUOTE que conservaron un `request_type=SIMPLE` incorrecto. Feature 005 no agrega migración de esquema.
+- `0003` repara filas históricas MULTI_QUOTE con `request_type=SIMPLE` incorrecto.
+- `0004` agrega `position_roles` e importa una sola vez la configuración legacy de cargos/perfiles hacia relaciones IAM canónicas.
+
+## IAM vigente
+
+```text
+Usuario → Grupo ─────────→ Rol → Permiso
+       ↘ Cargo/Posición ─→ Rol → Permiso
+       ↘ Rol directo ─────────→ Permiso
+       ↘ Permiso directo
+       ↘ Baseline requests:read
+```
+
+Un Cargo puede heredar Roles. El **nombre** del Cargo nunca autoriza directamente. Por ejemplo, `Tesorero` puede recibir `requests:approve` porque existe una relación persistida `Tesorero → Aprobador → requests:approve`, no porque el backend compare la palabra `TESORERO`.
+
+La misma regla aplica a Grupos: los miembros heredan los permisos de los Roles asociados al Grupo.
+
+La consola autoritativa es **Configuración → Accesos**:
+
+- Grupos → miembros + Roles heredados;
+- Cargos → Roles heredados;
+- Usuarios → Grupos + Cargos + Roles directos + permisos directos;
+- Permisos efectivos → muestra también el origen.
+
+Ejemplos de origen:
+
+```text
+Cargo Tesorero → Aprobador
+Grupo Junta Directiva → Aprobador
+Rol directo: Comprador
+Asignación directa
+```
+
+La pantalla legacy basada en `AccessProfile`, `users.title` y `can_*` es deuda de compatibilidad y no es la fuente autoritativa para nuevos cambios de acceso.
+
+## Política ambiental de la cuenta técnica
+
+```text
+ENVIRONMENT=production
+→ TECHNICAL_ADMIN permisos IAM: config:manage + requests:read
+→ las asignaciones accidentales por Grupo/Cargo/Rol/directa no habilitan permisos financieros
+→ puede cancelar solicitudes abiertas como excepción administrativa de ciclo de vida
+
+ENVIRONMENT!=production
+→ TECHNICAL_ADMIN: todos los permisos activos para testing E2E
+```
+
+`RENDER=true` no sustituye `ENVIRONMENT=production` para esta política funcional.
+
+## Seguimiento universal
+
+Todo usuario activo recibe `requests:read` como baseline y puede abrir Inicio/Dashboard y Solicitudes para dar seguimiento.
+
+La lectura no concede mutaciones. En particular, ver una solicitud ajena no autoriza modificarla ni cancelarla.
+
+Para cancelación:
+
+```text
+can_cancel = solicitud abierta
+             AND (solicitante original OR system_accounts)
+```
+
+Estados cancelables: `QUOTATION_VOTING`, `SUBMITTED`, `PENDING_APPROVAL`, `NEEDS_REVISION`, `APPROVED`.
+
+Estados no cancelables: `CLOSED`, `CANCELLED`, `REJECTED`.
+
+## Participación en aprobación/votación
+
+La población se resuelve por permiso efectivo `requests:approve` mediante `users_with_permission()`.
+
+Fuentes válidas:
+
+```text
+Permiso directo
+Rol directo
+Grupo → Rol → requests:approve
+Cargo → Rol → requests:approve
+```
+
+El solicitante puede quedar excluido de su propia ronda y la cuenta técnica queda excluida de permisos financieros en producción.
+
+## Invariant de correcciones
+
+```text
+SIMPLE      → corrección → SIMPLE
+MULTI_QUOTE → corrección → MULTI_QUOTE
+```
+
+La pestaña de creación seleccionada previamente no puede influir en el editor de corrección. El backend valida nuevamente el tipo canónico.
 
 ## Política de correo por ambiente
 
@@ -69,99 +160,20 @@ Backend:  FastAPI/Docker local
 Correo:   Google SMTP
 ```
 
-Configuración local recomendada:
-
-```env
-EMAIL_MODE=smtp
-EMAIL_FROM=<CUENTA_GOOGLE>
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=465
-SMTP_SECURITY=ssl
-SMTP_USER=<CUENTA_GOOGLE>
-SMTP_PASSWORD=<APP_PASSWORD_GOOGLE>
-```
-
-Diagnóstico local sin crear una solicitud:
-
-```bash
-docker compose exec backend python -m scripts.test_email --to destino@example.com
-```
-
-Las credenciales SMTP/Brevo pertenecen exclusivamente al backend y nunca al frontend/Vercel.
-
-## Política ambiental de la cuenta técnica
-
-```text
-ENVIRONMENT=production
-→ TECHNICAL_ADMIN permisos IAM: config:manage + requests:read
-→ puede cancelar solicitudes abiertas como excepción explícita de ciclo de vida
-
-ENVIRONMENT!=production
-→ TECHNICAL_ADMIN: todos los permisos activos para testing
-```
-
-En producción la cuenta técnica no crea, aprueba, vota ni cierra. La cancelación administrativa se autoriza por `system_accounts`, no mediante un permiso financiero.
-
-`RENDER=true` no sustituye a `ENVIRONMENT=production` para esta política; solo `ENVIRONMENT` decide la autorización funcional productiva.
-
-## Seguimiento universal
-
-Todo usuario activo recibe `requests:read` como baseline y puede abrir Inicio/Dashboard y Solicitudes para dar seguimiento.
-
-La lectura no concede acciones. En particular, ver una solicitud ajena no autoriza modificarla ni cancelarla.
-
-Para cancelación:
-
-```text
-can_cancel = solicitud abierta
-             AND (solicitante original OR system_accounts)
-```
-
-Estados cancelables: `QUOTATION_VOTING`, `SUBMITTED`, `PENDING_APPROVAL`, `NEEDS_REVISION`, `APPROVED`.
-
-Estados no cancelables: `CLOSED`, `CANCELLED`, `REJECTED`.
-
-## Invariant de correcciones
-
-```text
-SIMPLE      → corrección → SIMPLE
-MULTI_QUOTE → corrección → MULTI_QUOTE
-```
-
-La pestaña SIMPLE/MULTI_QUOTE seleccionada antes del clic no puede influir en la corrección. El editor se remonta/rehidrata desde la solicitud seleccionada y el backend vuelve a validar el tipo canónico.
-
-Una corrección MULTI_QUOTE conserva evidencia y opciones existentes, crea un `flow_id` nuevo y reinicia el estado vigente de votación.
-
-## Modelo vigente
-
-```text
-Usuario → Grupo → Rol → Permiso
-       ↘ Rol directo
-       ↘ Permiso directo
-       ↘ Cargo (descriptivo)
-       ↘ Baseline requests:read
-```
-
-Para usuarios operativos, autorización depende de permisos efectivos y reglas explícitas por recurso. Cargos, grupos y roles no autorizan por su nombre. La cuenta técnica aplica además la política ambiental descrita arriba.
-
-Clasificación de solicitudes:
-
-```text
-Área + Categoría
-```
+Las credenciales SMTP/Brevo pertenecen exclusivamente al backend.
 
 ## Términos canónicos
 
 - Usuario, no Persona como nombre del módulo.
-- Grupo para conjuntos de usuarios.
-- Rol para conjuntos de permisos.
-- Permiso para capacidades de autorización.
-- Cargo/Posición para metadato organizacional.
-- Cuenta técnica / Administrador del sistema para la identidad técnica gobernada por ambiente.
-- Área para unidad/contexto organizacional del gasto.
-- Categoría para naturaleza del gasto.
-- Corrección / Corregir y reenviar para editar una solicitud sin cambiar su tipo SIMPLE/MULTI_QUOTE.
-- Cancelar solicitud para finalizar una solicitud abierta por el solicitante original o el Administrador del sistema.
+- Grupo: conjunto configurable de usuarios que puede heredar Roles.
+- Rol: conjunto reutilizable de permisos.
+- Permiso: capacidad atómica.
+- Cargo/Posición: estructura organizacional configurable que puede heredar Roles; el nombre no autoriza.
+- Cuenta técnica / Administrador del sistema: identidad técnica gobernada por ambiente.
+- Área: unidad/contexto organizacional del gasto.
+- Categoría: naturaleza del gasto.
+- Corrección / Corregir y reenviar: editar sin cambiar SIMPLE/MULTI_QUOTE.
+- Cancelar solicitud: finalizar una solicitud abierta por solicitante original o Administrador del sistema.
 
 ## Regla de mantenimiento
 
