@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.3.3  
+**Versión:** 2.4.0  
 **Vigente desde:** 2026-08-17
 
 ## 1. Evolucionar, no reconstruir sin necesidad
@@ -37,7 +37,7 @@ La estructura organizacional tampoco puede quedar codificada mediante nombres co
 
 ## 4. IAM configurable: permisos sobre nombres
 
-La autorización canónica se resuelve mediante permisos efectivos persistidos en PostgreSQL y las políticas explícitas de cuenta técnica definidas por ambiente.
+La autorización canónica se resuelve mediante permisos efectivos persistidos en PostgreSQL, capacidades base definidas por el producto y las políticas explícitas de cuenta técnica definidas por ambiente.
 
 Modelo:
 
@@ -46,15 +46,17 @@ Usuario → Grupo → Rol → Permiso
        ↘ Rol directo
        ↘ Permiso directo
        ↘ Cargo/Posición (descriptivo solamente)
+       ↘ Capacidades base del producto
 ```
 
 Para usuarios operativos, los permisos efectivos son la unión de:
 
-1. permisos directos del usuario;
-2. permisos de roles asignados directamente;
-3. permisos de roles heredados a través de grupos activos.
+1. capacidades base del producto aplicables al usuario activo;
+2. permisos directos del usuario;
+3. permisos de roles asignados directamente;
+4. permisos de roles heredados a través de grupos activos.
 
-Si una capacidad no está permitida explícitamente, el resultado es **DENY**.
+Para capacidades mutables no concedidas explícitamente, el resultado es **DENY**.
 
 El producto define las capacidades atómicas disponibles. Cada organización configura desde la interfaz sus grupos, roles, cargos, membresías y asignaciones.
 
@@ -66,6 +68,27 @@ Permisos funcionales iniciales:
 - `requests:close`;
 - `config:manage`.
 
+### Baseline universal de seguimiento
+
+`requests:read` es una **capacidad base no revocable** para todo usuario activo y autenticado.
+
+Por tanto, todo usuario activo debe poder:
+
+- entrar a **Inicio / Dashboard**;
+- consultar el resumen general de solicitudes de la organización;
+- entrar a **Solicitudes**;
+- consultar solicitudes creadas por cualquier usuario para dar seguimiento a su estado, independientemente de quién las solicitó;
+- consultar la información de seguimiento y evidencia que el producto exponga bajo `requests:read`.
+
+La lectura universal no concede ninguna acción mutable. Un usuario puede tener únicamente `requests:read` y seguir sin poder:
+
+- crear o corregir solicitudes (`requests:create`);
+- aprobar o votar (`requests:approve`);
+- subir factura/cerrar (`requests:close`);
+- administrar configuración (`config:manage`).
+
+Un rol o grupo puede incluir `requests:read` por compatibilidad o claridad, pero quitarlo de esos conjuntos **no puede retirar** la capacidad base de un usuario activo. Los usuarios inactivos no pueden autenticarse ni ejercer el baseline.
+
 No autorizar por:
 
 - `UserRole.ADMIN`, `REQUESTER`, `APPROVER` o `VIEWER`;
@@ -76,13 +99,13 @@ No autorizar por:
 - listas de cargos como PRESIDENTE/TESORERO/etc.;
 - conceptos inmobiliarios.
 
-Los campos legacy pueden existir temporalmente durante una migración, pero no pueden ser autoridad de autorización.
+Los campos legacy pueden existir temporalmente durante una migración, pero no pueden ser autoridad de autorización ni limitar el baseline universal de seguimiento.
 
 ## 5. Política de la cuenta técnica por ambiente
 
 El administrador técnico de bootstrap es una **cuenta de sistema protegida** identificada mediante `system_accounts`. No se identifica por email, nombre, cargo ni enum legacy.
 
-La política depende exclusivamente del ambiente declarado por `ENVIRONMENT`:
+La política depende exclusivamente del ambiente declarado por `ENVIRONMENT`.
 
 ### Producción
 
@@ -127,6 +150,8 @@ La interfaz debe permitir administrar, sin despliegue de código:
 - Áreas y Categorías;
 - políticas de aprobación y demás configuración organizacional cuando corresponda.
 
+La interfaz IAM debe distinguir las capacidades configurables de las capacidades base del producto. No debe presentar `requests:read` como una capacidad que pueda revocarse efectivamente a un usuario activo.
+
 Una organización futura puede tener estructuras completamente distintas a la configuración inicial del PH.
 
 ## 7. Backend como autoridad
@@ -134,6 +159,7 @@ Una organización futura puede tener estructuras completamente distintas a la co
 El frontend puede ocultar o mostrar acciones por UX, pero el backend es la autoridad final para:
 
 - autorización;
+- capacidades base;
 - transiciones;
 - población de participantes;
 - acceso a documentos;
@@ -142,7 +168,7 @@ El frontend puede ocultar o mostrar acciones por UX, pero el backend es la autor
 - política ambiental de cuentas técnicas;
 - invariantes del tipo de solicitud durante una corrección.
 
-Una operación sensible debe declarar una dependencia de permiso explícita o pasar por un servicio que la aplique.
+Una operación sensible debe declarar una dependencia de permiso explícita o pasar por un servicio que la aplique. Las rutas de lectura del dashboard y seguimiento deben depender de `requests:read`, cuya resolución efectiva incluye el baseline para usuarios activos.
 
 ## 8. Arquitectura FastAPI
 
@@ -209,9 +235,11 @@ Los documentos son evidencia privada. Deben validarse por contenido real, almace
 
 Una corrección no debe obligar a descartar o volver a cargar evidencia válida ya asociada a la solicitud únicamente porque el navegador no pueda prellenar un control de archivo.
 
-## 12. Solicitudes, clasificación y correcciones
+## 12. Solicitudes, clasificación, seguimiento y correcciones
 
 Cada solicitud se clasifica por **Área + Categoría**. La clasificación histórica no cambia retroactivamente porque un catálogo se renombre, desactive o cambie.
+
+El seguimiento de solicitudes es compartido: la identidad del solicitante no restringe la visibilidad de la solicitud para otros usuarios activos. Los permisos de acción continúan siendo independientes.
 
 La solicitud simple contiene una opción/cotización. `MULTI_QUOTE` mantiene la selección de cotización separada conceptualmente del proceso de aprobación.
 
@@ -284,7 +312,7 @@ Antes de retirar datos: respaldo, inventario, migración versionada, validación
 
 Como mínimo:
 
-- default deny para usuarios operativos;
+- default deny para capacidades mutables; `requests:read` es la excepción base explícita para usuarios activos;
 - backend authoritative;
 - rate limiting diferenciado;
 - CORS restrictivo;
@@ -294,7 +322,7 @@ Como mínimo:
 - paginación backend para colecciones crecientes, default 25 y máximo 100;
 - evitar N+1;
 - pool y query timeout configurables antes de escalar;
-- una futura capa de scope debe limitar permisos por organización/área/recurso sin reutilizar cargos como autorización;
+- una futura capa de scope puede limitar recursos si el producto incorpora organizaciones/tenancy, pero dentro de una misma organización el baseline actual permite seguimiento compartido de solicitudes;
 - la elevación de la cuenta técnica fuera de producción debe depender de `ENVIRONMENT`, nunca de email/nombre/cargo;
 - secretos de correo deben permanecer exclusivamente en configuración backend y no exponerse a Vite/Vercel.
 
@@ -302,6 +330,10 @@ Como mínimo:
 
 Los cambios incluyen pruebas proporcionales al riesgo. Para IAM son obligatorias pruebas positivas y negativas de:
 
+- permiso base `requests:read` para cualquier usuario activo sin rol/grupo/permisos asignados;
+- un usuario con solo lectura puede abrir dashboard y consultar solicitudes de otros usuarios;
+- la lectura base no concede crear, aprobar, cerrar ni configurar;
+- `users_with_permission('requests:read')` incluye a todos los usuarios activos;
 - permisos directos;
 - herencia Grupo → Rol → Permiso;
 - cuenta técnica con todos los permisos activos en no producción;
@@ -363,6 +395,8 @@ Una feature está terminada cuando:
 
 - comportamiento implementado coincide con requisitos y criterios;
 - autorización no depende de nombres organizacionales hardcodeados;
+- `requests:read` permanece disponible para todo usuario activo y no se filtra por identidad del solicitante;
+- dashboard y seguimiento compartido están protegidos por pruebas cuando se modifica acceso/solicitudes;
 - la política de cuenta técnica está probada en producción y no producción;
 - invariantes de corrección están protegidos en backend y probados;
 - el editor de corrección deriva su tipo de la solicitud y no conserva la pestaña de creación previa;
