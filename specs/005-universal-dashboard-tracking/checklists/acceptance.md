@@ -1,7 +1,7 @@
 # Criterios de aceptación — Dashboard y seguimiento universal
 
 **Feature:** 005  
-**Constitución:** 2.4.0
+**Constitución:** 2.5.0
 
 ## Acceso base
 
@@ -19,6 +19,33 @@
 - [x] `pending_my_action` no presenta cierres a usuarios sin `requests:close`.
 - [x] `pending_my_action` no presenta aprobaciones/votaciones a usuarios sin `requests:approve`.
 - [x] Las votaciones personales se determinan mediante invitaciones activas de la ronda.
+- [x] Solicitudes propias en `NEEDS_REVISION` aparecen como `CORRECT_REQUEST` solo si el usuario mantiene `requests:create`.
+- [x] `pending_my_action` cuenta acciones concretas vigentes, no permisos abstractos.
+- [x] Cada `pending_item` devuelve los códigos de acción correspondientes al usuario actual.
+
+## Modal de acciones pendientes
+
+- [x] Seleccionar una fila de **Acciones pendientes** ejecuta `openAction(item)` y no el handler genérico de **Ver todas**.
+- [x] **Ver todas** conserva navegación a Solicitudes.
+- [x] El modal consulta `GET /api/expenses/{request_id}/my-actions` al abrirse.
+- [x] El backend revalida las acciones contra permisos + asignación/estado vigente.
+- [x] El modal soporta `APPROVAL_DECISION`.
+- [x] El modal soporta `QUOTATION_VOTE`.
+- [x] El modal soporta `CLOSE_REQUEST`.
+- [x] El modal soporta `CORRECT_REQUEST` con acceso explícito al editor de Solicitudes.
+- [x] Aprobación contextual no expone el token bearer usado por links de correo.
+- [x] Aprobación contextual permite Aprobar / Rechazar / Solicitar corrección.
+- [x] Votación contextual muestra opciones y soportes antes de votar.
+- [x] Cierre contextual permite cargar factura y notas.
+- [x] Después de una mutación se recargan dashboard y detalle contextual.
+- [x] Si otra sesión/canal ya atendió la tarea, el modal puede quedar sin acciones y lo informa explícitamente.
+- [x] El modal usa `role=dialog`, `aria-modal=true` y soporta cierre con Escape.
+- [ ] Validar manualmente en Docker que hacer clic en una aprobación pendiente abra el modal sin navegar a Solicitudes.
+- [ ] Validar manualmente Aprobar desde el modal y confirmar que la acción desaparezca/cambie.
+- [ ] Validar manualmente Rechazar desde el modal.
+- [ ] Validar manualmente Solicitar corrección desde el modal con comentario requerido por el motor.
+- [ ] Validar manualmente una votación MULTI_QUOTE desde el modal.
+- [ ] Validar manualmente carga de factura/cierre desde el modal con usuario `requests:close`.
 
 ## Seguimiento de solicitudes
 
@@ -59,6 +86,8 @@
 - [x] Inicio está disponible para usuarios autenticados.
 - [x] Solicitudes está disponible para usuarios autenticados.
 - [x] `can_view` se deriva temporalmente desde `requests:read` y resulta `true` para usuarios activos.
+- [x] `HomeDashboard` dispone de implementación modular en `frontend/src/home-dashboard.jsx`.
+- [x] Vite elimina la implementación legacy completa de `HomeDashboard` durante build en vez de parchear handlers internos.
 - [ ] Validar manualmente con un usuario sin roles que Inicio carga sin error.
 - [ ] Validar manualmente que ese usuario vea una solicitud creada por otro usuario.
 - [ ] Validar manualmente que ese usuario no pueda crear, aprobar o cerrar si no recibe esos permisos.
@@ -67,6 +96,8 @@
 
 - [x] Existe `test_universal_tracking.py`.
 - [x] Existe `test_request_cancellation.py`.
+- [x] Existe `test_pending_actions.py`.
+- [x] Existe `test_frontend_dashboard_contract.py`.
 - [x] Prueba baseline de lectura sin asignaciones.
 - [x] Prueba lectura de solicitud de otro usuario.
 - [x] Prueba dashboard universal.
@@ -76,20 +107,27 @@
 - [x] Prueba cancelación propia en `QUOTATION_VOTING`.
 - [x] Prueba cancelación por cuenta técnica.
 - [x] Prueba negativa de cancelación de solicitud cerrada.
-- [ ] CI del head final completamente verde.
+- [x] Prueba de acción de aprobación contextual y mutación autenticada.
+- [x] Prueba de acción de votación contextual.
+- [x] Prueba de corrección/cierre personalizados por usuario.
+- [x] Contrato frontend exige modal y revalidación posterior a mutación.
+- [ ] Suite backend completa ejecutada localmente en el head final.
+- [ ] `npm run build` ejecutado localmente en el head final.
+- [ ] Docker build/smoke ejecutado localmente en el head final.
+- [ ] CI remoto verde cuando vuelva a existir cuota de GitHub Actions.
 
 ## Documentación
 
-- [x] Constitución 2.4.0 revisada; no requiere bump adicional porque la regla de cancelación concreta el principio existente de backend authoritative sin alterar el baseline universal.
+- [x] Constitución 2.5.0 revisada; no requiere bump porque el principio backend-authoritative ya cubre la fuente de verdad de acciones y el modal es un contrato UX de Feature 005.
 - [x] Spec funcional actualizada.
 - [x] Plan técnico actualizado.
 - [x] Criterios de aceptación actualizados.
-- [x] README actualizado.
-- [x] PROMPT_RECONSTRUCCION actualizado.
-- [x] IAM_MODEL actualizado.
-- [x] FASTAPI_ARCHITECTURE actualizado.
-- [x] Documentación de seguimiento creada/actualizada.
-- [x] HISTORY actualizado.
-- [x] CHANGELOG actualizado.
-- [x] docs/README actualizado.
-- [ ] PR actualizado con contrato final y evidencia CI.
+- [ ] README actualizado con el modal contextual.
+- [ ] PROMPT_RECONSTRUCCION actualizado con el modal contextual.
+- [ ] IAM_MODEL revisado/actualizado si corresponde.
+- [ ] FASTAPI_ARCHITECTURE actualizado con `my_actions.py` / `pending_action_service.py`.
+- [ ] `docs/REQUEST_TRACKING.md` actualizado.
+- [ ] HISTORY actualizado.
+- [ ] CHANGELOG actualizado.
+- [ ] docs/README actualizado.
+- [ ] PR #9 actualizado con contrato final y nota de cuota agotada de Actions.
