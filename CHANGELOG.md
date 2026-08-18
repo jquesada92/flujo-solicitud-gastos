@@ -12,6 +12,7 @@
 - `backend/tests/test_frontend_dashboard_contract.py`.
 
 ### Changed
+- Los KPIs superiores **Acciones que requieren mi atención**, **Solicitudes en proceso** y **Cerradas en 24 horas** son informativos: se renderizan como contenido, sin `onClick` ni navegación.
 - **Inicio → Acciones pendientes** deja de navegar genéricamente a Solicitudes al seleccionar una fila.
 - Seleccionar una fila abre un modal y vuelve a consultar al backend las acciones todavía vigentes para el usuario autenticado.
 - **Ver todas** conserva navegación a Solicitudes.
@@ -26,6 +27,7 @@
 - El backend vuelve a validar la acción aunque la tarjeta del Dashboard haya quedado desactualizada por otra sesión/canal.
 
 ### Testing / CI
+- `test_frontend_dashboard_contract.py` falla si los KPIs superiores vuelven a implementarse como botones interactivos.
 - La cuota de GitHub Actions se agotó durante el PR; los runs bloqueados no se consideran CI verde.
 - Hasta recuperar cuota, suite backend, `npm run build` y Docker build/smoke son gates locales obligatorios antes de merge/deploy.
 
