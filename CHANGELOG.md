@@ -1,5 +1,50 @@
 # Changelog
 
+## 2026-08-18 — Permisos heredados por Cargo y Grupo
+
+### Added
+- Nueva relación persistente `position_roles` para `Cargo/Posición → Rol`.
+- `PositionRole` en el modelo SQLAlchemy IAM.
+- `users_with_permission()` reconoce permisos heredados por Cargos activos además de Grupos, Roles directos y permisos directos.
+- `permission_sources()` muestra orígenes como `Cargo Tesorero → Aprobador`.
+- `backend/app/api/position_access.py` expone asignación/quita de Roles por Cargo.
+- `PositionOut.role_ids` para administrar herencia desde la UI.
+- **Configuración → Accesos → Cargos** permite seleccionar Roles heredados.
+- `backend/tests/test_position_role_inheritance.py` cubre Cargo/Grupo → Rol → Permiso y Cargo inactivo.
+- Feature 006 con spec, plan y criterios de aceptación.
+
+### Changed
+- El modelo IAM operativo pasa a:
+  ```text
+  Usuario → Grupo ─────────→ Rol → Permiso
+         ↘ Cargo/Posición ─→ Rol → Permiso
+         ↘ Rol directo ─────────→ Permiso
+         ↘ Permiso directo
+  ```
+- Cargo deja de ser exclusivamente descriptivo: puede heredar Roles configurables. **El nombre del Cargo sigue sin ser autoridad de autorización.**
+- El mismo Rol puede reutilizarse en múltiples Cargos y Grupos.
+- La población de aprobación/votación reconoce `requests:approve` independientemente de si proviene de Cargo, Grupo, Rol directo o permiso directo.
+- Constitución actualizada a 2.5.0.
+- La consola IAM es la pantalla autoritativa de acceso; `AccessProfile/can_*` legacy quedan solo como compatibilidad/migración.
+
+### Fixed
+- Se corrige la brecha productiva donde Tesorero/Vicepresidente podían aparecer con **Aprobar** en la pantalla legacy pero no formar parte de `users_with_permission('requests:approve')`.
+- La configuración existente de cargos aprobadores se puede convertir al IAM canónico sin volver a usar `can_approve` como autoridad runtime.
+
+### Migrations
+- Nueva `20260818_0004_position_role_inheritance.py`.
+- Crea `position_roles`.
+- Importa una sola vez `access_profiles.can_*` y `users.title` hacia `Position`, `Role`, `RolePermission`, `PositionRole` y `UserPosition`.
+- Traduce `can_approve=true` legacy a un Rol con `requests:approve`.
+- Excluye `system_accounts` de asignaciones organizacionales migradas.
+- La cadena Alembic pasa a `0000 → 0001 → 0002 → 0003 → 0004`.
+
+### Compatibility / Technical debt
+- `AccessProfile`, `BOARD_CODES`, `users.title` y `can_*` permanecen físicamente de forma transitoria, pero no son autoridad runtime.
+- La pantalla legacy que mezcla Cargo y permisos debe retirarse o convertirse en compatibilidad de solo lectura para evitar nuevas divergencias.
+
+---
+
 ## 2026-08-17 — Seguimiento universal y cancelación por solicitante/Admin del sistema
 
 ### Added
@@ -22,11 +67,11 @@
 ### Fixed
 - Una solicitud MULTI_QUOTE abierta en `QUOTATION_VOTING` puede cancelarse por su solicitante original o por el Administrador del sistema.
 - Se retiró un import transitorio a un bridge legacy inexistente que apareció durante la investigación.
-- La evidencia de producción mostró que Tesorero/Vicepresidente ya tenían permiso efectivo de aprobación, por lo que se descartó un backfill IAM innecesario.
+- El diagnóstico de aprobadores fue refinado posteriormente por Feature 006: la pantalla observada era legacy y reflejaba `can_approve`, no necesariamente el permiso IAM efectivo `requests:approve`.
 
 ### Migrations
-- Feature 005 no agrega migración de esquema.
-- La cadena Alembic permanece `0000 → 0001 → 0002 → 0003`.
+- Feature 005 por sí sola no agregaba migración de esquema.
+- Feature 006 agrega posteriormente `0004` para la herencia por Cargo y la conversión de configuración legacy.
 
 ---
 
@@ -205,7 +250,7 @@
 - `20260817_0001_iam_foundation.py` crea IAM y migra flags legacy a permisos como operación única de compatibilidad.
 - `20260817_0002_system_accounts.py` identifica cuentas técnicas existentes.
 - `20260817_0003_backfill_multi_quote_request_type.py` repara el tipo de solicitudes MULTI_QUOTE históricas.
-- La cadena Alembic es lineal: `0000 → 0001 → 0002 → 0003`.
+- La cadena de esta feature quedó en `0000 → 0001 → 0002 → 0003`; Feature 006 agrega posteriormente `0004`.
 - `scripts.bootstrap_admin` crea/asocia idempotentemente la cuenta técnica fuera del lifespan.
 - El smoke test contra PostgreSQL/Neon real continúa siendo requisito previo al despliegue productivo.
 
