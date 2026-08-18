@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-08-17 — ExpenseForm modular para correcciones MULTI_QUOTE
+
+### Fixed
+- Una corrección MULTI_QUOTE ya no depende de sustituciones granulares sobre el formulario sencillo legacy.
+- `frontend/src/expense-form.jsx` es ahora la implementación canónica del formulario de solicitudes.
+- `resolveRequestType(draft)` reconoce `MULTI_QUOTE` por `request_type`, estado `QUOTATION_VOTING` o dos/más `quotation_options`.
+- `effectiveRequestType` gobierna layout, validaciones, payload y uploads durante una corrección.
+- Un draft MULTI_QUOTE renderiza directamente **Opciones para votación** y no el layout SIMPLE.
+- Se restauran proveedor, monto, URL, observaciones y metadata de soportes existentes por opción.
+
+### Changed
+- `vite.config.js` deja de parchear condiciones internas de `ExpenseForm`; durante la transición importa el componente modular y elimina del bundle la definición legacy completa.
+- Se mantiene una `key` por solicitud/flujo para forzar remount entre correcciones.
+
+### Testing
+- `test_frontend_revision_contract.py` ahora verifica el componente modular, inferencia MULTI_QUOTE, restauración de soportes y extracción del formulario legacy durante build.
+
+---
+
 ## 2026-08-17 — Corrección MULTI_QUOTE usa tipo efectivo autoritativo
 
 ### Fixed
@@ -9,7 +28,7 @@
 - La UI muestra el tipo de solicitud corregida como dato de solo lectura y no ofrece cambiar SIMPLE ↔ MULTI_QUOTE durante una corrección.
 
 ### Added
-- `backend/tests/test_frontend_revision_contract.py` protege el contrato frontend temporal mientras `ExpenseForm` permanezca en `main.jsx`.
+- `backend/tests/test_frontend_revision_contract.py` protege el contrato frontend durante la transición del monolito.
 
 ---
 
@@ -71,7 +90,6 @@
 - `backend/app/api/revision_actions.py` como ruta canónica de correcciones registrada antes del router legacy.
 - `backend/tests/test_multi_quote_revision.py` con regresión HTTP de preservación/reparación de tipo, evidencia y ronda.
 - Test específico de fila legacy con `request_type=SIMPLE` y evidencia MULTI_QUOTE.
-- `frontend/vite.config.js` con transform temporal y estricto que fuerza aislamiento/remount del estado de corrección.
 - `20260817_0003_backfill_multi_quote_request_type.py` para reparar solicitudes históricas inconsistentes.
 - `specs/003-request-correction-invariants/`.
 - `docs/REQUEST_CORRECTIONS.md`.
@@ -88,7 +106,7 @@
 - `0003` cambia a `MULTI_QUOTE` filas con `QUOTATION_VOTING` o dos/más opciones que aún tengan el default `SIMPLE`.
 
 ### Compatibility / Technical debt
-- El transform Vite es temporal y debe retirarse cuando `ExpenseForm` salga de `frontend/src/main.jsx`.
+- `modularExpenseFormPlugin` es temporal y debe retirarse cuando `main.jsx` importe directamente `frontend/src/expense-form.jsx`.
 - Editar estructuralmente una ronda (agregar/eliminar opciones con evidencia/versionado explícito) requiere una feature separada.
 
 ---
@@ -164,7 +182,7 @@
 ### Compatibility / Technical debt
 - `UserRole`, `title` y `can_*` permanecen temporalmente como metadatos/puente; no son autoridad de acceso.
 - `/api/users` legacy permanece mientras migra el frontend operacional.
-- `frontend/src/main.jsx` continúa monolítico.
+- `frontend/src/main.jsx` continúa monolítico en otras áreas.
 - El monolito todavía contiene bypasses visuales legacy `user.role === "ADMIN"` y `canClose={true}`; el backend no confía en ellos y deben migrarse a `permission_codes`.
 - `domain-normalization.js` sigue temporalmente.
 - El refactor no declara corregida la fórmula legacy de quorum/mayoría ni la regla de empate MULTI_QUOTE.
