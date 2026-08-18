@@ -2,7 +2,7 @@
 
 ## Gobierno y especificaciones
 
-- [Constitución del proyecto](../.specify/memory/constitution.md) — versión vigente 2.3.3.
+- [Constitución del proyecto](../.specify/memory/constitution.md) — versión vigente 2.4.0.
 - [Política de sincronización documental](DOCUMENTATION_POLICY.md) — los defectos de estado UI que pueden cambiar semántica de negocio se tratan como cambios funcionales.
 - [Feature 001 — normalización de dominio](../specs/001-domain-normalization/spec.md)
 - [Feature 001 — plan técnico](../specs/001-domain-normalization/plan.md)
@@ -16,13 +16,17 @@
 - [Feature 004 — correo por ambiente](../specs/004-email-delivery-by-environment/spec.md)
 - [Feature 004 — plan técnico](../specs/004-email-delivery-by-environment/plan.md)
 - [Feature 004 — criterios](../specs/004-email-delivery-by-environment/checklists/acceptance.md)
+- [Feature 005 — dashboard y seguimiento universal](../specs/005-universal-dashboard-tracking/spec.md)
+- [Feature 005 — plan técnico](../specs/005-universal-dashboard-tracking/plan.md)
+- [Feature 005 — criterios](../specs/005-universal-dashboard-tracking/checklists/acceptance.md)
 
 ## Dominio funcional y seguridad
 
-- [Modelo IAM configurable](IAM_MODEL.md) — incluye política `TECHNICAL_ADMIN` por ambiente.
+- [Modelo IAM configurable](IAM_MODEL.md) — incluye baseline `requests:read`, política `TECHNICAL_ADMIN` por ambiente y cancelación por propiedad/cuenta técnica.
 - [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md) — incluye separación `is_production_environment` / endurecimiento de runtime, rutas canónicas y Alembic `0003`.
 - [Modelo Área + Categoría](CLASSIFICATION_MODEL.md)
 - [Correcciones y reenvío](REQUEST_CORRECTIONS.md) — invariantes SIMPLE/MULTI_QUOTE, aislamiento del estado de pestañas, compatibilidad legacy y reinicio de rondas.
+- [Seguimiento universal y cancelación](REQUEST_TRACKING.md) — lectura compartida, `can_cancel` y regla solicitante/Admin del sistema.
 - [Configuración de correo](EMAIL_CONFIGURATION.md) — Google SMTP en local/desarrollo y Brevo en producción.
 - [Terminología funcional](TERMINOLOGY.md)
 - [Historial funcional y técnico](HISTORY.md)
@@ -49,7 +53,7 @@ Cadena Alembic actual:
 0000 → 0001 → 0002 → 0003
 ```
 
-`0003` repara filas históricas MULTI_QUOTE que conservaron un `request_type=SIMPLE` incorrecto.
+`0003` repara filas históricas MULTI_QUOTE que conservaron un `request_type=SIMPLE` incorrecto. Feature 005 no agrega migración de esquema.
 
 ## Política de correo por ambiente
 
@@ -89,15 +93,33 @@ Las credenciales SMTP/Brevo pertenecen exclusivamente al backend y nunca al fron
 
 ```text
 ENVIRONMENT=production
-→ TECHNICAL_ADMIN: config:manage + requests:read
+→ TECHNICAL_ADMIN permisos IAM: config:manage + requests:read
+→ puede cancelar solicitudes abiertas como excepción explícita de ciclo de vida
 
 ENVIRONMENT!=production
 → TECHNICAL_ADMIN: todos los permisos activos para testing
 ```
 
-Esto permite usar el Administrador del sistema para probar crear/aprobar/votar/cerrar en local/dev/test/staging/preview, manteniendo segregación financiera en producción.
+En producción la cuenta técnica no crea, aprueba, vota ni cierra. La cancelación administrativa se autoriza por `system_accounts`, no mediante un permiso financiero.
 
 `RENDER=true` no sustituye a `ENVIRONMENT=production` para esta política; solo `ENVIRONMENT` decide la autorización funcional productiva.
+
+## Seguimiento universal
+
+Todo usuario activo recibe `requests:read` como baseline y puede abrir Inicio/Dashboard y Solicitudes para dar seguimiento.
+
+La lectura no concede acciones. En particular, ver una solicitud ajena no autoriza modificarla ni cancelarla.
+
+Para cancelación:
+
+```text
+can_cancel = solicitud abierta
+             AND (solicitante original OR system_accounts)
+```
+
+Estados cancelables: `QUOTATION_VOTING`, `SUBMITTED`, `PENDING_APPROVAL`, `NEEDS_REVISION`, `APPROVED`.
+
+Estados no cancelables: `CLOSED`, `CANCELLED`, `REJECTED`.
 
 ## Invariant de correcciones
 
@@ -117,9 +139,10 @@ Usuario → Grupo → Rol → Permiso
        ↘ Rol directo
        ↘ Permiso directo
        ↘ Cargo (descriptivo)
+       ↘ Baseline requests:read
 ```
 
-Para usuarios operativos, autorización depende de permisos efectivos. Cargos, grupos y roles no autorizan por su nombre. La cuenta técnica aplica además la política ambiental descrita arriba.
+Para usuarios operativos, autorización depende de permisos efectivos y reglas explícitas por recurso. Cargos, grupos y roles no autorizan por su nombre. La cuenta técnica aplica además la política ambiental descrita arriba.
 
 Clasificación de solicitudes:
 
@@ -138,6 +161,7 @@ Clasificación de solicitudes:
 - Área para unidad/contexto organizacional del gasto.
 - Categoría para naturaleza del gasto.
 - Corrección / Corregir y reenviar para editar una solicitud sin cambiar su tipo SIMPLE/MULTI_QUOTE.
+- Cancelar solicitud para finalizar una solicitud abierta por el solicitante original o el Administrador del sistema.
 
 ## Regla de mantenimiento
 
