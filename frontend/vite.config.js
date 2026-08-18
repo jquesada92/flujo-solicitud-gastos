@@ -94,6 +94,58 @@ function injectClosureDelegationButton(source) {
   );
 }
 
+function replaceConfigurationAccess(source) {
+  let next = replaceRequired(
+    source,
+    'canConfigure = user.role === "ADMIN" || user.can_configure,',
+    'isSystemAdmin = user.is_system_account === true,\n    canManageAreas = isSystemAdmin || (user.permission_codes || []).includes("areas:manage"),\n    canConfigure = isSystemAdmin,',
+    "system administration capability",
+  );
+  next = replaceRequired(
+    next,
+    'canEditPeople = user.role === "ADMIN" || user.person_type === "ADMINISTRATOR",',
+    'canEditPeople = isSystemAdmin,',
+    "people administration capability",
+  );
+  next = replaceRequired(
+    next,
+    'canManagePeople = canConfigure || canEditPeople || isBoardMember,',
+    'canManagePeople = isSystemAdmin || canManageAreas,',
+    "configuration menu capability",
+  );
+  next = replaceRequired(
+    next,
+    'canAccessOrganization = canConfigure || isBoardMember;',
+    'canAccessOrganization = isSystemAdmin;',
+    "organization capability",
+  );
+  next = replaceRequired(
+    next,
+    '{configOpen && <div className="config-menu-items">',
+    '{configOpen && <div className="config-menu-items" data-system-admin={isSystemAdmin ? "true" : "false"}>',
+    "configuration menu marker",
+  );
+  next = replaceRequired(
+    next,
+    '<button onClick={() => navigateTo("people")}>Personas</button>',
+    '{isSystemAdmin && <button onClick={() => navigateTo("people")}>Personas</button>}',
+    "users menu visibility",
+  );
+  next = replaceRequired(
+    next,
+    '{canConfigure && <button onClick={() => navigateTo("categories")}>Categorías</button>}',
+    '{canManageAreas && <button onClick={() => navigateTo("categories")}>Categorías</button>}',
+    "areas menu visibility",
+  );
+  next = replaceRequired(
+    next,
+    'tab === "categories" && canConfigure ?',
+    'tab === "categories" && canManageAreas ?',
+    "areas page capability",
+  );
+  return next;
+}
+
 function modularExpenseFormPlugin() {
   return {
     name: "modular-expense-form",
@@ -127,15 +179,13 @@ function modularExpenseFormPlugin() {
 
       next = `${next.slice(0, dashboardStart)}${next.slice(dashboardEnd)}`;
 
-      // ExpenseTable still lives in the legacy monolith. Keep only capability
-      // bridges here until that table is modularized; authorization remains in
-      // the backend and the transformed UI consumes per-request booleans.
       next = replaceResourceActionColumn(next);
       next = replaceCancellationVisibility(next);
       next = replaceCorrectionVisibility(next);
       next = replaceClosureVisibility(next);
       next = injectClosureDelegationButton(next);
       next = replaceCorrectionFormAvailability(next);
+      next = replaceConfigurationAccess(next);
 
       return { code: next, map: null };
     },
