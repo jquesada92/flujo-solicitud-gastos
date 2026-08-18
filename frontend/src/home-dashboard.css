@@ -1,0 +1,255 @@
+.pending-action-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(3px);
+}
+
+.pending-action-modal {
+  width: min(920px, 100%);
+  max-height: min(88vh, 900px);
+  overflow: auto;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.28);
+  padding: 24px;
+}
+
+.pending-action-header,
+.pending-quote-heading,
+.pending-action-buttons,
+.pending-support-list,
+.pending-supports {
+  display: flex;
+  gap: 12px;
+}
+
+.pending-action-header {
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.pending-action-header h2,
+.pending-action-block h3 {
+  margin: 0;
+}
+
+.pending-action-eyebrow {
+  margin: 0 0 5px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: #64748b;
+}
+
+.pending-action-muted {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.pending-action-close {
+  border: 0;
+  background: #f1f5f9;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.pending-request-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0 14px;
+}
+
+.pending-request-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.pending-request-summary span {
+  color: #64748b;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.pending-request-description {
+  margin: 0 0 18px;
+  white-space: pre-wrap;
+}
+
+.pending-action-block {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid #dbe3ef;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.pending-action-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pending-action-field textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.pending-action-field textarea,
+.pending-action-field input[type="file"] {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.pending-action-buttons {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.pending-action-primary,
+.pending-action-danger,
+.pending-action-review {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pending-action-primary {
+  background: #0f172a;
+  color: #fff;
+}
+
+.pending-action-danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.pending-action-review {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.pending-action-primary:disabled,
+.pending-action-danger:disabled,
+.pending-action-review:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pending-action-state,
+.pending-action-error,
+.pending-action-success {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.pending-action-state {
+  background: #f8fafc;
+  color: #475569;
+}
+
+.pending-action-error {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.pending-action-success {
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.pending-supports {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.pending-support-list {
+  flex-wrap: wrap;
+}
+
+.pending-support-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #1d4ed8;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.pending-quote-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.pending-quote-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #dbe3ef;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.pending-quote-heading {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.pending-quote-card .pending-action-primary {
+  margin-top: auto;
+  align-self: flex-end;
+}
+
+@media (max-width: 760px) {
+  .pending-action-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .pending-action-modal {
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 20px 20px 0 0;
+    padding: 18px;
+  }
+
+  .pending-request-summary,
+  .pending-quote-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pending-action-buttons > button {
+    flex: 1 1 100%;
+  }
+}
