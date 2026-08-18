@@ -17,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 from app.application import create_app
 from app.core.database import Base, get_db
 from app.core.security import create_token, hash_password
+from app.models.closure import ExpenseClosureDelegation
 from app.models.entities import (
     Approval,
     ApprovalStatus,
@@ -77,6 +78,8 @@ class PendingActionTests(unittest.TestCase):
             self._grant(db, self.requester, permissions['requests:create'])
             self._grant(db, self.approver, permissions['requests:approve'])
             self._grant(db, self.reviewer_two, permissions['requests:approve'])
+            # Kept intentionally: requests:close is legacy compatibility and no
+            # longer creates a closure task without per-request ownership/delegation.
             self._grant(db, self.closer, permissions['requests:close'])
             db.commit()
 
@@ -254,21 +257,34 @@ class PendingActionTests(unittest.TestCase):
         self.assertEqual([action['code'] for action in detail.json()['actions']], ['QUOTATION_VOTE'])
         self.assertEqual(len(detail.json()['request']['quotation_options']), 2)
 
-    def test_requester_revision_and_closer_actions_are_user_specific(self):
+    def test_requester_and_delegate_receive_closure_task_but_global_close_permission_does_not(self):
         with self.Session() as db:
             self._expense(db, 'REQ-REVISION', ExpenseStatus.NEEDS_REVISION, self.requester.email)
-            self._expense(db, 'REQ-CLOSE', ExpenseStatus.APPROVED, self.requester.email)
+            closable = self._expense(db, 'REQ-CLOSE', ExpenseStatus.APPROVED, self.requester.email)
             db.commit()
 
         requester = self.client.get('/api/expenses/dashboard', headers=self.auth(self.requester_token))
         requester_items = {item['request_id']: item['actions'] for item in requester.json()['pending_items']}
         self.assertEqual(requester_items['REQ-REVISION'], ['CORRECT_REQUEST'])
-        self.assertNotIn('REQ-CLOSE', requester_items)
+        self.assertEqual(requester_items['REQ-CLOSE'], ['CLOSE_REQUEST'])
 
-        closer = self.client.get('/api/expenses/dashboard', headers=self.auth(self.closer_token))
-        closer_items = {item['request_id']: item['actions'] for item in closer.json()['pending_items']}
-        self.assertEqual(closer_items['REQ-CLOSE'], ['CLOSE_REQUEST'])
-        self.assertNotIn('REQ-REVISION', closer_items)
+        closer_before_delegation = self.client.get('/api/expenses/dashboard', headers=self.auth(self.closer_token))
+        closer_before_items = {item['request_id']: item['actions'] for item in closer_before_delegation.json()['pending_items']}
+        self.assertNotIn('REQ-CLOSE', closer_before_items)
+
+        with self.Session() as db:
+            db.add(ExpenseClosureDelegation(
+                expense_id=closable.id,
+                delegate_user_id=self.closer.id,
+                delegated_by_user_id=self.requester.id,
+                delegated_by_email=self.requester.email,
+            ))
+            db.commit()
+
+        closer_after_delegation = self.client.get('/api/expenses/dashboard', headers=self.auth(self.closer_token))
+        closer_after_items = {item['request_id']: item['actions'] for item in closer_after_delegation.json()['pending_items']}
+        self.assertEqual(closer_after_items['REQ-CLOSE'], ['CLOSE_REQUEST'])
+        self.assertNotIn('REQ-REVISION', closer_after_items)
 
 
 if __name__ == '__main__':
