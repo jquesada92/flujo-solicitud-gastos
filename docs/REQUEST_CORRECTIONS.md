@@ -13,7 +13,7 @@ Cambiar deliberadamente entre tipos no forma parte de una corrección y requerir
 
 ## La pestaña previa no manda
 
-Las pestañas **Solicitud sencilla** y **Múltiples cotizaciones** pertenecen al modo de creación. Al pulsar **Corregir / reenviar**, el editor debe descartar ese estado y derivar su tipo desde la solicitud seleccionada.
+Las pestañas **Solicitud sencilla** y **Múltiples cotizaciones** pertenecen únicamente al modo de creación. Al pulsar **Corregir / reenviar**, el editor descarta ese estado y deriva su tipo desde la solicitud seleccionada.
 
 Por tanto, estos dos recorridos deben producir exactamente el mismo resultado:
 
@@ -29,52 +29,78 @@ Pestaña MULTI_QUOTE activa
 → editor MULTI_QUOTE
 ```
 
-La corrección no puede depender de qué pestaña estaba seleccionada antes del clic.
+## Formulario canónico
 
-## Tipo efectivo durante la corrección
-
-La reproducción manual demostró que no basta con ejecutar `setRequestType()` al hidratar el draft. El formulario legacy contiene múltiples decisiones de render, validación y payload que consultaban directamente ese estado React.
-
-Por eso se define un tipo efectivo:
+La implementación mantenible vive en:
 
 ```text
-si existe draft:
-    effectiveRequestType = tipo canónico/inferido del draft
-si es nueva solicitud:
-    effectiveRequestType = pestaña seleccionada
+frontend/src/expense-form.jsx
 ```
 
-Durante una corrección, **`effectiveRequestType` es la única autoridad frontend** para:
+El componente calcula un único tipo efectivo:
 
-- decidir si se muestran campos SIMPLE o el editor MULTI_QUOTE;
-- validar soportes;
-- construir `request_type` del payload;
-- construir `quotation_options`;
-- cargar archivos asociados al tipo correcto.
+```text
+effectiveRequestType = draft ? resolveRequestType(draft) : requestType
+```
 
-El estado React `requestType` puede seguir existiendo temporalmente por compatibilidad con el formulario monolítico, pero no puede gobernar una corrección.
+Durante una corrección ese valor, y no la pestaña ni un estado React previo, gobierna:
 
-La UI muestra además el tipo real como dato de solo lectura:
+- layout visible;
+- validaciones;
+- payload enviado al backend;
+- campos SIMPLE;
+- opciones MULTI_QUOTE;
+- carga posterior de soportes.
+
+`resolveRequestType(draft)` considera MULTI_QUOTE si se cumple cualquiera de estas condiciones:
+
+```text
+request_type == MULTI_QUOTE
+OR status == QUOTATION_VOTING
+OR existen 2 o más quotation_options
+```
+
+## Cómo debe verse una corrección MULTI_QUOTE
+
+Debe aparecer explícitamente:
 
 ```text
 Tipo de solicitud: Múltiples cotizaciones
-El tipo no cambia durante una corrección.
 ```
 
-No se muestra un selector de tipo durante la corrección porque convertir SIMPLE ↔ MULTI_QUOTE no forma parte de esta acción.
+seguido del bloque:
+
+```text
+Opciones para votación
+  Opción 1
+  Opción 2
+  ...
+```
+
+Cada opción muestra proveedor, monto, URL, archivo y observaciones.
+
+No debe aparecer el formulario sencillo como estructura principal con:
+
+- un único `Monto (USD)` de solicitud;
+- un único `Proveedor`;
+- un único `URL del producto o servicio`;
+- un único input de `Cotización`.
+
+Los montos/proveedores de una MULTI_QUOTE pertenecen a cada opción de cotización.
 
 ## SIMPLE
 
-Al corregir una solicitud sencilla se pueden actualizar sus datos de negocio. Los soportes existentes se conservan. Si ya existe evidencia suficiente, el flujo de aprobación puede reiniciarse sin exigir que el usuario vuelva a cargar el mismo archivo.
+Al corregir una solicitud sencilla se pueden actualizar sus datos de negocio. Los soportes existentes se conservan. Si ya existe evidencia suficiente, el flujo de aprobación puede reiniciarse sin exigir volver a cargar el mismo archivo.
 
 ## MULTI_QUOTE
 
 Al corregir una solicitud de múltiples cotizaciones:
 
-- el formulario vuelve a abrir en modo **Múltiples cotizaciones** aunque antes estuviera activa la pestaña SIMPLE;
+- el formulario abre en modo **Múltiples cotizaciones** aunque antes estuviera activa la pestaña SIMPLE;
 - se restauran las opciones existentes;
 - se pueden editar proveedor, monto, URL y observaciones;
 - los soportes ya cargados siguen vinculados a sus opciones;
+- la UI indica `Soporte existente conservado` cuando corresponde;
 - por ahora se conserva la misma cantidad de opciones;
 - el `flow_id` cambia;
 - los votos vigentes de la ronda anterior se invalidan;
@@ -86,17 +112,7 @@ Los eventos históricos previos se conservan para trazabilidad.
 
 ## Compatibilidad con datos históricos
 
-Algunos registros antiguos pueden contener `request_type=SIMPLE` por el default original aunque realmente sean flujos múltiples.
-
-Se considera evidencia durable de `MULTI_QUOTE` cualquiera de las siguientes condiciones:
-
-```text
-request_type == MULTI_QUOTE
-OR status == QUOTATION_VOTING
-OR existen 2 o más quotation_options
-```
-
-La migración Alembic:
+Algunos registros antiguos pueden contener `request_type=SIMPLE` por el default original aunque realmente sean flujos múltiples. La migración:
 
 ```text
 20260817_0003_backfill_multi_quote_request_type.py
@@ -104,32 +120,34 @@ La migración Alembic:
 
 repara esas filas persistidas. El endpoint canónico de corrección aplica además la misma inferencia defensiva mientras dure la transición.
 
-## Por qué no se permite cambiar la cantidad de opciones todavía
-
-Quitar una cotización que ya tiene documentos o votos implica decisiones de versionado y evidencia. Esta feature evita eliminar evidencia de forma implícita. La edición estructural de una ronda debe especificarse separadamente antes de implementarse.
-
 ## Defensa backend
 
 La API canónica compara el payload contra el **tipo canónico** de la solicitud, no contra el estado visual del formulario.
 
 Si el usuario intenta convertir realmente una MULTI_QUOTE en SIMPLE o viceversa durante `resubmit`, devuelve `409 Conflict`.
 
-Esto evita que un valor por defecto de frontend pueda convertir silenciosamente una MULTI_QUOTE en SIMPLE o viceversa.
+## Integración temporal con main.jsx
 
-## Compatibilidad del frontend actual
+`main.jsx` todavía contiene una definición legacy de `ExpenseForm` por deuda histórica. Para evitar que esa implementación vuelva a gobernar la aplicación, `vite.config.js` hace una única transformación estructural:
 
-El formulario operativo sigue dentro de `frontend/src/main.jsx`, que está pendiente de modularización. Mientras tanto, `frontend/vite.config.js` aplica una transformación estricta durante `vite dev` y `vite build` que:
+1. importa `ExpenseForm` desde `./expense-form.jsx`;
+2. elimina del bundle la función legacy completa;
+3. añade una `key` por solicitud/flujo para forzar remount al cambiar de corrección.
 
-- deriva el tipo inicial desde el draft y su evidencia durable;
-- define `effectiveRequestType` como autoridad cuando existe un draft;
-- fuerza un remount de `ExpenseForm` cuando se entra a corregir o cambia la solicitud;
-- restaura las opciones existentes;
-- evita heredar la pestaña de creación anterior;
-- usa el tipo efectivo en render, validación, payload y uploads;
-- muestra el tipo de corrección como solo lectura.
+Esto reemplaza el esquema anterior de múltiples sustituciones internas sobre el formulario legacy. El build falla si no puede aislar la función antigua, evitando degradación silenciosa.
 
-El transform falla el build si los fragmentos legacy esperados cambian, evitando que el parche deje de aplicarse silenciosamente.
+## Por qué no se permite cambiar la cantidad de opciones todavía
 
-Además, `backend/tests/test_frontend_revision_contract.py` verifica estáticamente que el transform conserve los puntos críticos del contrato.
+Quitar una cotización que ya tiene documentos o votos implica decisiones de versionado y evidencia. Esta feature evita eliminar evidencia de forma implícita. La edición estructural de una ronda debe especificarse separadamente antes de implementarse.
 
-Cuando `ExpenseForm` sea extraído a un componente propio, esta transformación deberá eliminarse y la hidratación de drafts tendrá tests frontend dedicados.
+## Prueba manual obligatoria
+
+```text
+1. Entrar a Solicitudes.
+2. Dejar seleccionada Solicitud sencilla.
+3. Buscar una solicitud en Votación de cotizaciones.
+4. Pulsar Corregir / reenviar.
+5. Verificar Tipo de solicitud: Múltiples cotizaciones.
+6. Verificar que aparezca Opciones para votación con las opciones existentes.
+7. Verificar que no aparezca el formulario sencillo como estructura principal.
+```
