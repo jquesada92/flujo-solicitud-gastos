@@ -1,5 +1,60 @@
 # Historial funcional y técnico
 
+## 2026-08-18 — Propiedad de corrección y handoff de revisión
+
+### Problema observado
+
+La lista compartida de Solicitudes podía mostrar **Corregir / reenviar** a usuarios que no eran el solicitante original. Esto mezclaba dos responsabilidades diferentes:
+
+```text
+Aprobador detecta un problema
+vs
+Usuario autorizado edita la solicitud
+```
+
+### Decisión funcional
+
+**Corregir / reenviar** es una capacidad por recurso reservada exclusivamente a:
+
+```text
+solicitante original
+OR
+Administrador del sistema protegido en system_accounts
+```
+
+Tener `requests:create`, `requests:approve`, `config:manage`, pertenecer a un Grupo/Rol/Cargo o conservar flags legacy `can_*` no autoriza editar una solicitud ajena.
+
+El backend expone `can_correct` por solicitud y `PUT /api/expenses/{request_id}/resubmit` vuelve a validar la misma regla. Un tercero recibe `403` aunque manipule el frontend.
+
+### Enviar a revisión
+
+Un aprobador que detecta un problema no corrige directamente. Debe seleccionar **Enviar a revisión** e indicar un comentario útil de al menos tres caracteres.
+
+`REVISION_REQUESTED` es una interrupción inmediata del flujo:
+
+```text
+paso del aprobador      → REVISION_REQUESTED
+solicitud               → NEEDS_REVISION
+otros PENDING/WAITING   → EXPIRED
+solicitante             → CORRECT_REQUEST
+```
+
+La revisión no espera mayoría. El solicitante recibe una notificación con el comentario y se convierte en responsable normal de corregir/reenvíar. El Administrador del sistema conserva la excepción administrativa para corregir desde Solicitudes, pero no recibe automáticamente la tarea personal de otro solicitante.
+
+### Frontend y correo
+
+- la tabla usa `x.can_correct` para mostrar **Corregir / reenviar**;
+- el formulario puede abrirse para el Administrador del sistema aunque producción no le conceda `requests:create`;
+- el modal de aprobación usa la etiqueta **Enviar a revisión** y exige comentario;
+- el correo de aprobación incluye **Enviar a revisión**;
+- **Enviar a revisión** y **Corregir / reenviar** quedan visual y semánticamente separados.
+
+### Gobierno
+
+Se crea Feature 007 (`revision-handoff-correction-ownership`) y la Constitución evoluciona a **2.6.0** para formalizar que la edición de una solicitud existente se autoriza por propiedad del recurso/administración técnica, no por un permiso global de creación.
+
+---
+
 ## 2026-08-18 — Acciones pendientes abren un modal contextual del usuario
 
 ### Problema observado
@@ -108,7 +163,7 @@ Se agregan:
 - `test_pending_actions.py`;
 - `test_frontend_dashboard_contract.py`.
 
-La Constitución permanece en **2.5.0**: backend-authoritative y acciones personales del dashboard ya son principios vigentes; este cambio concreta su contrato UX en Feature 005.
+La Constitución permanece en **2.5.0** para este cambio específico: backend-authoritative y acciones personales del dashboard ya eran principios vigentes; este cambio concreta su contrato UX en Feature 005. La evolución posterior de propiedad de corrección eleva la Constitución a 2.6.0, como se registra arriba.
 
 GitHub Actions alcanzó la cuota de la cuenta durante este PR. Por tanto, hasta que vuelva la cuota, la validación obligatoria se ejecuta localmente: suite backend, `npm run build`, Docker build/smoke y prueba manual del modal. Un run bloqueado por cuota no se registra como CI verde.
 
