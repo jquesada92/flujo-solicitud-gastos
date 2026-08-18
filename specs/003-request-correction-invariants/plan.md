@@ -1,6 +1,6 @@
 # Plan técnico — Correcciones de solicitudes
 
-**Constitución:** 2.3.2
+**Constitución:** 2.3.3
 
 ## Arquitectura
 
@@ -76,17 +76,21 @@ Cadena:
 
 `main.jsx` sigue siendo monolítico. Para evitar una modificación masiva y frágil mientras se completa su modularización, `vite.config.js` contiene un plugin de compatibilidad de build/dev que transforma únicamente fragmentos conocidos de `ExpenseForm`.
 
-La transformación ahora tiene dos defensas de estado:
+La transformación aplica cuatro defensas:
 
-1. el `requestType` inicial se deriva del `draft`/evidencia durable, no se inicializa ciegamente en SIMPLE al corregir;
-2. `ExpenseForm` recibe una `key` dependiente de `request_id + flow_id/status`, por lo que entrar en corrección o cambiar de solicitud fuerza un remount y descarta el estado previo de las pestañas de creación.
+1. el tipo inicial se deriva del `draft`/evidencia durable;
+2. `ExpenseForm` recibe una `key` dependiente de `request_id + flow_id/status`, forzando remount al entrar/cambiar corrección;
+3. se define `effectiveRequestType = draft ? inferredDraftType : requestType`;
+4. render, validaciones, payload y uploads consultan `effectiveRequestType` durante una corrección.
+
+Esto corrige una falla observada después de la primera implementación: aunque `setRequestType()` restauraba el tipo, otras ramas del formulario seguían leyendo directamente el estado React `requestType`, permitiendo un render/payload SIMPLE transitorio sobre una solicitud MULTI_QUOTE.
 
 Además:
 
-- ejecuta `setRequestType()` desde el tipo inferido del draft;
 - reconstruye `quoteOptions` desde `draft.quotation_options`;
 - marca `existing_attachment` usando `draft.attachments`;
 - considera ese soporte en validación/Pydantic payload;
+- muestra el tipo corregido como solo lectura;
 - restablece SIMPLE al salir del modo corrección;
 - oculta agregar/eliminar opciones durante la corrección.
 
@@ -109,17 +113,25 @@ Eliminar o reordenar opciones con evidencia asociada requiere semántica explíc
 - invitación anterior se sustituye;
 - intento MULTI_QUOTE → SIMPLE retorna 409.
 
+`tests/test_frontend_revision_contract.py` verifica que el transform temporal mantenga:
+
+- `effectiveRequestType` autoritativo cuando existe draft;
+- payload `request_type` basado en `effectiveRequestType`;
+- editor MULTI_QUOTE basado en `effectiveRequestType`;
+- condición durable `QUOTATION_VOTING`;
+- tipo de corrección visible como solo lectura.
+
 `tests/test_migrations.py` exige que `0003` sea el único Alembic head.
 
 El job frontend ejecuta `npm run build`; el plugin Vite falla si los marcadores legacy esperados no coinciden.
 
-La prueba manual de regresión debe comenzar explícitamente con **Solicitud sencilla** seleccionada, pulsar **Corregir / reenviar** sobre una MULTI_QUOTE y verificar que el editor abre como múltiple sin interacción previa con la pestaña.
+La prueba manual de regresión debe comenzar explícitamente con **Solicitud sencilla** seleccionada, pulsar **Corregir / reenviar** sobre una MULTI_QUOTE y verificar que el editor abre como múltiple, muestra el tipo correcto y no expone selector para convertirla.
 
 ## Retiro futuro
 
 Cuando `ExpenseForm` sea extraído de `main.jsx`:
 
-1. mover la lógica de hidratación a funciones/componentes normales;
+1. mover la lógica de hidratación y tipo efectivo a funciones/componentes normales;
 2. crear tests frontend unitarios para draft SIMPLE/MULTI_QUOTE y aislamiento de estado;
 3. retirar `legacyRevisionSafetyPlugin` de `vite.config.js`;
 4. mantener el invariant backend de `request_type` independientemente de la UI.
