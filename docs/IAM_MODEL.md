@@ -12,11 +12,11 @@ Cuenta autenticable del sistema.
 
 ### Grupo
 
-Conjunto de usuarios con una responsabilidad común. Ejemplos como `Junta Directiva`, `Finance` o `Procurement` son datos del cliente, no conceptos del código.
+Conjunto configurable de usuarios con una responsabilidad común. Puede heredar uno o más Roles. Ejemplos como `Junta Directiva`, `Finance` o `Procurement` son datos del cliente, no conceptos del código.
 
 ### Rol
 
-Conjunto reutilizable de permisos.
+Conjunto reutilizable de permisos. El mismo Rol puede asignarse a Grupos, Cargos o directamente a Usuarios.
 
 ### Permiso
 
@@ -24,7 +24,24 @@ Capacidad atómica implementada por el producto. El permiso autoriza; el nombre 
 
 ### Cargo / Posición
 
-Metadato descriptivo de estructura organizacional. Puede representar Presidente, Gerente, Analista, Director, etc. **No concede permisos.**
+Elemento configurable de la estructura organizacional. Puede representar Presidente, Gerente, Analista, Director, etc. **Puede heredar Roles**, pero su nombre nunca concede acceso por sí mismo.
+
+Ejemplo válido:
+
+```text
+Cargo: Tesorero
+  ↓
+Rol: Aprobador
+  ↓
+requests:approve
+```
+
+Ejemplo prohibido:
+
+```python
+if user.title == 'TESORERO':
+    allow_approve()
+```
 
 ### Cuenta de sistema
 
@@ -36,10 +53,19 @@ Identidad técnica registrada en `system_accounts`. Su política puede diferir p
 permissions
    ↑
 role_permissions ← roles ← group_roles ← user_groups ← group_members ← users
+                         ↖ position_roles ← positions ← user_positions ← users
                          ↖ user_role_assignments ← users
 permissions ← user_permissions ← users
-positions ← user_positions ← users
 system_accounts ← users
+```
+
+Forma conceptual:
+
+```text
+Usuario → Grupo ─────────→ Rol → Permiso
+       ↘ Cargo/Posición ─→ Rol → Permiso
+       ↘ Rol directo ─────────→ Permiso
+       ↘ Permiso directo
 ```
 
 ## Permisos iniciales
@@ -60,9 +86,60 @@ effective_permissions(user) =
   ∪ direct permissions
   ∪ permissions from direct roles
   ∪ permissions from group roles
+  ∪ permissions from position roles
 ```
 
-`requests:read` es baseline del producto y no se revoca quitándolo de un rol/grupo. Para las capacidades mutables no hay DENY explícito en esta versión; la ausencia de ALLOW produce DENY.
+`requests:read` es baseline del producto y no se revoca quitándolo de un rol/grupo/cargo. Para las capacidades mutables no hay DENY explícito en esta versión; la ausencia de ALLOW produce DENY.
+
+## Herencia por Cargo
+
+`position_roles` relaciona Cargos con Roles:
+
+```text
+Position 1 ─┐
+Position 2 ─┼─→ Role Aprobador → requests:approve
+Position 3 ─┘
+```
+
+Un usuario asignado mediante `user_positions` hereda los permisos de todos los Roles activos asociados a todos sus Cargos activos.
+
+Si el Cargo o el Rol está inactivo, esa fuente deja de conceder permisos.
+
+## Herencia por Grupo
+
+La relación existente sigue siendo:
+
+```text
+User
+ ↓
+GroupMember
+ ↓
+UserGroup
+ ↓
+GroupRole
+ ↓
+Role
+ ↓
+RolePermission
+ ↓
+Permission
+```
+
+Cargo y Grupo son caminos independientes y acumulativos. Una organización puede usar solo uno o combinar ambos.
+
+## Fuentes visibles
+
+`permission_sources()` debe poder devolver, entre otras:
+
+```text
+Acceso base del producto para usuarios activos
+Asignación directa
+Rol directo: Comprador
+Grupo Junta Directiva → Aprobador
+Cargo Tesorero → Aprobador
+```
+
+Esto permite saber no solo qué puede hacer el usuario, sino por qué.
 
 ## Cancelación no es `requests:create`
 
@@ -111,7 +188,7 @@ requests:approve
 requests:close
 ```
 
-y la excluye de poblaciones financieras para esos permisos.
+incluso si llega por Grupo, Cargo, Rol directo o Permiso directo, y la excluye de poblaciones financieras para esos permisos.
 
 La cancelación administrativa de una solicitud abierta es una excepción explícita de ciclo de vida basada en `system_accounts`; no otorga ni implica los permisos financieros anteriores.
 
@@ -187,10 +264,30 @@ En respuestas de solicitudes, `can_cancel` es una capacidad por recurso calculad
 - Roles;
 - Permisos;
 - Cargos;
-- asignaciones;
+- Roles heredados por Grupo;
+- Roles heredados por Cargo;
+- membresías/asignaciones;
 - permisos efectivos y su origen.
 
-Los permisos del producto son lectura/configuración de capacidades disponibles. La organización configura roles y asignaciones.
+### Grupos
+
+Un Grupo permite administrar:
+
+```text
+Miembros
+Roles heredados
+```
+
+### Cargos
+
+Un Cargo permite administrar:
+
+```text
+Nombre / descripción / estado
+Roles heredados
+```
+
+Todos los usuarios asignados al Cargo reciben los permisos de esos Roles de forma inmediata en la resolución backend.
 
 `requests:read` debe mostrarse como baseline efectivo para usuarios activos aunque no exista asignación explícita.
 
@@ -221,24 +318,36 @@ POST /groups
 PATCH /groups/{id}
 PUT/DELETE /groups/{group_id}/roles/{role_id}
 PUT/DELETE /groups/{group_id}/members/{user_id}
+GET  /positions
+POST /positions
+PATCH /positions/{id}
+PUT/DELETE /positions/{position_id}/roles/{role_id}
 PUT/DELETE /users/{user_id}/roles/{role_id}
 PUT/DELETE /users/{user_id}/permissions/{code}
 GET /users/{user_id}/effective-permissions
-GET/POST/PATCH /positions...
 ```
 
-Base `/api/iam/users` ofrece administración neutral de usuarios y sus asignaciones.
+Base `/api/iam/users` ofrece administración neutral de usuarios, Grupos, Cargos, Roles directos y permisos directos.
 
 ## Participación en workflows
 
 Aprobadores/votantes se descubren por `requests:approve` usando `users_with_permission()`.
 
+Fuentes canónicas elegibles:
+
+```text
+Permiso directo
+Rol directo
+Grupo → Rol → Permiso
+Cargo → Rol → Permiso
+```
+
 No se consulta:
 
 - `UserRole.APPROVER`;
 - `can_approve` persistido;
-- cargo Presidente/Tesorero/etc.;
-- grupo con nombre particular.
+- si el cargo se llama Presidente/Tesorero/etc.;
+- si un grupo tiene un nombre particular.
 
 Comportamiento de cuenta técnica:
 
@@ -247,9 +356,38 @@ Comportamiento de cuenta técnica:
 
 Las invitaciones de una votación representan el snapshot de participantes de esa ronda.
 
+## Migración `0004`
+
+`20260818_0004_position_role_inheritance.py` agrega `position_roles`.
+
+Para preservar la configuración de producción existente, realiza una importación única desde:
+
+```text
+access_profiles.can_*
+users.title
+```
+
+hacia:
+
+```text
+Position
+Role
+RolePermission
+PositionRole
+UserPosition
+```
+
+Esto permite que cargos legacy configurados como aprobadores pasen a otorgar realmente `requests:approve` mediante IAM.
+
+La migración puede contener nombres legacy como datos de compatibilidad histórica, pero el runtime posterior no los consulta para autorización.
+
 ## Compatibilidad legacy
 
-Los campos `role`, `title` y `can_*` aún existen en `users` por compatibilidad. En requests autenticados, `current_user()` deriva los `can_*` desde IAM.
+Los campos `role`, `title`, `can_*`, `AccessProfile` y `BOARD_CODES` aún pueden existir físicamente durante la transición.
+
+No son autoridad de runtime.
+
+La pantalla autoritativa para cambios de acceso es **Configuración → Accesos**. La administración legacy de perfiles/cargos debe retirarse o convertirse en una vista de compatibilidad para evitar volver a divergir de IAM.
 
 `UserOut.permission_codes` y `UserOut.can_close` permiten migrar el frontend hacia capacidades reales.
 
@@ -267,6 +405,7 @@ Posibles extensiones:
 - SSO/OIDC;
 - SCIM;
 - grupos jerárquicos;
+- jerarquía de cargos;
 - permisos temporales;
 - aprobaciones de cambios IAM;
 - auditoría IAM completa append-only.
