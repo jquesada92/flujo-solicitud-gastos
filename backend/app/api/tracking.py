@@ -14,6 +14,7 @@ from app.models.entities import (
     Expense,
     ExpenseAttachment,
     ExpenseStatus,
+    QuotationVotingInvitation,
     User,
 )
 from app.schemas.expense import ExpenseOut
@@ -88,18 +89,11 @@ def list_trackable_expenses(
 
         quotation_voter_counts = dict(db.execute(
             select(
-                Expense.id,
-                func.count(),
+                QuotationVotingInvitation.expense_id,
+                func.count(QuotationVotingInvitation.id),
             )
-            .select_from(Expense)
-            .join_from(
-                Expense,
-                Expense.quotation_options.property.mapper.class_,
-                Expense.quotation_options.property.mapper.class_.expense_id == Expense.id,
-                isouter=True,
-            )
-            .where(Expense.id.in_(expense_ids))
-            .group_by(Expense.id)
+            .where(QuotationVotingInvitation.expense_id.in_(expense_ids))
+            .group_by(QuotationVotingInvitation.expense_id)
         ).all())
 
     output: list[ExpenseOut] = []
