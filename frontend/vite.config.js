@@ -70,14 +70,22 @@ function dashboardActionWordingPlugin() {
     transform(code, id) {
       const normalized = id.replaceAll("\\", "/").split("?", 1)[0];
       if (!normalized.endsWith("/src/home-dashboard.jsx")) return null;
-      const marker = '>Solicitar corrección</button>';
-      if (!code.includes(marker)) {
-        throw new Error("Dashboard action wording could not find revision button");
-      }
-      return {
-        code: code.replace(marker, '>Enviar a revisión</button>'),
-        map: null,
-      };
+
+      const revisionButton = '<button className="pending-action-review" disabled={busy} onClick={() => onSubmit("REVISION_REQUESTED", comment)}>Solicitar corrección</button>';
+      const revisedButton = '<button className="pending-action-review" disabled={busy || comment.trim().length < 3} onClick={() => onSubmit("REVISION_REQUESTED", comment)}>Enviar a revisión</button>';
+      let next = replaceRequired(
+        code,
+        revisionButton,
+        revisedButton,
+        "dashboard revision button",
+      );
+      next = replaceRequired(
+        next,
+        'placeholder="Comentario opcional"',
+        'placeholder="Para enviar a revisión, indica qué debe corregir el solicitante"',
+        "dashboard revision comment placeholder",
+      );
+      return { code: next, map: null };
     },
   };
 }
@@ -105,9 +113,6 @@ function modularExpenseFormPlugin() {
         throw new Error("Legacy main.jsx extraction could not isolate ExpenseForm");
       }
 
-      // Replace the complete legacy implementation with the imported modular
-      // component. Do not patch the JSX mount by exact whitespace/text: the
-      // modular component already rehydrates when draft/request/flow changes.
       next = `${next.slice(0, formStart)}${next.slice(formEnd)}`;
 
       const dashboardStart = next.indexOf("function HomeDashboard({");
@@ -116,13 +121,8 @@ function modularExpenseFormPlugin() {
         throw new Error("Legacy main.jsx extraction could not isolate HomeDashboard");
       }
 
-      // Dashboard pending actions are now implemented in a dedicated component.
-      // Replace the full legacy function rather than patching individual row
-      // handlers so the modal contract remains maintainable and testable.
       next = `${next.slice(0, dashboardStart)}${next.slice(dashboardEnd)}`;
 
-      // Resource-specific capabilities are returned by the backend. The legacy
-      // table must not infer cancellation/correction from global create rights.
       next = replaceCancellationVisibility(next);
       next = replaceCorrectionVisibility(next);
       next = replaceCorrectionFormAvailability(next);
