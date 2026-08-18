@@ -145,7 +145,7 @@ Descripción: {expense.description}
 
 APROBAR: {approve_link}
 RECHAZAR: {reject_link}
-SOLICITAR CORRECCIÓN: {review_link}
+ENVIAR A REVISIÓN: {review_link}
 VER DETALLE: {detail_link}
 '''
     html_body = _layout(
@@ -154,7 +154,7 @@ VER DETALLE: {detail_link}
 <h2>{html.escape(expense.title)}</h2><div style="font-size:34px;font-weight:bold;margin:18px 0">${expense.amount}</div>
 <p><b>Área:</b> {html.escape(expense.expense_type)}<br><b>Categoría:</b> {html.escape(expense.expense_subcategory or '-')}<br><b>Proveedor:</b> {html.escape(expense.supplier or '-')}</p>
 <div style="background:#f7f8fa;padding:14px;border-radius:9px;margin:18px 0">{html.escape(expense.description)}</div>
-<div style="display:flex;gap:8px;flex-wrap:wrap"><a href="{approve_link}" style="background:#17653a;color:white;text-decoration:none;padding:12px 20px;border-radius:8px">Aprobar</a><a href="{reject_link}" style="background:#b42318;color:white;text-decoration:none;padding:12px 20px;border-radius:8px">Rechazar</a><a href="{review_link}" style="background:#b7791f;color:white;text-decoration:none;padding:12px 20px;border-radius:8px">Solicitar corrección</a></div>''',
+<div style="display:flex;gap:8px;flex-wrap:wrap"><a href="{approve_link}" style="background:#17653a;color:white;text-decoration:none;padding:12px 20px;border-radius:8px">Aprobar</a><a href="{reject_link}" style="background:#b42318;color:white;text-decoration:none;padding:12px 20px;border-radius:8px">Rechazar</a><a href="{review_link}" style="background:#b7791f;color:white;text-decoration:none;padding:12px 20px;border-radius:8px">Enviar a revisión</a></div>''',
     )
     _send(approval.approver_email, f'Aprobación requerida · {expense.display_id}', text_body, html_body)
 
@@ -216,9 +216,9 @@ Monto: ${expense.amount}
 Estado: {status_label}
 Descripción: {expense.description}
 Soportes:\n{support_text}
-{f'Corrección solicitada: {revision_note}' if revision_note else ''}
+{f'Revisión solicitada: {revision_note}' if revision_note else ''}
 '''
-    correction_html = f'<div style="padding:14px;background:#fff7df;border-radius:9px"><b>Corrección solicitada:</b> {html.escape(revision_note)}</div>' if revision_note else ''
+    correction_html = f'<div style="padding:14px;background:#fff7df;border-radius:9px"><b>Revisión solicitada:</b> {html.escape(revision_note)}</div>' if revision_note else ''
     html_body = _layout(
         status_label,
         f'''<div style="font-size:12px;color:#697386">Solicitud {html.escape(expense.display_id)}</div><h2>{html.escape(expense.title)}</h2><div style="font-size:34px;font-weight:bold;margin:18px 0">${expense.amount}</div><p><b>Área:</b> {html.escape(expense.expense_type)}<br><b>Categoría:</b> {html.escape(expense.expense_subcategory or '-')}<br><b>Estado:</b> {html.escape(status_label)}</p>{correction_html}<p>{html.escape(expense.description)}</p><a href="{html.escape(PUBLIC_URL)}">Abrir sistema</a>''',
