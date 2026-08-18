@@ -79,9 +79,9 @@ def upgrade() -> None:
         )
     '''))
 
-    # 2) Materialize one reusable role per migrated profile. The role is only a
-    # migration bridge; afterwards administrators can rename/change/remove it in
-    # the regular IAM UI without relying on the legacy profile.
+    # 2) Materialize one reusable role per migrated profile. If an administrator
+    # already created an equivalent role, reuse it instead of failing a unique
+    # constraint. The role becomes normal configurable IAM data after migration.
     bind.execute(sa.text('''
         INSERT INTO roles (code, name, description, active, system_managed)
         SELECT
@@ -91,31 +91,50 @@ def upgrade() -> None:
             ap.active,
             FALSE
         FROM access_profiles ap
-        ON CONFLICT (code) DO UPDATE
-        SET active = EXCLUDED.active,
-            description = EXCLUDED.description
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM roles r
+            WHERE r.code = 'legacy-position-' || lower(replace(ap.code, '_', '-'))
+               OR lower(r.name) = lower('Acceso por cargo: ' || ap.name)
+        )
     '''))
 
+    profile_columns = {
+        column['name'] for column in sa.inspect(bind).get_columns('access_profiles')
+    }
     mappings = (
         ('can_view', 'requests:read'),
         ('can_request', 'requests:create'),
         ('can_approve', 'requests:approve'),
         ('can_configure', 'config:manage'),
     )
-    profile_columns = {
-        column['name'] for column in sa.inspect(bind).get_columns('access_profiles')
-    }
     for column_name, permission_code in mappings:
         if column_name not in profile_columns:
             continue
         bind.execute(sa.text(f'''
             INSERT INTO role_permissions (role_id, permission_id)
-            SELECT r.id, p.id
+            SELECT
+                (
+                    SELECT r.id
+                    FROM roles r
+                    WHERE r.code = 'legacy-position-' || lower(replace(ap.code, '_', '-'))
+                       OR lower(r.name) = lower('Acceso por cargo: ' || ap.name)
+                    ORDER BY CASE
+                        WHEN r.code = 'legacy-position-' || lower(replace(ap.code, '_', '-')) THEN 0
+                        ELSE 1
+                    END, r.id
+                    LIMIT 1
+                ),
+                p.id
             FROM access_profiles ap
-            JOIN roles r
-              ON r.code = 'legacy-position-' || lower(replace(ap.code, '_', '-'))
             JOIN permissions p ON p.code = :permission_code
             WHERE ap.{column_name} = TRUE
+              AND EXISTS (
+                  SELECT 1
+                  FROM roles r
+                  WHERE r.code = 'legacy-position-' || lower(replace(ap.code, '_', '-'))
+                     OR lower(r.name) = lower('Acceso por cargo: ' || ap.name)
+              )
             ON CONFLICT (role_id, permission_id) DO NOTHING
         '''), {'permission_code': permission_code})
 
@@ -124,17 +143,32 @@ def upgrade() -> None:
     # capability at position level without making the name a runtime condition.
     bind.execute(sa.text('''
         INSERT INTO role_permissions (role_id, permission_id)
-        SELECT r.id, p.id
+        SELECT
+            (
+                SELECT r.id
+                FROM roles r
+                WHERE r.code = 'legacy-position-' || lower(replace(ap.code, '_', '-'))
+                   OR lower(r.name) = lower('Acceso por cargo: ' || ap.name)
+                ORDER BY CASE
+                    WHEN r.code = 'legacy-position-' || lower(replace(ap.code, '_', '-')) THEN 0
+                    ELSE 1
+                END, r.id
+                LIMIT 1
+            ),
+            p.id
         FROM access_profiles ap
-        JOIN roles r
-          ON r.code = 'legacy-position-' || lower(replace(ap.code, '_', '-'))
         JOIN permissions p ON p.code = 'requests:close'
         WHERE ap.code = 'ADMINISTRADORA'
+          AND EXISTS (
+              SELECT 1
+              FROM roles r
+              WHERE r.code = 'legacy-position-' || lower(replace(ap.code, '_', '-'))
+                 OR lower(r.name) = lower('Acceso por cargo: ' || ap.name)
+          )
         ON CONFLICT (role_id, permission_id) DO NOTHING
     '''))
 
-    # 3) Link each canonical Position to its migrated role. If an administrator
-    # already created an equivalent position by name, reuse it.
+    # 3) Link each canonical Position to its migrated/reused role.
     bind.execute(sa.text('''
         INSERT INTO position_roles (position_id, role_id)
         SELECT
@@ -146,22 +180,35 @@ def upgrade() -> None:
                 ORDER BY CASE WHEN lower(p.name) = lower(ap.name) THEN 0 ELSE 1 END, p.id
                 LIMIT 1
             ),
-            r.id
+            (
+                SELECT r.id
+                FROM roles r
+                WHERE r.code = 'legacy-position-' || lower(replace(ap.code, '_', '-'))
+                   OR lower(r.name) = lower('Acceso por cargo: ' || ap.name)
+                ORDER BY CASE
+                    WHEN r.code = 'legacy-position-' || lower(replace(ap.code, '_', '-')) THEN 0
+                    ELSE 1
+                END, r.id
+                LIMIT 1
+            )
         FROM access_profiles ap
-        JOIN roles r
-          ON r.code = 'legacy-position-' || lower(replace(ap.code, '_', '-'))
         WHERE EXISTS (
             SELECT 1
             FROM positions p
             WHERE lower(p.name) = lower(ap.name)
                OR p.code = 'legacy-' || lower(replace(ap.code, '_', '-'))
         )
+          AND EXISTS (
+            SELECT 1
+            FROM roles r
+            WHERE r.code = 'legacy-position-' || lower(replace(ap.code, '_', '-'))
+               OR lower(r.name) = lower('Acceso por cargo: ' || ap.name)
+        )
         ON CONFLICT (position_id, role_id) DO NOTHING
     '''))
 
-    # 4) Assign existing non-system users to the canonical Position that matches
-    # their legacy title code. This converts current production configuration into
-    # normal IAM data. Future assignments should use user_positions directly.
+    # 4) Assign existing non-system users to the canonical Position matching the
+    # legacy title code. Future assignments use user_positions directly.
     system_filter = (
         'AND NOT EXISTS (SELECT 1 FROM system_accounts sa WHERE sa.user_id = u.id)'
         if 'system_accounts' in tables else ''
@@ -182,6 +229,12 @@ def upgrade() -> None:
         JOIN access_profiles ap ON ap.code = u.title
         WHERE u.active = TRUE
           {system_filter}
+          AND EXISTS (
+              SELECT 1
+              FROM positions p
+              WHERE lower(p.name) = lower(ap.name)
+                 OR p.code = 'legacy-' || lower(replace(ap.code, '_', '-'))
+          )
         ON CONFLICT (user_id, position_id) DO NOTHING
     '''))
 
