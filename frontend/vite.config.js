@@ -146,12 +146,25 @@ function replaceConfigurationAccess(source) {
   return next;
 }
 
+function protectAccessMenuInjection(source) {
+  return replaceRequired(
+    source,
+    'document.querySelectorAll(".config-menu-items").forEach((menu) => {\n    if (menu.querySelector(\'[data-iam-access="true"]\')) return;',
+    'document.querySelectorAll(".config-menu-items").forEach((menu) => {\n    const existing = menu.querySelector(\'[data-iam-access="true"]\');\n    if (menu.dataset.systemAdmin !== "true") { existing?.remove(); return; }\n    if (existing) return;',
+    "system-only access menu injection",
+  );
+}
+
 function modularExpenseFormPlugin() {
   return {
     name: "modular-expense-form",
     enforce: "pre",
     transform(code, id) {
       const normalized = id.replaceAll("\\", "/").split("?", 1)[0];
+
+      if (normalized.endsWith("/src/iam-admin.jsx")) {
+        return { code: protectAccessMenuInjection(code), map: null };
+      }
       if (!normalized.endsWith("/src/main.jsx")) return null;
 
       let next = code;
