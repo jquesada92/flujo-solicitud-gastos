@@ -84,11 +84,12 @@
 - [x] Spec funcional actualizada.
 - [x] Plan técnico actualizado.
 - [x] Criterios de aceptación actualizados.
-- [ ] README actualizado.
-- [ ] PROMPT_RECONSTRUCCION actualizado.
-- [ ] IAM_MODEL actualizado.
-- [ ] Documentación de seguimiento creada/actualizada.
-- [ ] HISTORY actualizado.
-- [ ] CHANGELOG actualizado.
-- [ ] docs/README actualizado.
+- [x] README actualizado.
+- [x] PROMPT_RECONSTRUCCION actualizado.
+- [x] IAM_MODEL actualizado.
+- [x] FASTAPI_ARCHITECTURE actualizado.
+- [x] Documentación de seguimiento creada/actualizada.
+- [x] HISTORY actualizado.
+- [x] CHANGELOG actualizado.
+- [x] docs/README actualizado.
 - [ ] PR actualizado con contrato final y evidencia CI.
