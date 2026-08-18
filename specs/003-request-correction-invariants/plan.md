@@ -4,10 +4,10 @@
 
 ## Arquitectura
 
-La corrección se implementa mediante una ruta canónica registrada antes del router legacy:
+La corrección se implementa mediante una ruta backend canónica y un formulario frontend modular:
 
 ```text
-frontend ExpenseForm
+frontend/src/expense-form.jsx
         ↓ PUT /api/expenses/{request_id}/resubmit
 revision_actions.py
         ↓
@@ -51,8 +51,8 @@ OR quotation_options.length >= 2
 
 - permanece `MULTI_QUOTE`;
 - conserva la cantidad actual de `QuotationOption`;
-- actualiza cada opción por `option_number`/orden existente;
-- conserva attachments vinculados a los IDs de opciones existentes;
+- actualiza cada opción por orden existente;
+- conserva attachments vinculados a IDs de opciones existentes;
 - limpia `QuotationVote` vigente;
 - reemplaza `QuotationVotingInvitation`;
 - conserva eventos históricos de voto;
@@ -62,9 +62,7 @@ OR quotation_options.length >= 2
 
 ## Reparación de datos
 
-Se agrega Alembic `20260817_0003_backfill_multi_quote_request_type.py` después de `0002`.
-
-La migración cambia a `MULTI_QUOTE` filas históricas que todavía tienen el default `SIMPLE` pero presentan evidencia inequívoca de flujo múltiple. No elimina opciones, attachments, votos históricos ni eventos.
+Alembic `20260817_0003_backfill_multi_quote_request_type.py` cambia a `MULTI_QUOTE` filas históricas que todavía tienen el default `SIMPLE` pero presentan evidencia inequívoca de flujo múltiple. No elimina opciones, attachments, votos históricos ni eventos.
 
 Cadena:
 
@@ -72,66 +70,73 @@ Cadena:
 0000 → 0001 → 0002 → 0003
 ```
 
-## Frontend legacy
+## Frontend canónico
 
-`main.jsx` sigue siendo monolítico. Para evitar una modificación masiva y frágil mientras se completa su modularización, `vite.config.js` contiene un plugin de compatibilidad de build/dev que transforma únicamente fragmentos conocidos de `ExpenseForm`.
+`frontend/src/expense-form.jsx` es ahora la implementación mantenible del formulario de solicitudes.
 
-La transformación aplica cuatro defensas:
+La función:
 
-1. el tipo inicial se deriva del `draft`/evidencia durable;
-2. `ExpenseForm` recibe una `key` dependiente de `request_id + flow_id/status`, forzando remount al entrar/cambiar corrección;
-3. se define `effectiveRequestType = draft ? inferredDraftType : requestType`;
-4. render, validaciones, payload y uploads consultan `effectiveRequestType` durante una corrección.
+```text
+resolveRequestType(draft)
+```
 
-Esto corrige una falla observada después de la primera implementación: aunque `setRequestType()` restauraba el tipo, otras ramas del formulario seguían leyendo directamente el estado React `requestType`, permitiendo un render/payload SIMPLE transitorio sobre una solicitud MULTI_QUOTE.
+retorna `MULTI_QUOTE` si el draft tiene `request_type=MULTI_QUOTE`, estado `QUOTATION_VOTING` o dos/más `quotation_options`.
 
-Además:
+El componente calcula:
 
-- reconstruye `quoteOptions` desde `draft.quotation_options`;
-- marca `existing_attachment` usando `draft.attachments`;
-- considera ese soporte en validación/Pydantic payload;
-- muestra el tipo corregido como solo lectura;
-- restablece SIMPLE al salir del modo corrección;
-- oculta agregar/eliminar opciones durante la corrección.
+```text
+effectiveRequestType = draft ? resolveRequestType(draft) : requestType
+```
 
-`replaceRequired()` hace fallar el build si cambia el fragmento legacy y ya no puede aplicarse el parche. No se permite una degradación silenciosa.
+Ese valor gobierna todo el formulario durante una corrección:
+
+- qué layout se renderiza;
+- qué validaciones se ejecutan;
+- qué `request_type` viaja al backend;
+- si se usan campos SIMPLE o `quotation_options`;
+- qué soportes se cargan después del resubmit.
+
+Para un `draft` MULTI_QUOTE el componente no renderiza el formulario sencillo como estructura principal; restaura directamente el editor de opciones de cotización.
+
+Los soportes existentes se representan con `existing_attachment`; el navegador no intenta prellenar `<input type=file>`.
+
+Durante corrección se oculta el selector de tipo y se muestra un indicador de solo lectura. También se conserva la cantidad de opciones para evitar cambios destructivos de evidencia.
+
+## Integración temporal con main.jsx
+
+`main.jsx` todavía contiene la función legacy por deuda de modularización histórica. En vez de parchear múltiples condiciones internas, `vite.config.js` hace una sola transformación estructural:
+
+1. importa `ExpenseForm` desde `./expense-form.jsx`;
+2. elimina del bundle la definición legacy comprendida entre `function ExpenseForm` y `function ClosurePanel`;
+3. mantiene una `key` por solicitud/flujo para forzar remount al cambiar de corrección.
+
+El build falla si no puede aislar esa frontera, evitando una degradación silenciosa al formulario viejo.
 
 ## Motivo de conservar cantidad de opciones
 
-Eliminar o reordenar opciones con evidencia asociada requiere semántica explícita de versionado/eliminación de documentos. Esta feature evita hacer borrado destructivo o perder trazabilidad. Por ahora se permiten correcciones de contenido, no de estructura de la ronda.
+Eliminar o reordenar opciones con evidencia asociada requiere semántica explícita de versionado/eliminación de documentos. Esta feature evita borrado destructivo o pérdida de trazabilidad. Por ahora se permiten correcciones de contenido, no de estructura de la ronda.
 
 ## Testing
 
-`tests/test_multi_quote_revision.py` usa `FastAPI TestClient` y SQLite aislado para verificar:
+`tests/test_multi_quote_revision.py` usa `FastAPI TestClient` para verificar invariantes backend.
 
-- MULTI_QUOTE permanece MULTI_QUOTE;
-- un registro legacy con `request_type=SIMPLE` + evidencia múltiple se infiere y repara como MULTI_QUOTE;
-- flow_id cambia;
-- opciones se actualizan;
-- attachment existente se conserva;
-- votos vigentes se eliminan;
-- invitación anterior se sustituye;
-- intento MULTI_QUOTE → SIMPLE retorna 409.
+`tests/test_frontend_revision_contract.py` exige que:
 
-`tests/test_frontend_revision_contract.py` verifica que el transform temporal mantenga:
+- exista `frontend/src/expense-form.jsx`;
+- `effectiveRequestType` gobierne render y payload;
+- `QUOTATION_VOTING` y dos/más opciones infieran MULTI_QUOTE;
+- se restauren opciones y soportes existentes;
+- `vite.config.js` retire el ExpenseForm legacy del bundle e importe el modular.
 
-- `effectiveRequestType` autoritativo cuando existe draft;
-- payload `request_type` basado en `effectiveRequestType`;
-- editor MULTI_QUOTE basado en `effectiveRequestType`;
-- condición durable `QUOTATION_VOTING`;
-- tipo de corrección visible como solo lectura.
+El job frontend ejecuta `npm run build`, por lo que una extracción inválida o JSX inválido falla CI.
 
-`tests/test_migrations.py` exige que `0003` sea el único Alembic head.
-
-El job frontend ejecuta `npm run build`; el plugin Vite falla si los marcadores legacy esperados no coinciden.
-
-La prueba manual de regresión debe comenzar explícitamente con **Solicitud sencilla** seleccionada, pulsar **Corregir / reenviar** sobre una MULTI_QUOTE y verificar que el editor abre como múltiple, muestra el tipo correcto y no expone selector para convertirla.
+La prueba manual de regresión debe comenzar explícitamente con **Solicitud sencilla** seleccionada, pulsar **Corregir / reenviar** sobre una MULTI_QUOTE y verificar que el formulario visible contiene **Opciones para votación** y no los campos de solicitud sencilla.
 
 ## Retiro futuro
 
-Cuando `ExpenseForm` sea extraído de `main.jsx`:
+Cuando `main.jsx` sea modularizado completamente:
 
-1. mover la lógica de hidratación y tipo efectivo a funciones/componentes normales;
-2. crear tests frontend unitarios para draft SIMPLE/MULTI_QUOTE y aislamiento de estado;
-3. retirar `legacyRevisionSafetyPlugin` de `vite.config.js`;
+1. importar `ExpenseForm` directamente desde el source normal;
+2. retirar `modularExpenseFormPlugin` de `vite.config.js`;
+3. mantener tests frontend del componente;
 4. mantener el invariant backend de `request_type` independientemente de la UI.
