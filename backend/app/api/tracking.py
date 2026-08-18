@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.cancellation_actions import can_cancel_expense
 from app.api.expenses import APP_TIME_ZONE, _as_utc, _present_expense, _user_names
+from app.api.revision_actions import can_correct_expense
 from app.core.database import get_db
 from app.core.security import require_permission
 from app.models.entities import (
@@ -33,8 +34,8 @@ def list_trackable_expenses(
 
     Read access is a product baseline. Organizational roles or requester identity
     must not reduce the set of requests visible for follow-up. Mutating
-    capabilities such as cancellation are returned per request and remain
-    backend-authoritative.
+    capabilities such as cancellation/correction are returned per request and
+    remain backend-authoritative.
     """
     open_statuses = (
         ExpenseStatus.SUBMITTED,
@@ -42,6 +43,7 @@ def list_trackable_expenses(
         ExpenseStatus.APPROVED,
         ExpenseStatus.NEEDS_REVISION,
         ExpenseStatus.QUOTATION_VOTING,
+        ExpenseStatus.REJECTED,
     )
     recent_closed_threshold = datetime.utcnow() - timedelta(days=7)
     has_invoice = exists(select(ExpenseAttachment.id).where(
@@ -115,6 +117,12 @@ def list_trackable_expenses(
             quotation_voter_counts.get(expense.id, 0),
         ).model_copy(update={
             'can_cancel': can_cancel_expense(
+                db,
+                expense,
+                user,
+                system_admin=system_admin,
+            ),
+            'can_correct': can_correct_expense(
                 db,
                 expense,
                 user,
