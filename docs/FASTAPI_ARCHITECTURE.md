@@ -11,11 +11,13 @@ La arquitectura sigue los patrones recomendados por la documentación oficial de
 Las rutas canónicas se registran antes del router legacy. Entre ellas:
 
 ```text
-request_actions.py   → creación
-revision_actions.py  → corregir / reenviar
-quotation_actions.py → votación
-document_actions.py  → documentos
-financial_actions.py → factura / cierre
+request_actions.py      → creación
+revision_actions.py     → corregir / reenviar
+cancellation_actions.py → cancelación
+quotation_actions.py    → votación
+document_actions.py     → documentos
+financial_actions.py    → factura / cierre
+tracking.py             → dashboard y seguimiento compartido
 ```
 
 Esto permite reemplazar gradualmente handlers legacy sin depender del orden accidental de rutas en `expenses.py`.
@@ -67,7 +69,7 @@ Esta separación es deliberada: un preview alojado puede requerir secretos fuert
 
 `require_permission(code)` consulta `iam_service.has_permission()`.
 
-Para usuarios operativos, los permisos provienen de asignaciones persistidas de usuario/rol/grupo.
+Para todo usuario activo, `requests:read` es baseline de producto. Los demás permisos de usuarios operativos provienen de asignaciones persistidas de usuario/rol/grupo.
 
 Para una cuenta registrada en `system_accounts`:
 
@@ -85,6 +87,65 @@ No existe bypass por `UserRole.ADMIN`, email, cargo o ID.
 
 - producción: cuenta técnica excluida de permisos financieros;
 - no producción: puede participar en aprobación/votación para pruebas.
+
+## Seguimiento universal
+
+`tracking.py` registra antes del router legacy:
+
+```text
+GET /api/expenses
+GET /api/expenses/dashboard
+```
+
+Ambos requieren `requests:read`, cuya resolución incluye el baseline para usuarios activos.
+
+El listado no filtra por `UserRole.REQUESTER` ni por `requested_by`. Esto permite que todos los usuarios activos den seguimiento a solicitudes de la organización.
+
+La lectura compartida no concede acciones mutables. El dashboard calcula `pending_my_action` solo desde capacidades ejecutables (`requests:approve`, `requests:close`) e invitaciones/asignaciones vigentes.
+
+## Cancelación por recurso
+
+La cancelación no se modela como una consecuencia de `requests:create`.
+
+`cancellation_actions.py` implementa:
+
+```text
+POST /api/expenses/{request_id}/cancel
+```
+
+La autorización es:
+
+```text
+solicitud abierta
+AND (
+  current_user.email == expense.requested_by
+  OR current_user está registrado en system_accounts
+)
+```
+
+Estados abiertos cancelables:
+
+```text
+QUOTATION_VOTING
+SUBMITTED
+PENDING_APPROVAL
+NEEDS_REVISION
+APPROVED
+```
+
+Estados no cancelables:
+
+```text
+CLOSED
+CANCELLED
+REJECTED
+```
+
+El endpoint bloquea la fila, exige motivo, expira aprobaciones abiertas y persiste `cancelled_at`, `cancelled_by` y `cancellation_reason`.
+
+El Administrador del sistema puede cancelar solicitudes abiertas incluso en producción como excepción explícita de ciclo de vida. Esto se determina mediante `system_accounts`; no concede `requests:create`, `requests:approve` ni `requests:close` y no lo incorpora a poblaciones financieras.
+
+`tracking.py` devuelve `ExpenseOut.can_cancel` calculado por solicitud. La detección de `system_accounts` se hace una vez por listado para evitar N+1. El endpoint vuelve a autorizar siempre aunque el frontend consuma correctamente `can_cancel`.
 
 ## Vista del usuario autenticado
 
@@ -108,7 +169,7 @@ can_close
 
 El login aplica esta decoración inmediatamente. `current_user()` la recalcula en cada request autenticado.
 
-Esto permite que cambios IAM y el cambio de ambiente se reflejen sin confiar en columnas legacy persistidas.
+`can_cancel` no forma parte de estos aliases ni de `permission_codes`: es una capacidad por recurso calculada en el contrato de solicitud.
 
 ## Invariant de correcciones
 
@@ -164,7 +225,7 @@ Topología lineal:
 
 `0003` es una reparación de datos histórica: cambia a `MULTI_QUOTE` filas con evidencia durable de múltiples cotizaciones que aún conservaban el default `SIMPLE`.
 
-`tests/test_migrations.py` exige `0003` como único head.
+Feature 005 de seguimiento/cancelación no agrega migración de esquema ni backfill IAM. `tests/test_migrations.py` exige `0003` como único head.
 
 El entrypoint Docker ejecuta:
 
@@ -193,7 +254,7 @@ uvicorn app.application:app
 
 Autenticación usa `LoginResponse`/`TokenResponse`. `UserOut` incluye `permission_codes` y `can_close` para la transición hacia autorización visual por capacidades.
 
-Al crear endpoints nuevos se debe declarar `response_model` salvo streaming/file o razón documentada.
+`ExpenseOut` incluye `can_cancel` para la capacidad por solicitud. Al crear endpoints nuevos se debe declarar `response_model` salvo streaming/file o razón documentada.
 
 ## Testing
 
@@ -205,6 +266,16 @@ prod    → config/read only
 ```
 
 También verifica población de aprobadores, 403 de cierre productivo y el contrato del login.
+
+`tests/test_universal_tracking.py` verifica el baseline `requests:read`, dashboard compartido y seguimiento de solicitudes ajenas sin conceder mutaciones.
+
+`tests/test_request_cancellation.py` verifica:
+
+- solicitante puede cancelar su propia solicitud abierta;
+- otro usuario con `requests:create` no puede cancelarla;
+- cuenta técnica puede cancelar cualquier solicitud abierta;
+- `QUOTATION_VOTING` es cancelable;
+- solicitud cerrada no es cancelable.
 
 `tests/test_multi_quote_revision.py` verifica el invariant de correcciones con una solicitud MULTI_QUOTE real y con un registro legacy cuyo `request_type` quedó erróneamente en SIMPLE: preserva/repara tipo, conserva evidencia, reinicia ronda y rechaza conversión real a SIMPLE.
 
@@ -233,17 +304,12 @@ user.role === "ADMIN"
 canClose={true}
 ```
 
-El backend no confía en esos valores, pero la deuda debe retirarse migrando la visibilidad de acciones a `permission_codes`.
+El backend no confía en esos valores, pero la deuda debe retirarse migrando la visibilidad de acciones a `permission_codes` o capacidades por recurso.
 
-### Transform temporal de correcciones
+### Transform temporal del frontend
 
-Mientras `ExpenseForm` siga dentro del monolito, `frontend/vite.config.js` aplica un plugin `legacy-revision-safety` antes del plugin React.
+Mientras `ExpenseForm` siga definido también dentro del monolito, `frontend/vite.config.js` importa `./expense-form.jsx` y elimina la definición legacy completa durante dev/build. El componente modular rehidrata desde `draft.request_id`/`flow_id`; no se inyecta una `key` ni se parchea el montaje por coincidencias exactas de whitespace.
 
-El plugin ahora protege explícitamente el aislamiento de estado:
+Mientras `ExpenseTable` conserve el guard legacy de cancelación, el mismo transform sustituye únicamente esa condición por `x.can_cancel` mediante un patrón semántico tolerante a whitespace. El build falla si no encuentra exactamente la frontera esperada.
 
-- deriva el `requestType` inicial desde el draft/evidencia durable;
-- al entrar en corrección, `ExpenseForm` recibe una `key` basada en la solicitud/flujo y se remonta;
-- el estado de la pestaña de creación anterior no sobrevive al cambio de modo;
-- restaura cotizaciones y metadata de attachments.
-
-El transform utiliza reemplazos obligatorios y hace fallar `vite build` si los fragmentos legacy dejan de coincidir. Esto evita una degradación silenciosa, pero no sustituye la modularización. Al extraer `ExpenseForm` a un componente propio, el plugin debe eliminarse y la hidratación debe cubrirse con tests frontend normales.
+Estas transformaciones son deuda temporal. Deben retirarse cuando `main.jsx` importe directamente los componentes modulares y la visibilidad de acciones se cubra con tests frontend normales.
