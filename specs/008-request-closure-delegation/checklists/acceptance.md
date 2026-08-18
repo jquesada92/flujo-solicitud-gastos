@@ -42,6 +42,7 @@
 - [x] la tabla usa `x.can_delegate_close` para abrir la delegación.
 - [x] el modal muestra delegado actual y candidatos.
 - [x] el modal permite delegar/cambiar/revocar.
+- [x] el bridge Vite de delegación tolera LF/CRLF e indentación variable y exige exactamente un ancla de `row-actions`.
 - [ ] validar manualmente que un tercero no vea cierre/corrección factura.
 - [ ] validar manualmente que el solicitante sí vea cierre y delegación.
 - [ ] validar manualmente que el Administrador del sistema sí pueda cerrar/corregir factura.
@@ -62,10 +63,10 @@
 - [x] `test_closure_delegation.py` agregado y corregido para sembrar baseline `requests:read`.
 - [x] `test_pending_actions.py` actualizado a requester/delegate.
 - [x] `test_universal_tracking.py` prueba que lectura no concede cierre ajeno.
-- [x] `test_frontend_closure_contract.py` protege capacidades por recurso.
+- [x] `test_frontend_closure_contract.py` protege capacidades por recurso y el bridge tolerante al formato.
 - [x] `test_migrations.py` protege `0005`.
 - [ ] suite backend completa ejecutada localmente en head final.
-- [ ] `npm run build` ejecutado localmente en head final.
+- [ ] `npm run build` ejecutado localmente en head final después del hardening del bridge.
 - [ ] Docker build/smoke ejecutado localmente en head final.
 - [ ] CI remoto verde cuando vuelva la cuota de GitHub Actions.
 
