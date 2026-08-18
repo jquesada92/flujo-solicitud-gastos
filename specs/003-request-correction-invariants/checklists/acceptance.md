@@ -70,9 +70,9 @@
 - [x] Existe `test_frontend_revision_contract.py` para verificar el formulario modular y su integración de build.
 - [x] CI verifica el artefacto `dist/` y falla si el bundle no contiene `Tipo de solicitud:` y `Opciones para votación` del formulario modular.
 - [x] Existe regresión que impide reintroducir el reemplazo textual `ExpenseForm mount`.
-- [ ] Verificar manualmente: con pestaña **Solicitud sencilla** activa, corregir una MULTI_QUOTE debe mostrar **Tipo de solicitud: Múltiples cotizaciones** y **Opciones para votación**.
-- [ ] Verificar manualmente que no aparezcan los campos SIMPLE `Monto (USD)`, `Proveedor`, `URL del producto o servicio` y soporte único fuera de las tarjetas de cotización.
-- [ ] Verificar localmente que `docker compose build --no-cache frontend` termine correctamente y que el bundle Nginx contenga `El tipo no cambia durante una corrección`.
+- [x] Verificación manual completada: con pestaña **Solicitud sencilla** activa, corregir una MULTI_QUOTE muestra **Tipo de solicitud: Múltiples cotizaciones** y **Opciones para votación**.
+- [x] Verificación manual completada: no aparecen los campos SIMPLE `Monto (USD)`, `Proveedor`, `URL del producto o servicio` y soporte único fuera de las tarjetas de cotización.
+- [x] Verificación local completada: `docker compose build --no-cache frontend` termina correctamente y el flujo MULTI_QUOTE corregido utiliza el formulario modular en Docker local.
 
 ## Documentación
 
@@ -80,6 +80,6 @@
 - [x] Spec funcional revisada: no cambia el requisito funcional.
 - [x] Plan técnico actualizado para retirar el parche textual del mount.
 - [x] Criterios de aceptación actualizados.
-- [x] README/prompt/documentación de correcciones deben describir la extracción estructural sin parche de mount.
+- [x] README/prompt/documentación de correcciones describen la extracción estructural sin parche de mount.
 - [x] HISTORY/CHANGELOG registran la causa del fallo Docker local y la corrección.
 - [x] PR registra la causa y solución final.
