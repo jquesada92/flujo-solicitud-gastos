@@ -20,7 +20,8 @@
 - [x] Un draft con dos o más `quotation_options` renderiza **Opciones para votación** aunque el flag persistido sea legacy.
 - [x] Una corrección MULTI_QUOTE no renderiza los campos SIMPLE de monto/proveedor/soporte único como estructura principal.
 - [x] `vite.config.js` importa el formulario modular y elimina del bundle la función `ExpenseForm` legacy completa.
-- [x] El formulario recibe `key` por solicitud/flujo para evitar herencia de estado entre correcciones.
+- [x] La integración de build no modifica el punto de montaje `<ExpenseForm>` mediante reemplazos sensibles a indentación/texto.
+- [x] `expense-form.jsx` rehidrata por `draft.request_id`/`draft.flow_id`, por lo que no requiere una `key` inyectada por Vite.
 
 ## Compatibilidad de datos históricos
 
@@ -67,21 +68,18 @@
 - [x] El test verifica reemplazo de invitación.
 - [x] El test verifica 409 al intentar MULTI_QUOTE → SIMPLE cuando el tipo canónico es múltiple.
 - [x] Existe `test_frontend_revision_contract.py` para verificar el formulario modular y su integración de build.
-- [x] CI del head modular pasó Backend, Frontend build y Docker images en run `32088911340`.
 - [x] CI verifica el artefacto `dist/` y falla si el bundle no contiene `Tipo de solicitud:` y `Opciones para votación` del formulario modular.
+- [x] Existe regresión que impide reintroducir el reemplazo textual `ExpenseForm mount`.
 - [ ] Verificar manualmente: con pestaña **Solicitud sencilla** activa, corregir una MULTI_QUOTE debe mostrar **Tipo de solicitud: Múltiples cotizaciones** y **Opciones para votación**.
 - [ ] Verificar manualmente que no aparezcan los campos SIMPLE `Monto (USD)`, `Proveedor`, `URL del producto o servicio` y soporte único fuera de las tarjetas de cotización.
-- [ ] Verificar en el entorno local que el commit/branch ejecutado coincide con el head que contiene `frontend/src/expense-form.jsx`; una captura sin la línea `Tipo de solicitud:` indica bundle legacy o checkout desactualizado.
+- [ ] Verificar localmente que `docker compose build --no-cache frontend` termine correctamente y que el bundle Nginx contenga `El tipo no cambia durante una corrección`.
 
 ## Documentación
 
-- [x] Constitución revisada: la regla ya existe en 2.3.3 y no requiere nueva versión.
-- [x] Spec funcional actualizada con formulario modular.
-- [x] Plan técnico actualizado.
+- [x] Constitución revisada: el invariant ya existe en 2.3.3 y no requiere nueva regla funcional.
+- [x] Spec funcional revisada: no cambia el requisito funcional.
+- [x] Plan técnico actualizado para retirar el parche textual del mount.
 - [x] Criterios de aceptación actualizados.
-- [x] README actualizado para retirar la descripción del parche granular anterior.
-- [x] Prompt maestro actualizado con la implementación modular.
-- [x] `docs/REQUEST_CORRECTIONS.md` actualizado.
-- [x] HISTORY actualizado.
-- [x] CHANGELOG actualizado.
-- [x] PR actualizado con la causa, solución modular y validación CI.
+- [x] README/prompt/documentación de correcciones deben describir la extracción estructural sin parche de mount.
+- [x] HISTORY/CHANGELOG registran la causa del fallo Docker local y la corrección.
+- [x] PR registra la causa y solución final.
