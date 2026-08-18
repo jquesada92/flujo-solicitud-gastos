@@ -5,7 +5,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
-from app.core.security import require_permission
+from app.core.security import current_user
 from app.models.entities import (
     Expense,
     ExpenseAttachment,
@@ -14,6 +14,7 @@ from app.models.entities import (
     User,
 )
 from app.schemas.expense import ExpenseOut
+from app.services.closure_service import can_manage_closure
 from app.services.document_service import read_upload, write_document
 
 router = APIRouter()
@@ -32,13 +33,24 @@ def _expense_out(db: Session, expense_id: int) -> Expense:
     ).one()
 
 
+def _require_closure_actor(db: Session, expense: Expense, user: User) -> None:
+    if not can_manage_closure(db, expense, user):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                'Solo el solicitante original, el Administrador del sistema o un usuario '
+                'delegado por el solicitante pueden registrar/corregir la factura o cerrar esta solicitud'
+            ),
+        )
+
+
 @router.post('/{request_id}/close', response_model=ExpenseOut)
 def close_expense(
     request_id: str,
     invoice: UploadFile = File(...),
     notes: str | None = Form(default=None),
     db: Session = Depends(get_db),
-    user: User = Depends(require_permission('requests:close')),
+    user: User = Depends(current_user),
 ):
     expense = db.scalar(
         select(Expense)
@@ -49,6 +61,7 @@ def close_expense(
         raise HTTPException(status_code=404, detail='Solicitud no encontrada')
     if expense.status != ExpenseStatus.APPROVED:
         raise HTTPException(status_code=409, detail='Solo se pueden cerrar solicitudes aprobadas')
+    _require_closure_actor(db, expense, user)
 
     content, content_type, original, stored = read_upload(invoice, label='factura')
     path = None
@@ -81,7 +94,7 @@ def replace_invoice(
     invoice: UploadFile = File(...),
     reason: str = Form(...),
     db: Session = Depends(get_db),
-    user: User = Depends(require_permission('requests:close')),
+    user: User = Depends(current_user),
 ):
     if len(reason.strip()) < 3:
         raise HTTPException(status_code=422, detail='Debes indicar el motivo de la corrección')
@@ -94,6 +107,7 @@ def replace_invoice(
         raise HTTPException(status_code=404, detail='Solicitud no encontrada')
     if expense.status != ExpenseStatus.CLOSED:
         raise HTTPException(status_code=409, detail='Solo se puede corregir la factura de una solicitud cerrada')
+    _require_closure_actor(db, expense, user)
 
     previous = db.scalar(
         select(ExpenseAttachment)
