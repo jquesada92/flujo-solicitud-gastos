@@ -89,6 +89,18 @@ Después de una mutación se recargan en paralelo el dashboard y `my-actions`. S
 
 Mientras `main.jsx` conserve la implementación histórica, Vite importa el `HomeDashboard` modular y elimina la función legacy completa entre `function HomeDashboard` y `function App()`. No se parchea el `onClick` de filas por coincidencias de whitespace.
 
+### Ajuste UX posterior: KPIs superiores solo informativos
+
+Durante la validación manual se detectó que **Acciones que requieren mi atención** y **Solicitudes en proceso** todavía estaban implementadas como botones. Se corrige la separación de responsabilidades:
+
+```text
+KPI superior          → información solamente
+Fila acción pendiente → modal contextual
+Ver todas             → Solicitudes
+```
+
+Los KPIs superiores pasan a renderizarse como `article`, sin `onClick` ni semántica de control. `test_frontend_dashboard_contract.py` protege esta regla para evitar que regresen como botones interactivos.
+
 ### Pruebas y validación
 
 Se agregan:
