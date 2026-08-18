@@ -1,6 +1,6 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.3.2**.
+> Constitución vigente: **2.3.3**.
 
 Aplicación web para solicitar, evaluar, aprobar, ejecutar y documentar gastos con trazabilidad y evidencia verificable.
 
@@ -439,7 +439,7 @@ Mientras `ExpenseForm` siga dentro del monolito legacy, `frontend/vite.config.js
 
 La población canónica de aprobadores se obtiene desde `requests:approve`, no desde cargos como Presidente/Tesorero ni flags `can_approve`.
 
-> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.3.2.
+> La fórmula de mayoría legacy todavía requiere una feature separada para ajustarse completamente a la Constitución 2.3.3.
 
 ### Cierre
 
