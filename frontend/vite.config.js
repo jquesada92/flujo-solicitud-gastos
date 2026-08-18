@@ -63,33 +63,6 @@ function replaceCorrectionActionColumn(source) {
   return next;
 }
 
-function dashboardActionWordingPlugin() {
-  return {
-    name: "dashboard-action-wording",
-    enforce: "pre",
-    transform(code, id) {
-      const normalized = id.replaceAll("\\", "/").split("?", 1)[0];
-      if (!normalized.endsWith("/src/home-dashboard.jsx")) return null;
-
-      const revisionButton = '<button className="pending-action-review" disabled={busy} onClick={() => onSubmit("REVISION_REQUESTED", comment)}>Solicitar corrección</button>';
-      const revisedButton = '<button className="pending-action-review" disabled={busy || comment.trim().length < 3} onClick={() => onSubmit("REVISION_REQUESTED", comment)}>Enviar a revisión</button>';
-      let next = replaceRequired(
-        code,
-        revisionButton,
-        revisedButton,
-        "dashboard revision button",
-      );
-      next = replaceRequired(
-        next,
-        'placeholder="Comentario opcional"',
-        'placeholder="Para enviar a revisión, indica qué debe corregir el solicitante"',
-        "dashboard revision comment placeholder",
-      );
-      return { code: next, map: null };
-    },
-  };
-}
-
 function modularExpenseFormPlugin() {
   return {
     name: "modular-expense-form",
@@ -123,6 +96,9 @@ function modularExpenseFormPlugin() {
 
       next = `${next.slice(0, dashboardStart)}${next.slice(dashboardEnd)}`;
 
+      // The table still lives in the legacy monolith. Keep only the resource
+      // capability bridge here until ExpenseTable is modularized; dashboard
+      // wording/behavior lives directly in home-dashboard.jsx.
       next = replaceCancellationVisibility(next);
       next = replaceCorrectionVisibility(next);
       next = replaceCorrectionFormAvailability(next);
@@ -134,5 +110,5 @@ function modularExpenseFormPlugin() {
 }
 
 export default defineConfig({
-  plugins: [dashboardActionWordingPlugin(), modularExpenseFormPlugin(), react()],
+  plugins: [modularExpenseFormPlugin(), react()],
 });
