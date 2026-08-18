@@ -158,6 +158,7 @@ class ExpenseOut(BaseModel):
     quotation_voter_count: int = 0
     selected_quotation_id: int | None = None
     can_cancel: bool = False
+    can_correct: bool = False
 
     class Config:
         from_attributes = True
