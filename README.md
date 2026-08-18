@@ -1,8 +1,8 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.6.0**.
+> Constitución vigente: **2.7.0**.
 
-Aplicación web neutral respecto al tipo de organización para solicitar, evaluar, aprobar, ejecutar, dar seguimiento, corregir, cancelar y documentar gastos con trazabilidad y evidencia verificable.
+Aplicación web neutral respecto al tipo de organización para solicitar, evaluar, aprobar, ejecutar, dar seguimiento, corregir, cancelar, cerrar y documentar gastos con trazabilidad y evidencia verificable.
 
 ## Principios del producto
 
@@ -17,6 +17,8 @@ Aplicación web neutral respecto al tipo de organización para solicitar, evalua
 - Solo solicitante original o Administrador del sistema pueden **Corregir / reenviar** una solicitud corregible.
 - Un aprobador que detecta un problema usa **Enviar a revisión** con comentario; no edita la solicitud ajena.
 - Una revisión válida interrumpe inmediatamente la ronda y entrega la corrección al solicitante.
+- **Cierre/factura es por solicitud:** solicitante, Administrador del sistema o delegado activo del solicitante.
+- `requests:close` queda como permiso legacy inactivo y no autoriza cierre/factura.
 - `APPROVED` no equivale a `CLOSED`.
 - Área y Categoría son dimensiones independientes.
 - SIMPLE/MULTI_QUOTE no cambia silenciosamente durante corrección.
@@ -34,6 +36,7 @@ Aplicación web neutral respecto al tipo de organización para solicitar, evalua
 - **Categoría**: naturaleza del bien/servicio.
 - **Enviar a revisión**: decisión de un aprobador para devolver inmediatamente la solicitud al solicitante con comentarios.
 - **Corregir / reenviar**: edición de una solicitud existente reservada al solicitante original o al Administrador del sistema.
+- **Delegación de cierre/factura**: asignación por solicitud que el solicitante concede a un usuario activo y puede revocar/cambiar.
 
 ## IAM configurable
 
@@ -43,18 +46,20 @@ Usuario
   ├─ Grupos ───────────> Roles ──> Permisos
   ├─ Cargos/Posiciones -> Roles ──> Permisos
   ├─ Roles directos ─────────────> Permisos
-  └─ Permisos directos
+  ├─ Permisos directos
+  └─ Capacidades por recurso/delegación
 ```
 
-Permisos atómicos iniciales:
+Permisos atómicos activos iniciales:
 
 | Código | Capacidad |
 | --- | --- |
 | `requests:read` | Consultar dashboard, solicitudes y evidencia autorizada; baseline para usuarios activos |
 | `requests:create` | Crear nuevas solicitudes y cargar soportes asociados |
 | `requests:approve` | Participar en aprobación/votación y enviar a revisión cuando corresponda |
-| `requests:close` | Subir/reemplazar factura y cerrar |
 | `config:manage` | Administrar configuración e IAM |
+
+`requests:close` permanece solo como registro legacy inactivo. **No** autoriza cierre, factura ni delegación.
 
 `requests:read` es una capacidad base no revocable mientras el usuario esté activo. Para capacidades mutables configurables, ausencia de ALLOW significa DENY.
 
@@ -75,19 +80,19 @@ El backend nunca pregunta si un Cargo se llama `TESORERO`, `PRESIDENTE`, `CFO`, 
 
 ### Capacidades por recurso
 
-Algunas acciones no son permisos globales:
+No son permisos globales:
 
 ```text
 can_cancel
 can_correct
+can_close
+can_delegate_close
 ```
-
-Ambas se calculan por solicitud y usuario.
 
 - `can_cancel`: solicitante original o Administrador del sistema, si el estado es cancelable.
 - `can_correct`: solicitante original o Administrador del sistema, si el estado es corregible.
-
-`requests:create` **no** permite corregir ni cancelar solicitudes ajenas.
+- `can_close`: solicitante original, Administrador del sistema o delegado activo, si el estado es `APPROVED`/`CLOSED`.
+- `can_delegate_close`: solo solicitante original para administrar la delegación de esa solicitud.
 
 Los códigos `APPROVAL_DECISION`, `QUOTATION_VOTE`, `CORRECT_REQUEST`, `CLOSE_REQUEST` tampoco son permisos IAM; son tareas contextuales.
 
@@ -104,22 +109,15 @@ config:manage
 requests:read
 ```
 
-No puede ejercer:
-
-```text
-requests:create
-requests:approve
-requests:close
-```
-
-ni participar en poblaciones financieras.
+No participa en aprobación/votación ni obtiene permisos empresariales financieros.
 
 Como excepciones explícitas de administración del ciclo de vida, sí puede:
 
 - cancelar una solicitud abierta;
-- corregir / reenviar una solicitud corregible.
+- corregir / reenviar una solicitud corregible;
+- registrar/corregir factura y cerrar una solicitud cuando el estado lo permita.
 
-Estas excepciones se validan mediante `system_accounts` y no equivalen a conceder permisos financieros.
+Estas excepciones se validan mediante `system_accounts` y no equivalen a conceder permisos IAM empresariales.
 
 ### No producción
 
@@ -155,7 +153,7 @@ Ver todas                    → Solicitudes
 
 ### Tareas personales
 
-`pending_action_service.py` combina permiso efectivo + asignación concreta + estado:
+`pending_action_service.py` combina permiso/asignación/estado:
 
 ```text
 APPROVAL_DECISION
@@ -168,10 +166,12 @@ CORRECT_REQUEST
 = solicitud propia NEEDS_REVISION
 
 CLOSE_REQUEST
-= requests:close + solicitud APPROVED
+= solicitud APPROVED + (solicitante original OR delegado activo)
 ```
 
-`CORRECT_REQUEST` se asigna por propiedad, no por `requests:create`.
+`CORRECT_REQUEST` y `CLOSE_REQUEST` se asignan por responsabilidad concreta, no por permisos globales de edición/cierre.
+
+El Administrador del sistema conserva facultades administrativas desde Solicitudes, pero no recibe automáticamente todas las correcciones/cierres como tareas personales.
 
 Al seleccionar una fila, el frontend consulta:
 
@@ -200,17 +200,9 @@ Después de una mutación se recargan Dashboard + `my-actions`.
 
 ## Enviar a revisión vs Corregir / reenviar
 
-Estas acciones son diferentes.
-
 ### Enviar a revisión — aprobador
 
-Un aprobador con una aprobación `PENDING` que detecta un problema selecciona:
-
-```text
-Enviar a revisión
-```
-
-y escribe un comentario de al menos 3 caracteres indicando qué debe revisar/corregir el solicitante.
+Un aprobador con una aprobación `PENDING` que detecta un problema selecciona **Enviar a revisión** y escribe un comentario de al menos 3 caracteres.
 
 Una sola `REVISION_REQUESTED` válida:
 
@@ -221,9 +213,7 @@ otras aprobaciones PENDING/WAITING → EXPIRED
 solicitante      → CORRECT_REQUEST
 ```
 
-**No espera mayoría.** Es una interrupción del flujo.
-
-El solicitante recibe correo con el comentario.
+No espera mayoría. El solicitante recibe correo con el comentario.
 
 ### Corregir / reenviar — solicitante/Admin
 
@@ -237,16 +227,72 @@ Administrador del sistema en system_accounts
 
 Un tercero recibe 403 aunque tenga `requests:create`, `requests:approve` o `config:manage`.
 
-El listado `GET /api/expenses` expone:
+## Cierre, factura y delegación
 
-```json
-{
-  "can_cancel": true,
-  "can_correct": true
-}
+`APPROVED` no equivale a `CLOSED`.
+
+### Quién puede cerrar o gestionar factura
+
+```text
+solicitante original
+OR
+Administrador del sistema
+OR
+delegado activo creado por el solicitante para esa solicitud
 ```
 
-La UI usa esas capacidades; el backend vuelve a validar siempre.
+`requests:close` no participa en esta decisión.
+
+### Delegación
+
+Solo el solicitante original puede crear, cambiar o revocar la delegación.
+
+Reglas:
+
+- una sola delegación activa por solicitud;
+- el delegado debe ser usuario activo;
+- no puede ser el propio solicitante;
+- no puede ser una cuenta `system_accounts`;
+- cambiar delegado revoca primero el anterior y conserva historial;
+- revocar elimina inmediatamente la autoridad del delegado;
+- el solicitante conserva siempre su propia autoridad.
+
+API:
+
+```text
+GET    /api/expenses/{request_id}/closure-delegation
+PUT    /api/expenses/{request_id}/closure-delegation
+DELETE /api/expenses/{request_id}/closure-delegation
+```
+
+UI:
+
+```text
+APPROVED + can_close
+→ Registrar factura y cerrar
+
+CLOSED + can_close + factura
+→ Corregir factura
+
+can_delegate_close
+→ Delegar cierre/factura
+```
+
+Componente modular:
+
+```text
+frontend/src/closure-delegation.jsx
+```
+
+Persistencia/auditoría:
+
+```text
+expense_closure_delegations
+```
+
+con `delegated_by_*`, `created_at`, `revoked_at` y `revoked_by_*`.
+
+Ver [docs/CLOSURE_DELEGATION.md](docs/CLOSURE_DELEGATION.md).
 
 ## Solicitudes SIMPLE y MULTI_QUOTE
 
@@ -362,12 +408,6 @@ REJECTED
 
 Cancelar exige motivo y conserva actor/timestamp/razón.
 
-## Cierre
-
-`APPROVED` no equivale a `CLOSED`. Subir/reemplazar factura y cerrar requiere `requests:close`.
-
-Producción: la cuenta técnica recibe DENY para cierre. No producción: puede cerrar para pruebas E2E.
-
 ## Área + Categoría
 
 Área y Categoría son catálogos independientes con relación configurable N:M.
@@ -394,6 +434,8 @@ No se duplica una Categoría por cada Área.
 - Cargos de Usuarios;
 - Roles/permisos directos;
 - Permisos efectivos y sus fuentes.
+
+La delegación de cierre/factura se administra desde la solicitud, no desde IAM global.
 
 La pantalla legacy `AccessProfile/can_*` no es autoridad runtime.
 
@@ -427,6 +469,7 @@ Frontend relevante:
 frontend/src/
 ├── expense-form.jsx
 ├── home-dashboard.jsx
+├── closure-delegation.jsx
 ├── home-dashboard.css
 ├── iam-admin.jsx
 ├── main.jsx               # shell legacy aún pendiente
@@ -440,15 +483,17 @@ tracking.py
 my_actions.py
 revision_actions.py
 cancellation_actions.py
+closure_delegation.py
 quotation_actions.py
 financial_actions.py
 position_access.py
 iam_service.py
+closure_service.py
 pending_action_service.py
 approval_engine.py
 ```
 
-Mientras `ExpenseTable` permanezca en `main.jsx`, Vite mantiene bridges temporales para `can_cancel`, `can_correct` y montaje de componentes modulares. El wording/behavior de **Enviar a revisión** vive directamente en `home-dashboard.jsx`.
+Mientras `ExpenseTable` permanezca en `main.jsx`, Vite mantiene bridges temporales para `can_cancel`, `can_correct`, `can_close`, `can_delegate_close` y montaje de componentes modulares. El backend sigue siendo autoridad.
 
 ## Seguridad
 
@@ -458,7 +503,7 @@ Mientras `ExpenseTable` permanezca en `main.jsx`, Vite mantiene bridges temporal
 - CORS explícito.
 - Documentos privados y firma real de archivo.
 - Rate limiting por tipo de operación.
-- Autorización por IAM/capacidades base/reglas de recurso/system_accounts; nunca por Cargo hardcodeado.
+- Autorización por IAM/capacidades base/reglas de recurso/system_accounts/delegaciones; nunca por Cargo hardcodeado.
 - Backend revalida acciones aunque el frontend o una sesión previa estén desactualizados.
 
 ## Base de datos y migraciones
@@ -471,11 +516,17 @@ Cadena Alembic actual:
 → 20260817_0002 system accounts
 → 20260817_0003 MULTI_QUOTE request_type repair
 → 20260818_0004 position role inheritance
+→ 20260818_0005 closure delegation
 ```
 
-`0004` crea `position_roles` e importa una sola vez configuración legacy de Cargos/Perfiles hacia IAM canónico. `can_*` es solo entrada histórica de migración, no autoridad runtime.
+`0004` crea `position_roles` e importa una sola vez configuración legacy de Cargos/Perfiles hacia IAM canónico.
 
-Feature 007 no agrega migración nueva.
+`0005`:
+
+- crea `expense_closure_delegations`;
+- garantiza una delegación activa por solicitud;
+- conserva historial de revocación;
+- marca `requests:close` como inactivo/legacy.
 
 El contenedor inicia con:
 
@@ -578,6 +629,19 @@ docker compose ps
 8. comprobar que Admin del sistema también puede corregir desde Solicitudes.
 ```
 
+### Cierre/factura/delegación
+
+```text
+1. abrir una solicitud APPROVED como solicitante;
+2. verificar Registrar factura y cerrar + Delegar cierre/factura;
+3. delegar a otro usuario;
+4. verificar que el delegado obtiene CLOSE_REQUEST y puede cerrar;
+5. verificar que un tercero no delegado no puede cerrar aunque tenga requests:close legacy;
+6. revocar la delegación y verificar pérdida inmediata de autoridad;
+7. verificar que Admin del sistema puede cerrar por excepción administrativa;
+8. en CLOSED, verificar Corregir factura solo para solicitante/Admin/delegado activo.
+```
+
 ### MULTI_QUOTE
 
 ```text
@@ -617,11 +681,13 @@ Features vigentes relevantes:
 - Feature 003 — invariants de corrección SIMPLE/MULTI_QUOTE;
 - Feature 005 — seguimiento universal/dashboard;
 - Feature 006 — Grupo/Cargo → Rol → Permiso;
-- Feature 007 — **Enviar a revisión** + propiedad de **Corregir / reenviar**.
+- Feature 007 — **Enviar a revisión** + propiedad de **Corregir / reenviar**;
+- Feature 008 — cierre/factura por solicitante/Admin/delegación.
 
 ## Deuda de transición conocida
 
 - `UserRole`, `users.title`, `can_*`, `AccessProfile`, `BOARD_CODES` permanecen físicamente como compatibilidad; no son autoridad runtime.
+- `requests:close` permanece como registro legacy inactivo hasta su retiro físico futuro.
 - `/api/users` legacy sigue temporalmente.
 - `main.jsx` permanece monolítico en partes y contiene bypasses visuales legacy que el backend no confía.
 - Vite mantiene bridges transitorios para componentes/capacidades por recurso hasta modularizar el shell/tabla.
