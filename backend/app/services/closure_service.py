@@ -109,6 +109,8 @@ def assign_closure_delegate(
         current.revoked_at = datetime.now(timezone.utc)
         current.revoked_by_user_id = requester.id
         current.revoked_by_email = requester.email
+        # Release the partial unique index before inserting the new active row.
+        db.flush()
 
     delegation = ExpenseClosureDelegation(
         expense_id=expense.id,
