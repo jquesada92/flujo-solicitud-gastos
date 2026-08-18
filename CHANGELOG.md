@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-08-17 — Seguimiento universal y cancelación por solicitante/Admin del sistema
+
+### Added
+- `requests:read` pasa a ser baseline efectivo para todo usuario activo y autenticado.
+- `backend/app/api/tracking.py` sirve el dashboard y listado compartido de solicitudes sin filtrar por solicitante.
+- `backend/app/api/cancellation_actions.py` implementa cancelación canónica antes del router legacy.
+- `ExpenseOut.can_cancel` expone la capacidad de cancelación por solicitud para la UX.
+- `backend/tests/test_request_cancellation.py` cubre propiedad, cuenta técnica y estados terminales.
+- `specs/005-universal-dashboard-tracking/` y `docs/REQUEST_TRACKING.md` documentan el contrato.
+
+### Changed
+- Todo usuario activo puede entrar a **Inicio / Dashboard** y **Solicitudes** para dar seguimiento a solicitudes creadas por otros usuarios.
+- `pending_my_action` solo incluye acciones ejecutables por el usuario actual.
+- Solo el solicitante original o el Administrador del sistema identificado mediante `system_accounts` pueden cancelar una solicitud abierta.
+- `requests:create`, `requests:approve` y `config:manage` no conceden por sí mismos cancelación de solicitudes ajenas.
+- `QUOTATION_VOTING`, `SUBMITTED`, `PENDING_APPROVAL`, `NEEDS_REVISION` y `APPROVED` son cancelables por esos actores; `CLOSED`, `CANCELLED` y `REJECTED` no lo son.
+- El frontend usa `can_cancel` retornado por backend para mostrar **Cancelar solicitud**, en lugar de inferirlo desde `can_request` y una lista fija de estados.
+- En producción la cuenta técnica mantiene como permisos IAM únicamente `config:manage + requests:read`; la cancelación administrativa es una excepción explícita de ciclo de vida, no un permiso financiero.
+
+### Fixed
+- Una solicitud MULTI_QUOTE abierta en `QUOTATION_VOTING` puede cancelarse por su solicitante original o por el Administrador del sistema.
+- Se retiró un import transitorio a un bridge legacy inexistente que apareció durante la investigación.
+- La evidencia de producción mostró que Tesorero/Vicepresidente ya tenían permiso efectivo de aprobación, por lo que se descartó un backfill IAM innecesario.
+
+### Migrations
+- Feature 005 no agrega migración de esquema.
+- La cadena Alembic permanece `0000 → 0001 → 0002 → 0003`.
+
+---
+
 ## 2026-08-17 — ExpenseForm modular para correcciones MULTI_QUOTE
 
 ### Fixed
@@ -12,7 +42,7 @@
 
 ### Changed
 - `vite.config.js` deja de parchear condiciones internas de `ExpenseForm`; durante la transición importa el componente modular y elimina del bundle la definición legacy completa.
-- Se mantiene una `key` por solicitud/flujo para forzar remount entre correcciones.
+- El componente modular rehidrata por `draft.request_id`/`flow_id`; no se inyecta una `key` mediante reemplazo textual del montaje.
 
 ### Testing
 - `test_frontend_revision_contract.py` ahora verifica el componente modular, inferencia MULTI_QUOTE, restauración de soportes y extracción del formulario legacy durante build.
