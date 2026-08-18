@@ -21,7 +21,7 @@ from app.models.entities import (
     User,
 )
 from app.schemas.expense import ExpenseOut
-from app.services.iam_service import has_permission
+from app.services.iam_service import has_permission, is_system_account
 
 router = APIRouter()
 
@@ -74,6 +74,7 @@ def list_trackable_expenses(
     expense_ids = [expense.id for expense in expenses]
     latest_events: dict[int, ApprovalStepEvent] = {}
     quotation_voter_counts: dict[int, int] = {}
+    system_admin = is_system_account(db, user.id)
 
     if expense_ids:
         events = db.scalars(
@@ -115,7 +116,12 @@ def list_trackable_expenses(
             event,
             quotation_voter_counts.get(expense.id, 0),
         ).model_copy(update={
-            'can_cancel': can_cancel_expense(db, expense, user),
+            'can_cancel': can_cancel_expense(
+                db,
+                expense,
+                user,
+                system_admin=system_admin,
+            ),
         })
         if lifecycle_at and (
             not event or lifecycle_at.replace(tzinfo=None) > event.occurred_at.replace(tzinfo=None)
