@@ -1,5 +1,107 @@
 # Historial funcional y técnico
 
+## 2026-08-18 — Acciones pendientes abren un modal contextual del usuario
+
+### Problema observado
+
+En **Inicio → Acciones pendientes**, seleccionar una solicitud ejecutaba el mismo callback que **Ver todas**. El resultado era una navegación genérica a **Solicitudes**, aunque la tarjeta decía que existía una acción concreta que requería la atención del usuario autenticado.
+
+Esto obligaba al usuario a volver a localizar la solicitud y no distinguía entre:
+
+```text
+puedo aprobar en general
+vs
+esta aprobación concreta está asignada a mí y sigue pendiente
+```
+
+### Decisión funcional
+
+Una fila de **Acciones pendientes** pasa a representar una tarea contextual y abre una ventana/modal de **Mis acciones** para esa solicitud.
+
+**Ver todas** conserva una responsabilidad diferente:
+
+```text
+Ver todas
+→ navegar a Solicitudes
+
+clic en una fila pendiente
+→ abrir modal contextual
+```
+
+Las acciones contextuales iniciales son:
+
+```text
+APPROVAL_DECISION
+QUOTATION_VOTE
+CORRECT_REQUEST
+CLOSE_REQUEST
+```
+
+Estos códigos **no son permisos IAM nuevos**. Se derivan de:
+
+```text
+permiso efectivo
++
+asignación concreta del workflow
++
+estado vigente
+```
+
+### Backend authoritative
+
+Se agrega `pending_action_service.py` para resolver las tareas del usuario actual:
+
+- `APPROVAL_DECISION`: `requests:approve` + `Approval.PENDING` asignado al usuario + solicitud `PENDING_APPROVAL`;
+- `QUOTATION_VOTE`: `requests:approve` + invitación vigente + solicitud `QUOTATION_VOTING` + ausencia de voto del usuario;
+- `CORRECT_REQUEST`: `requests:create` + solicitud propia `NEEDS_REVISION`;
+- `CLOSE_REQUEST`: `requests:close` + solicitud `APPROVED`.
+
+`tracking.py` usa este mismo resolver para `pending_my_action` y para los códigos de cada `pending_item`.
+
+Se agrega:
+
+```text
+GET  /api/expenses/{request_id}/my-actions
+POST /api/expenses/{request_id}/approval-decision
+```
+
+`my-actions` revalida la tarea al abrir el modal. La decisión de aprobación autenticada reutiliza `approval_engine.apply_decision()` y no expone al frontend el token bearer de los enlaces de correo.
+
+Votación y cierre reutilizan los endpoints canónicos existentes. La corrección dirige al editor canónico de Solicitudes para mantener los invariants SIMPLE/MULTI_QUOTE.
+
+### Frontend
+
+Se crea:
+
+```text
+frontend/src/home-dashboard.jsx
+frontend/src/home-dashboard.css
+```
+
+El modal permite, según la tarea vigente:
+
+- Aprobar / Rechazar / Solicitar corrección;
+- revisar opciones/soportes y votar una cotización;
+- subir factura y cerrar;
+- abrir una solicitud propia para Corregir / reenviar.
+
+Después de una mutación se recargan en paralelo el dashboard y `my-actions`. Si la tarea fue atendida desde correo, otra pestaña o sesión, el modal informa que ya no quedan acciones pendientes en vez de mostrar controles obsoletos.
+
+Mientras `main.jsx` conserve la implementación histórica, Vite importa el `HomeDashboard` modular y elimina la función legacy completa entre `function HomeDashboard` y `function App()`. No se parchea el `onClick` de filas por coincidencias de whitespace.
+
+### Pruebas y validación
+
+Se agregan:
+
+- `test_pending_actions.py`;
+- `test_frontend_dashboard_contract.py`.
+
+La Constitución permanece en **2.5.0**: backend-authoritative y acciones personales del dashboard ya son principios vigentes; este cambio concreta su contrato UX en Feature 005.
+
+GitHub Actions alcanzó la cuota de la cuenta durante este PR. Por tanto, hasta que vuelva la cuota, la validación obligatoria se ejecuta localmente: suite backend, `npm run build`, Docker build/smoke y prueba manual del modal. Un run bloqueado por cuota no se registra como CI verde.
+
+---
+
 ## 2026-08-18 — Cargo y Grupo pasan a ser fuentes configurables de Roles
 
 ### Problema productivo que reveló la brecha
@@ -564,7 +666,7 @@ Pendientes separados:
 - edición estructural de una ronda MULTI_QUOTE corregida (agregar/eliminar opciones con evidencia/versionado explícito);
 - retiro completo de `UserRole`, `can_*`, `AccessProfile`, `BOARD_CODES`, `/api/users` legacy y ramas legacy de `api/expenses.py`;
 - modularización restante de `frontend/src/main.jsx`, incluyendo retiro de bypasses visuales de ADMIN y `canClose={true}`;
-- retirar `modularExpenseFormPlugin` cuando `main.jsx` importe directamente el componente modular.
+- retirar los transforms temporales de Vite cuando `main.jsx` importe directamente `ExpenseForm` y `HomeDashboard` modulares.
 
 ---
 
