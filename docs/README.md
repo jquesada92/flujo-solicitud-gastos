@@ -16,7 +16,7 @@
 - [Feature 004 — correo por ambiente](../specs/004-email-delivery-by-environment/spec.md)
 - [Feature 004 — plan técnico](../specs/004-email-delivery-by-environment/plan.md)
 - [Feature 004 — criterios](../specs/004-email-delivery-by-environment/checklists/acceptance.md)
-- [Feature 005 — dashboard y seguimiento universal](../specs/005-universal-dashboard-tracking/spec.md)
+- [Feature 005 — dashboard, seguimiento y acciones contextuales](../specs/005-universal-dashboard-tracking/spec.md)
 - [Feature 005 — plan técnico](../specs/005-universal-dashboard-tracking/plan.md)
 - [Feature 005 — criterios](../specs/005-universal-dashboard-tracking/checklists/acceptance.md)
 - [Feature 006 — herencia de permisos por Cargo y Grupo](../specs/006-position-group-role-inheritance/spec.md)
@@ -26,10 +26,10 @@
 ## Dominio funcional y seguridad
 
 - [Modelo IAM configurable](IAM_MODEL.md) — baseline `requests:read`, Grupo/Cargo → Rol → Permiso, política `TECHNICAL_ADMIN` y fuentes efectivas.
-- [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md) — rutas canónicas, resolución IAM, migraciones y separación de runtime/compatibilidad legacy.
+- [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md) — rutas canónicas, acciones contextuales, resolución IAM, migraciones y separación de runtime/compatibilidad legacy.
 - [Modelo Área + Categoría](CLASSIFICATION_MODEL.md)
 - [Correcciones y reenvío](REQUEST_CORRECTIONS.md)
-- [Seguimiento universal y cancelación](REQUEST_TRACKING.md)
+- [Seguimiento universal, acciones pendientes y cancelación](REQUEST_TRACKING.md)
 - [Configuración de correo](EMAIL_CONFIGURATION.md)
 - [Terminología funcional](TERMINOLOGY.md)
 - [Historial funcional y técnico](HISTORY.md)
@@ -58,6 +58,7 @@ Cadena Alembic actual:
 
 - `0003` repara filas históricas MULTI_QUOTE con `request_type=SIMPLE` incorrecto.
 - `0004` agrega `position_roles` e importa una sola vez la configuración legacy de cargos/perfiles hacia relaciones IAM canónicas.
+- El modal contextual de acciones pendientes no requiere una migración adicional.
 
 ## IAM vigente
 
@@ -97,6 +98,7 @@ La pantalla legacy basada en `AccessProfile`, `users.title` y `can_*` es deuda d
 ENVIRONMENT=production
 → TECHNICAL_ADMIN permisos IAM: config:manage + requests:read
 → las asignaciones accidentales por Grupo/Cargo/Rol/directa no habilitan permisos financieros
+→ no recibe aprobación/votación/cierre como acciones personales
 → puede cancelar solicitudes abiertas como excepción administrativa de ciclo de vida
 
 ENVIRONMENT!=production
@@ -110,6 +112,39 @@ ENVIRONMENT!=production
 Todo usuario activo recibe `requests:read` como baseline y puede abrir Inicio/Dashboard y Solicitudes para dar seguimiento.
 
 La lectura no concede mutaciones. En particular, ver una solicitud ajena no autoriza modificarla ni cancelarla.
+
+### Acciones pendientes
+
+Las acciones de Inicio no son nuevos permisos IAM. Son tareas concretas resueltas por `pending_action_service.py` desde permiso efectivo + asignación + estado:
+
+```text
+APPROVAL_DECISION
+QUOTATION_VOTE
+CORRECT_REQUEST
+CLOSE_REQUEST
+```
+
+En **Inicio → Acciones pendientes**:
+
+```text
+clic en una fila
+→ GET /api/expenses/{request_id}/my-actions
+→ modal contextual con las acciones vigentes del usuario
+
+Ver todas
+→ Solicitudes
+```
+
+El modal puede permitir:
+
+- Aprobar / Rechazar / Solicitar corrección;
+- revisar y votar cotizaciones;
+- subir factura y cerrar;
+- abrir una solicitud propia para Corregir / reenviar.
+
+Después de cada mutación se recargan el dashboard y `my-actions`, por lo que una acción atendida desde correo, otra pestaña o sesión deja de presentarse como ejecutable.
+
+La aprobación contextual usa `POST /api/expenses/{request_id}/approval-decision` sin exponer tokens bearer de links de correo.
 
 Para cancelación:
 
@@ -172,8 +207,23 @@ Las credenciales SMTP/Brevo pertenecen exclusivamente al backend.
 - Cuenta técnica / Administrador del sistema: identidad técnica gobernada por ambiente.
 - Área: unidad/contexto organizacional del gasto.
 - Categoría: naturaleza del gasto.
+- Acción pendiente: tarea contextual que requiere intervención del usuario actual; no es un permiso IAM.
 - Corrección / Corregir y reenviar: editar sin cambiar SIMPLE/MULTI_QUOTE.
 - Cancelar solicitud: finalizar una solicitud abierta por solicitante original o Administrador del sistema.
+
+## Validación durante límite de GitHub Actions
+
+Mientras la cuenta no tenga cuota de Actions, los gates siguen siendo obligatorios localmente:
+
+```text
+python -m unittest discover -s tests -v
+npm ci
+npm run build
+docker compose build --no-cache
+docker compose up -d
+```
+
+No registrar un run bloqueado por cuota como CI verde.
 
 ## Regla de mantenimiento
 
