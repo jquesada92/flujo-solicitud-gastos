@@ -27,6 +27,9 @@
 - La tabla usa `x.can_close` y `x.can_delegate_close` en lugar de la capacidad global legacy.
 - Constitución actualizada a **2.7.0**.
 
+### Fixed
+- El bridge temporal de Vite para **Delegar cierre/factura** ya no depende de saltos de línea o indentación exactos de `main.jsx`; usa un ancla regex tolerante a LF/CRLF y exige exactamente una coincidencia para evitar transformaciones ambiguas.
+
 ### Security / Audit
 - Solo el solicitante original puede crear/cambiar/revocar delegación.
 - Una sola delegación activa por solicitud mediante índice parcial.
@@ -43,7 +46,7 @@
 - `requests:close` legacy sin delegación negativo.
 - revocación retira autoridad.
 - Dashboard entrega `CLOSE_REQUEST` al requester/delegado.
-- contratos frontend protegen `x.can_close` / `x.can_delegate_close`.
+- contratos frontend protegen `x.can_close` / `x.can_delegate_close` y la tolerancia de formato del bridge de delegación.
 
 ---
 
