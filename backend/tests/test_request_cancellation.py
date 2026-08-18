@@ -115,12 +115,17 @@ class RequestCancellationTests(unittest.TestCase):
     def auth(self, token: str) -> dict[str, str]:
         return {'Authorization': f'Bearer {token}'}
 
-    def test_tracking_marks_only_owned_open_request_as_cancellable_for_requester(self):
+    def test_tracking_marks_owned_open_request_as_cancellable_for_requester(self):
         response = self.client.get('/api/expenses', headers=self.auth(self.requester_token))
         self.assertEqual(response.status_code, 200, response.text)
         by_id = {item['request_id']: item for item in response.json()}
         self.assertTrue(by_id['REQ-MULTI']['can_cancel'])
-        self.assertFalse(by_id['REQ-CLOSED']['can_cancel'])
+
+    def test_tracking_does_not_offer_cancellation_to_other_business_user(self):
+        response = self.client.get('/api/expenses', headers=self.auth(self.other_creator_token))
+        self.assertEqual(response.status_code, 200, response.text)
+        by_id = {item['request_id']: item for item in response.json()}
+        self.assertFalse(by_id['REQ-MULTI']['can_cancel'])
 
     def test_business_user_with_create_permission_cannot_cancel_someone_elses_request(self):
         response = self.client.post(
