@@ -1,5 +1,65 @@
 # Historial funcional y técnico
 
+## 2026-08-17 — Seguimiento universal y cancelación por solicitante/Admin del sistema
+
+### Decisión funcional
+
+Todo usuario activo puede abrir **Inicio / Dashboard** y **Solicitudes** para dar seguimiento a las solicitudes de la organización. `requests:read` pasa a ser baseline de producto para usuarios activos; la lectura compartida no concede acciones mutables.
+
+Se define además una regla explícita para cancelar solicitudes abiertas:
+
+```text
+solicitante original
+OR
+Administrador del sistema persistido en system_accounts
+```
+
+Tener `requests:create`, `requests:approve`, `config:manage`, un cargo o un rol particular no permite cancelar una solicitud ajena.
+
+Estados cancelables:
+
+```text
+QUOTATION_VOTING
+SUBMITTED
+PENDING_APPROVAL
+NEEDS_REVISION
+APPROVED
+```
+
+Estados no cancelables:
+
+```text
+CLOSED
+CANCELLED
+REJECTED
+```
+
+La cancelación exige motivo y conserva actor/timestamp/razón. El listado canónico devuelve `can_cancel` por solicitud para que la UI no reconstruya la regla desde flags legacy.
+
+### Diagnóstico de producción
+
+Una captura de Configuración confirmó que Tesorero y Vicepresidente ya tenían permiso efectivo de aprobación. Por tanto se descartó el supuesto de que el error observado exigía un backfill de `can_approve → requests:approve` en Neon.
+
+No se agrega migración IAM para esta feature. La cadena Alembic permanece:
+
+```text
+0000 → 0001 → 0002 → 0003
+```
+
+Se retiró además un residuo transitorio que había dejado `application.py` importando un bridge legacy inexistente durante la investigación.
+
+### Implementación
+
+- `tracking.py` sirve lectura compartida y calcula `can_cancel`.
+- `cancellation_actions.py` registra la ruta canónica antes del router legacy.
+- la cuenta técnica se identifica por `system_accounts`, no por `UserRole.ADMIN`.
+- el frontend temporal consume `x.can_cancel` para el botón **Cancelar solicitud**.
+- `test_request_cancellation.py` prueba propiedad, cuenta técnica y estados terminales.
+
+La Constitución 2.4.0 ya define backend authoritative, baseline de lectura y política de cuenta técnica; la regla de cancelación se documenta como una regla de recurso dentro de Feature 005 sin crear un nuevo permiso heredable.
+
+---
+
 ## 2026-08-17 — Docker local expone fragilidad del parche de montaje de ExpenseForm
 
 ### Incidente confirmado
