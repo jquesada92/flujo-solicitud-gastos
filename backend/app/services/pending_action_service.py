@@ -53,9 +53,15 @@ def pending_actions_by_expense(
     actions: dict[int, list[str]] = defaultdict(list)
 
     if has_permission(db, user.id, 'requests:approve'):
-        approvals = select(Approval.expense_id).where(
-            func.lower(Approval.approver_email) == user.email.lower(),
-            Approval.status == ApprovalStatus.PENDING,
+        approvals = (
+            select(Approval.expense_id)
+            .join(Expense, Expense.id == Approval.expense_id)
+            .where(
+                func.lower(Approval.approver_email) == user.email.lower(),
+                Approval.status == ApprovalStatus.PENDING,
+                Expense.status == ExpenseStatus.PENDING_APPROVAL,
+            )
+            .distinct()
         )
         if scoped_ids is not None:
             approvals = approvals.where(Approval.expense_id.in_(scoped_ids))
