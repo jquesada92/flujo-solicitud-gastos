@@ -1,8 +1,8 @@
 # Prompt maestro de reconstrucción
 
-> Constitución vigente: **2.4.0**.
+> Constitución vigente: **2.5.0**.
 
-Reconstruye una aplicación web lista para producción llamada **Flujo de Control de Gastos**, destinada a solicitar, evaluar, aprobar, ejecutar y documentar gastos con evidencia verificable.
+Reconstruye una aplicación web lista para producción llamada **Flujo de Control de Gastos**, destinada a solicitar, evaluar, aprobar, ejecutar, dar seguimiento, cancelar cuando corresponda y documentar gastos con evidencia verificable.
 
 ## Autoridad documental
 
@@ -21,19 +21,28 @@ Si existe discrepancia, prevalece el artefacto de mayor prioridad.
 
 ## 1. Producto neutral
 
-La aplicación debe servir para PH, empresas y otras organizaciones. No introduzcas como dominio canónico apartamentos, propietarios, residentes, arrendatarios ni estructuras exclusivas de un cliente.
+La aplicación debe servir para PH, empresas y otras organizaciones.
 
-Tampoco hardcodees estructuras organizacionales. Nombres como Junta Directiva, Administradora, Presidente, Tesorero, Procurement, Finance, IT o Gerente pueden existir como datos configurados por un cliente, nunca como condiciones de runtime.
+No introduzcas como dominio canónico:
+
+- apartamentos;
+- propietarios/copropietarios;
+- residentes/arrendatarios;
+- `Apartment`, `UserApartment`, `ApartmentChangeEvent`;
+- `OwnershipRole`, `PersonType`, `apartment_number`;
+- endpoints inmobiliarios.
+
+Tampoco hardcodees estructuras organizacionales. Nombres como Junta Directiva, Administradora, Presidente, Vicepresidente, Tesorero, Procurement, Finance, IT, CFO o Gerente son **datos configurables**, nunca condiciones de autorización en runtime.
 
 ## 2. Terminología
 
 Usa:
 
 - **Usuario**: cuenta del sistema.
-- **Grupo**: conjunto configurable de usuarios.
-- **Rol**: conjunto configurable de permisos.
+- **Grupo**: conjunto configurable de usuarios que puede heredar Roles.
+- **Rol**: conjunto reutilizable de Permisos.
 - **Permiso**: capacidad atómica implementada por el producto.
-- **Cargo/Posición**: metadato descriptivo que no concede permisos.
+- **Cargo/Posición**: estructura organizacional configurable que puede heredar Roles; su nombre no autoriza directamente.
 - **Área**: unidad organizacional asociada al gasto.
 - **Categoría**: naturaleza del bien/servicio.
 
@@ -41,17 +50,7 @@ No uses Persona/Personas como nombre del módulo de cuentas. No uses Subárea pa
 
 ## 3. IAM configurable
 
-Implementa:
-
-```text
-Usuario → Grupo → Rol → Permiso
-       ↘ Rol directo
-       ↘ Permiso directo
-       ↘ Cargo/Posición descriptivo
-       ↘ Baseline del producto
-```
-
-Persistencia:
+Persistencia canónica:
 
 - `permissions`
 - `roles`
@@ -63,9 +62,20 @@ Persistencia:
 - `user_permissions`
 - `positions`
 - `user_positions`
+- `position_roles`
 - `system_accounts`
 
-Permisos iniciales:
+Modelo:
+
+```text
+Usuario → Grupo ─────────→ Rol → Permiso
+       ↘ Cargo/Posición ─→ Rol → Permiso
+       ↘ Rol directo ─────────→ Permiso
+       ↘ Permiso directo
+       ↘ capacidades base
+```
+
+Permisos atómicos iniciales:
 
 - `requests:read`
 - `requests:create`
@@ -73,20 +83,94 @@ Permisos iniciales:
 - `requests:close`
 - `config:manage`
 
-`requests:read` es baseline no revocable para todo usuario activo y autenticado. Para las demás capacidades, la organización configura desde la UI grupos, roles, cargos, membresías y asignaciones y aplica default DENY si no existe ALLOW.
+Para un usuario operativo activo:
 
-### Prohibiciones
+```text
+effective_permissions =
+    baseline del producto
+  ∪ permisos directos
+  ∪ permisos de roles directos
+  ∪ permisos de roles heredados por grupos activos
+  ∪ permisos de roles heredados por cargos activos
+```
+
+No existe DENY individual en esta versión. Para capacidades mutables, ausencia de ALLOW significa DENY.
+
+### Baseline universal
+
+`requests:read` es una capacidad base no revocable para todo usuario activo y autenticado. Quitarla de un Rol, Grupo, Cargo o permiso directo no debe eliminar el acceso de lectura del usuario activo.
+
+### Herencia por Grupo
+
+Un Grupo puede tener múltiples miembros y múltiples Roles:
+
+```text
+Grupo Junta Directiva
+  miembros: A, B, C
+  rol: Aprobador
+       requests:approve
+```
+
+Todos los miembros activos heredan los permisos de los Roles activos del Grupo.
+
+### Herencia por Cargo
+
+Un Cargo puede tener múltiples Roles:
+
+```text
+Rol Aprobador
+  requests:approve
+
+Cargo Presidente      → Aprobador
+Cargo Vicepresidente  → Aprobador
+Cargo Tesorero        → Aprobador
+```
+
+Un mismo Rol puede reutilizarse en múltiples Cargos y Grupos.
+
+**No autorices por el nombre del Cargo.** Esto está prohibido:
+
+```python
+if user.title == 'TESORERO':
+    allow_approve()
+```
+
+Esto sí es correcto:
+
+```text
+UserPosition
+→ Position(active)
+→ PositionRole
+→ Role(active)
+→ RolePermission
+→ Permission(active)
+```
+
+### Fuentes visibles
+
+Los permisos efectivos deben poder explicar su origen:
+
+```text
+Acceso base del producto para usuarios activos
+Asignación directa
+Rol directo: Comprador
+Grupo Junta Directiva → Aprobador
+Cargo Tesorero → Aprobador
+```
+
+### Prohibiciones IAM
 
 No autorices por:
 
 - `UserRole.ADMIN`, `REQUESTER`, `APPROVER`, `VIEWER`;
-- `can_request`, `can_approve`, `can_view`, `can_configure` como fuente de verdad;
-- nombres de grupos/roles/cargos;
+- `can_request`, `can_approve`, `can_view`, `can_configure` persistidos;
+- nombres/códigos concretos de Grupo, Rol, Cargo o AccessProfile;
 - emails fijos;
 - IDs mágicos;
-- listas como `BOARD_CODES`.
+- `BOARD_CODES`;
+- conceptos inmobiliarios.
 
-Los campos legacy pueden existir solo como puente de compatibilidad y deben derivarse de IAM, no al revés.
+Los elementos legacy pueden existir temporalmente para compatibilidad/migración, pero no son autoridad runtime.
 
 ## 4. Cuenta técnica y política por ambiente
 
@@ -102,14 +186,14 @@ Solo cuando:
 ENVIRONMENT=production
 ```
 
-la cuenta técnica queda restringida como permisos IAM a:
+los permisos IAM efectivos máximos de la cuenta técnica son:
 
 ```text
 config:manage
 requests:read
 ```
 
-En producción debe ser imposible que ejerza:
+Debe ser imposible que ejerza en producción:
 
 ```text
 requests:create
@@ -117,55 +201,47 @@ requests:approve
 requests:close
 ```
 
-incluso si alguien intenta asignarlos accidentalmente mediante un grupo, rol o permiso directo. Tampoco debe participar en poblaciones financieras de aprobación o votación.
+incluso si recibe accidentalmente esas capacidades por Grupo, Cargo, Rol directo o permiso directo. Tampoco participa en poblaciones financieras de aprobación/votación.
 
-Como excepción explícita de administración del ciclo de vida, el Administrador del sistema puede cancelar una solicitud abierta. Esa facultad se valida por `system_accounts`, no por un permiso financiero, email, cargo o `UserRole.ADMIN`.
+Como excepción explícita de administración del ciclo de vida, la cuenta técnica puede cancelar una solicitud abierta. Esta facultad se resuelve mediante `system_accounts`; no equivale a conceder un permiso financiero.
 
 ### No producción
 
-Para cualquier `ENVIRONMENT` distinto de `production`, incluidos local, development/dev, test, staging y preview, la cuenta técnica debe recibir **todos los permisos atómicos activos del producto** para probar el sistema end-to-end.
+Para cualquier `ENVIRONMENT` distinto de `production` —local, development/dev, test, staging, preview— la cuenta técnica recibe todos los permisos atómicos activos para pruebas end-to-end y puede participar en workflows cuando no exista otra exclusión intrínseca.
 
-Debe poder:
+`RENDER=true` puede activar validaciones fuertes de secretos/CORS, pero no sustituye `ENVIRONMENT=production` para autorización funcional.
 
-- crear/corregir solicitudes;
-- consultar;
-- aprobar y votar;
-- entrar en poblaciones de aprobación/votación cuando corresponda;
-- subir/reemplazar factura y cerrar;
-- cancelar solicitudes abiertas;
-- administrar configuración.
+## 5. Consola de Accesos
 
-No persistas físicamente todos esos permisos solo para testing si puede resolverse como política ambiental; el mismo dataset debe volverse restrictivo al ejecutar con `ENVIRONMENT=production`.
-
-`RENDER=true` puede activar validaciones fuertes de secretos y CORS, pero no debe activar por sí mismo la política funcional de producción. Separa `is_production_environment` de validaciones de runtime alojado.
-
-## 5. Interfaz de Accesos
-
-Dentro de Configuración debe existir una consola gráfica para:
+Dentro de **Configuración → Accesos** debe existir administración gráfica de:
 
 - Usuarios;
 - Grupos;
 - Roles;
 - Permisos;
-- Cargos;
-- membresías;
-- roles de grupo;
-- roles directos;
+- Cargos/Posiciones;
+- miembros de Grupos;
+- Roles heredados por Grupo;
+- Roles heredados por Cargo;
+- Grupos de cada Usuario;
+- Cargos de cada Usuario;
+- Roles directos;
 - permisos directos;
-- cargos de usuario;
-- permisos efectivos y su origen.
+- permisos efectivos y sus fuentes.
 
-La cuenta técnica debe aparecer identificada y la UI IAM debe poder explicar si un permiso proviene de política productiva o de acceso de prueba no-productivo.
+La pantalla autoritativa es esta consola IAM.
 
-No requieras editar archivos o variables para crear una estructura empresarial nueva.
+`AccessProfile`, `users.title`, `can_*` y pantallas legacy no deben volver a ser fuente autoritativa para cambios de acceso.
 
 ## 6. Contrato del usuario autenticado
 
-Expón los permisos efectivos actuales en:
+Expón:
 
 ```text
 permission_codes
 ```
+
+con los permisos efectivos actuales.
 
 Durante la transición del frontend legacy deriva también:
 
@@ -179,24 +255,76 @@ can_close     <- requests:close
 
 Estos aliases nunca autorizan el backend.
 
-El login debe calcular y serializar los permisos efectivos antes del primer render. `current_user()` debe volver a calcularlos por request para reflejar cambios inmediatos.
+`current_user()` debe recalcular permisos efectivos por request para reflejar cambios IAM sin reiniciar la app.
 
-Migra progresivamente el frontend a `permission_codes`; retira bypasses visuales como `user.role === "ADMIN"` y `canClose={true}`.
+## 7. Dashboard y seguimiento universal
 
-Para acciones dependientes de una solicitud concreta, el backend puede exponer capacidades por recurso, por ejemplo `can_cancel`. La UI debe consumirlas en vez de reconstruir reglas de propiedad localmente.
+Todo usuario activo y autenticado puede:
 
-## 7. Clasificación Área + Categoría
+- abrir **Inicio / Dashboard**;
+- ver métricas generales de solicitudes;
+- abrir **Solicitudes**;
+- consultar solicitudes creadas por otros usuarios para seguimiento.
 
-Área y Categoría son catálogos independientes con relación N:M configurable.
+La lectura compartida no concede acciones mutables.
+
+`GET /api/expenses` y `GET /api/expenses/dashboard` deben depender de `requests:read`, cuyo resolver incluye el baseline.
+
+No filtres la lista por `UserRole.REQUESTER` ni por `requested_by == current_user.email`.
+
+`pending_my_action` solo incluye acciones que el usuario puede ejecutar:
+
+- `requests:approve` para aprobaciones/votaciones asignadas;
+- `requests:close` para solicitudes aprobadas pendientes de cierre.
+
+## 8. Cancelación de solicitudes
+
+La cancelación es una capacidad **por recurso**, no un permiso derivado de `requests:create`.
+
+Puede cancelar una solicitud abierta únicamente:
+
+```text
+solicitante original
+OR
+cuenta protegida en system_accounts
+```
+
+Estados cancelables:
+
+- `QUOTATION_VOTING`
+- `SUBMITTED`
+- `PENDING_APPROVAL`
+- `NEEDS_REVISION`
+- `APPROVED`
+
+No cancelables:
+
+- `CLOSED`
+- `CANCELLED`
+- `REJECTED`
+
+La cancelación exige motivo y persiste:
+
+- `cancelled_at`
+- `cancelled_by`
+- `cancellation_reason`
+
+El backend devuelve `can_cancel` por solicitud y vuelve a validar siempre la acción. El frontend no debe reconstruir esta autorización con `can_request`, Cargo o Rol.
+
+## 9. Clasificación Área + Categoría
+
+Área y Categoría son catálogos independientes con relación configurable N:M.
 
 ```text
 Área: Administración, Operaciones, IT, Marketing
 Categoría: Equipos, Servicios/Consultoría, Insumos, Licencias
 ```
 
-Una categoría `Equipos` puede habilitarse para múltiples áreas sin duplicarse.
+Una Categoría puede habilitarse para múltiples Áreas sin duplicarse.
 
-## 8. Solicitudes
+Compatibilidad histórica de columnas puede mantenerse mientras se migra, pero la terminología funcional debe ser Área + Categoría.
+
+## 10. Solicitudes
 
 Cada solicitud conserva como mínimo:
 
@@ -218,90 +346,47 @@ Cada solicitud conserva como mínimo:
 
 Crear/corregir/cargar soporte requiere `requests:create`.
 
-### Seguimiento universal
+## 11. SIMPLE y MULTI_QUOTE
 
-Todo usuario activo debe poder abrir:
+### SIMPLE
 
-```text
-Inicio / Dashboard
-Solicitudes
-```
+Exige proveedor, monto y soporte/cotización.
 
-y consultar solicitudes de otros usuarios para dar seguimiento. `GET /api/expenses` y `GET /api/expenses/dashboard` deben depender de `requests:read`, cuyo resultado efectivo incluye el baseline.
+### MULTI_QUOTE
 
-La lectura universal no concede creación, aprobación, cierre, configuración ni cancelación ajena.
+Mantiene varias opciones de cotización y una ronda de selección/votación.
 
-### Cancelación
-
-Una solicitud abierta solo puede ser cancelada por:
+La población canónica se obtiene mediante:
 
 ```text
-solicitante original
-OR
-Administrador del sistema persistido en system_accounts
+users_with_permission('requests:approve')
 ```
 
-No uses `requests:create`, `requests:approve`, `config:manage`, cargo, grupo o rol como sustituto de esta regla.
-
-Estados cancelables:
+Este resolver debe incluir:
 
 ```text
-QUOTATION_VOTING
-SUBMITTED
-PENDING_APPROVAL
-NEEDS_REVISION
-APPROVED
+Permiso directo
+Rol directo
+Grupo → Rol → requests:approve
+Cargo → Rol → requests:approve
 ```
 
-Estados no cancelables:
+Excluye al solicitante cuando el flujo así lo exige y aplica política de cuenta técnica por ambiente.
+
+Las invitaciones guardadas representan el snapshot de participantes de esa ronda.
+
+## 12. Correcciones
+
+`Corregir / reenviar` preserva siempre el tipo canónico:
 
 ```text
-CLOSED
-CANCELLED
-REJECTED
+SIMPLE      → SIMPLE
+MULTI_QUOTE → MULTI_QUOTE
 ```
 
-La cancelación exige motivo, registra `cancelled_at`, `cancelled_by` y `cancellation_reason`, y expira aprobaciones abiertas.
+La pestaña SIMPLE/MULTI_QUOTE seleccionada para una nueva solicitud no puede decidir el tipo de una corrección.
 
-El listado canónico debe devolver `can_cancel` por solicitud. El endpoint de cancelación vuelve a validar siempre la regla aunque la UI haya ocultado/mostrado correctamente el botón.
-
-### Formulario canónico
-
-El formulario de solicitudes debe vivir en un módulo mantenible, actualmente:
-
-```text
-frontend/src/expense-form.jsx
-```
-
-No uses el estado de una pestaña de creación como fuente de verdad de una corrección.
-
-El componente debe calcular:
-
-```text
-effectiveRequestType = draft ? resolveRequestType(draft) : requestType
-```
-
-Y ese valor MUST gobernar conjuntamente:
-
-- layout/renderizado;
-- validaciones;
-- `request_type` del payload;
-- campos SIMPLE;
-- `quotation_options` MULTI_QUOTE;
-- carga posterior de soportes.
-
-### Correcciones
-
-`Corregir / reenviar` debe preservar siempre el tipo canónico:
-
-```text
-SIMPLE      -> SIMPLE
-MULTI_QUOTE -> MULTI_QUOTE
-```
-
-**La pestaña SIMPLE/MULTI_QUOTE seleccionada antes del clic solo pertenece al modo de creación y MUST descartarse al entrar en corrección.** El editor debe derivar su tipo desde la solicitud seleccionada. Si SIMPLE estaba activa y el usuario corrige una MULTI_QUOTE, debe abrir directamente el editor múltiple sin que el usuario seleccione antes esa pestaña.
-
-Mientras exista compatibilidad con datos legacy, considera MULTI_QUOTE si existe cualquiera de estas señales durables:
+Mientras exista compatibilidad legacy, considera MULTI_QUOTE si:
 
 ```text
 request_type == MULTI_QUOTE
@@ -309,73 +394,110 @@ OR status == QUOTATION_VOTING
 OR quotation_options.length >= 2
 ```
 
-El backend debe rechazar con `409 Conflict` un intento real de convertir el tipo canónico durante `resubmit`, aunque el frontend envíe un valor por defecto incorrecto.
+El backend debe rechazar con `409` una conversión real entre tipos durante `resubmit`.
 
 Para una corrección MULTI_QUOTE:
 
-- el layout visible MUST ser **Opciones para votación**, no el formulario SIMPLE;
-- muestra `Tipo de solicitud: Múltiples cotizaciones` como dato de solo lectura;
-- restaura en UI las opciones existentes;
-- conserva los attachments existentes como evidencia y representa esa evidencia con metadata, no intentando prellenar `input[type=file]`;
-- permite editar proveedor, monto, URL y observaciones dentro de cada opción;
-- conserva por ahora la cantidad de opciones;
-- genera un `flow_id` nuevo;
-- invalida/elimina votos e invitaciones vigentes de la ronda anterior;
-- conserva eventos históricos append-only;
-- crea nuevas invitaciones desde `requests:approve`;
+- renderiza **Opciones para votación**;
+- muestra el tipo como dato de solo lectura;
+- restaura opciones existentes;
+- conserva soportes existentes;
+- permite editar proveedor/monto/URL/observaciones dentro de cada opción;
+- mantiene por ahora la cantidad de opciones;
+- genera `flow_id` nuevo;
+- invalida/limpia votos e invitaciones activas anteriores;
+- conserva historial;
+- crea nuevas invitaciones usando el resolver IAM vigente;
 - vuelve a `QUOTATION_VOTING`.
 
-Una corrección MULTI_QUOTE NO debe mostrar como estructura principal:
+`frontend/src/expense-form.jsx` es la implementación canónica del formulario.
 
-- un único `Monto (USD)` de solicitud;
-- un único `Proveedor`;
-- un único `URL del producto o servicio`;
-- un único input de cotización.
+## 13. Aprobaciones y decisiones
 
-No conviertas SIMPLE ↔ MULTI_QUOTE como efecto colateral de una corrección. Si el producto requiere esa conversión, especifícala como una operación distinta.
+Los participantes se seleccionan por permisos/políticas persistidas, nunca por Cargo hardcodeado.
 
-### Integración temporal del monolito
+La población elegible de una ronda debe congelarse/versionarse.
 
-Mientras `main.jsx` conserve una definición histórica de `ExpenseForm`, `vite.config.js` puede realizar una extracción estructural temporal:
+Objetivo funcional de aprobación:
 
-1. importar `ExpenseForm` desde `./expense-form.jsx`;
-2. eliminar del bundle la función legacy completa.
+```text
+response_rate = valid_responses / eligible_participants
+resolver solo cuando response_rate > 0.50
+approval_rate = approvals / valid_decision_responses
+rejection_rate = rejections / valid_decision_responses
+aprobar si approval_rate > 0.50
+rechazar si rejection_rate > 0.50
+empate/falta de mayoría permanece pendiente
+```
 
-No inyectes una `key` o parches de montaje por coincidencias exactas de whitespace; el componente modular ya rehidrata desde `draft.request_id`/`flow_id`.
+No afirmes que el código legacy cumple esta fórmula si todavía existe deuda conocida.
 
-Mientras la tabla legacy siga infiriendo cancelación mediante estados y `can_request`, el build puede sustituir ese guard por `x.can_cancel` usando un patrón semántico tolerante a whitespace y validado para que falle si no encuentra exactamente la frontera esperada.
+## 14. Aprobado no significa cerrado
 
-Estas transformaciones son deuda temporal y deben retirarse cuando `main.jsx` importe directamente componentes modulares.
+`APPROVED` no equivale a `CLOSED`.
 
-## 9. Cotizaciones
+Cerrar o reemplazar factura requiere `requests:close` y evidencia de factura.
 
-SIMPLE exige proveedor, monto y soporte.
+Producción: cuenta técnica recibe DENY para cierre.
 
-MULTI_QUOTE mantiene varias opciones. La población de votación se obtiene desde usuarios efectivos con `requests:approve`, excluyendo al solicitante.
+No producción: cuenta técnica puede cerrar para pruebas E2E.
 
-- Producción: cuenta técnica excluida de permisos financieros.
-- No producción: cuenta técnica puede participar para pruebas si no queda excluida por otra regla del flujo.
+Conserva versiones anteriores de factura y registra actor/fecha/motivo al sustituir.
 
-Congela/versiona los participantes de cada ronda. No inventes reglas de quorum/empate no especificadas.
+## 15. Documentos
 
-## 10. Aprobaciones
+Admite PDF/JPEG/PNG/WEBP.
 
-Los participantes se seleccionan por permisos/políticas persistidas, nunca por cargo hardcodeado.
+Valida:
 
-La Constitución vigente define la regla funcional objetivo de quorum y mayoría. Si el motor legacy todavía difiere, documenta la deuda y no afirmes que está resuelta por cambios IAM.
+- MIME;
+- firma real;
+- tamaño;
+- cuota total;
+- nombre interno impredecible.
 
-## 11. Cierre y factura
+Los documentos son privados y se sirven mediante backend autorizado.
 
-`APPROVED` no significa `CLOSED`.
+Una corrección reconoce soportes existentes sin intentar prellenar `input[type=file]`.
 
-Subir/reemplazar factura y cerrar requiere `requests:close`.
+## 16. Correo por ambiente
 
-- Producción: cuenta técnica debe recibir 403.
-- No producción: cuenta técnica puede cerrar para pruebas end-to-end.
+Centraliza en Settings y servicio único de correo.
 
-Conserva versiones anteriores de facturas y registra motivo/actor/timestamp al sustituir.
+Producción:
 
-## 12. Arquitectura FastAPI
+```text
+Frontend: Vercel
+Backend: Render
+Correo: Brevo HTTPS API
+EMAIL_MODE=brevo
+```
+
+Local/development:
+
+```text
+Frontend: localhost
+Backend: FastAPI/Docker
+Correo: Gmail/Google Workspace SMTP
+EMAIL_MODE=smtp
+smtp.gmail.com
+465 + ssl (recomendado)
+587 + starttls (alternativa)
+```
+
+Nunca expongas `BREVO_API_KEY` ni `SMTP_PASSWORD` en frontend/Vercel/repositorio/logs.
+
+`EMAIL_MODE=console` es solo simulación sin entrega real.
+
+Mantén:
+
+```bash
+python -m scripts.test_email --to destino@example.com
+```
+
+para diagnosticar transporte independientemente del workflow.
+
+## 17. Arquitectura FastAPI
 
 Usa:
 
@@ -393,91 +515,79 @@ app/
 Reglas:
 
 - Pydantic Settings centralizado.
-- `get_db()` entrega una sesión por request y siempre la cierra.
+- `get_db()` entrega/cierra sesión por request.
 - modelos SQLAlchemy fuera de routers.
 - schemas reutilizables fuera de routers.
-- response models explícitos para respuestas sensibles.
-- dependencias FastAPI para autorización.
-- `lifespan` nunca ejecuta DDL/backfills/seeds de negocio.
-- Alembic para migraciones versionadas.
-- SQLAlchemy síncrono: rutas con DB/filesystem bloqueante deben ser `def` o hacer offload explícito.
-- invariantes de negocio como preservar `request_type` y autorizar cancelación por propiedad deben vivir también en backend, no solo en estado React.
+- servicios para lógica reutilizable.
+- response models explícitos.
+- SQLAlchemy/filesystem síncrono en path functions `def` o con offload.
+- `lifespan` no ejecuta DDL/backfills/seeds.
+- rutas canónicas registradas antes de rutas legacy equivalentes.
+- autorización crítica vive también en backend.
 
-## 13. Passwords y JWT
+Rutas/capacidades canónicas actuales incluyen:
+
+- `request_actions.py`
+- `revision_actions.py`
+- `cancellation_actions.py`
+- `quotation_actions.py`
+- `document_actions.py`
+- `financial_actions.py`
+- `tracking.py`
+- `position_access.py`
+- `iam.py`
+- `iam_users.py`
+
+## 18. Passwords y sesiones
 
 - Argon2 mediante `pwdlib.PasswordHash.recommended()` para hashes nuevos.
-- Compatibilidad temporal con PBKDF2 legacy.
-- Login PBKDF2 exitoso migra el hash a Argon2.
-- JWT con `sub`, versión de sesión, `iat`, `exp`.
+- Compatibilidad temporal PBKDF2 legacy.
+- Login PBKDF2 correcto actualiza a Argon2.
+- JWT con expiración absoluta.
 - timeout de inactividad.
-- cambios sensibles pueden revocar sesiones.
+- revocación mediante `session_version`.
+- errores de login no revelan existencia del usuario.
 
-## 14. Documentos
+## 19. Alembic, Docker y despliegue
 
-Admite PDF/JPEG/PNG/WEBP. Valida MIME, firma real, tamaño, cuota total y nombre interno impredecible. El disco es privado y la descarga pasa por autorización backend.
+No uses `Base.metadata.create_all()` ni migraciones ad-hoc dentro de FastAPI startup productivo.
 
-Una corrección debe reconocer soportes existentes sin exigir que un `<input type="file">` del navegador pueda prellenarse.
-
-## 15. Correo
-
-Centraliza toda la configuración en `Settings` y conserva un único servicio de plantillas/entrega con transporte seleccionable por `EMAIL_MODE`.
-
-### Producción
-
-La arquitectura productiva es:
+Cadena vigente:
 
 ```text
-Frontend: Vercel
-Backend:  Render
-Correo:   Brevo HTTPS API
+20260817_0000 application baseline
+→ 20260817_0001 IAM foundation
+→ 20260817_0002 system accounts
+→ 20260817_0003 MULTI_QUOTE request_type repair
+→ 20260818_0004 position role inheritance
 ```
 
-Usa en Render/backend:
+### 0004
 
-```env
-ENVIRONMENT=production
-EMAIL_MODE=brevo
-EMAIL_FROM=<REMITENTE_VERIFICADO>
-BREVO_API_KEY=<SECRET>
-BREVO_SENDER_NAME=Gestión de Solicitudes
+`0004` crea `position_roles` y realiza una importación única de compatibilidad desde:
+
+```text
+access_profiles.can_*
+users.title
 ```
 
-Nunca expongas `BREVO_API_KEY` en Vite/Vercel.
+hacia:
 
-### Local / development
-
-La aplicación local debe poder enviar correo real mediante Gmail/Google Workspace SMTP:
-
-```env
-ENVIRONMENT=development
-EMAIL_MODE=smtp
-EMAIL_FROM=<CUENTA_GOOGLE>
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=465
-SMTP_SECURITY=ssl
-SMTP_USER=<CUENTA_GOOGLE>
-SMTP_PASSWORD=<APP_PASSWORD_GOOGLE>
+```text
+Position
+Role
+RolePermission
+PositionRole
+UserPosition
 ```
 
-También puede usarse `587 + starttls`.
+Esta migración preserva la configuración productiva existente. Por ejemplo, un AccessProfile legacy con `can_approve=true` se traduce a un Rol que contiene `requests:approve`, asociado al Cargo canónico correspondiente.
 
-No uses ni versionees la contraseña normal de Google. Usa App Password cuando la cuenta Google lo requiera y mantenla únicamente en `backend/.env`.
+Esto **no** significa que `can_approve` vuelva a ser autoridad: se lee una sola vez como entrada histórica de migración. Runtime usa únicamente IAM canónico.
 
-`EMAIL_MODE=console` es solo un fallback de desarrollo/test sin entrega real; nunca debe interpretarse como correo enviado.
+Excluye `system_accounts` de asignaciones organizacionales migradas.
 
-Debe existir un diagnóstico independiente del workflow que use exactamente el mismo `Settings` y servicio de correo:
-
-```bash
-python -m scripts.test_email --to destino@example.com
-```
-
-Así se valida primero el transporte y luego las notificaciones SIMPLE/MULTI_QUOTE. Un fallo de entrega puede registrarse sin revertir el workflow, por lo que la observabilidad de correo y el estado de aprobación deben poder investigarse por separado.
-
-## 16. Migraciones, Docker y despliegue
-
-No uses `Base.metadata.create_all()` ni `migrate_schema()` en lifespan productivo.
-
-Secuencia canónica:
+Secuencia de arranque:
 
 ```text
 alembic upgrade head
@@ -485,125 +595,101 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
-Cadena Alembic vigente:
-
-```text
-0000 application baseline
-→ 0001 IAM foundation
-→ 0002 system accounts
-→ 0003 backfill MULTI_QUOTE request_type
-```
-
-`0003` repara filas históricas con evidencia múltiple y default `SIMPLE` incorrecto. Feature 005 de seguimiento/cancelación no agrega migración de esquema ni debe crear un backfill basado en flags legacy.
-
-No ejecutes el bootstrap como `python scripts/bootstrap_admin.py`.
-
 Portabilidad:
 
-- `*.sh text eol=lf` en `.gitattributes`;
-- normalización defensiva CRLF dentro de imagen;
-- healthcheck real antes de Nginx;
-- CI valida entrypoint e import de `scripts.bootstrap_admin`.
+- `*.sh text eol=lf`;
+- Docker normaliza CRLF defensivamente;
+- healthcheck backend antes de Nginx;
+- bootstrap como módulo Python.
 
-Producción debe declarar explícitamente:
+Antes de producción para migraciones de datos: respaldo/snapshot, prueba en PostgreSQL/Neon de preview/copia y plan de recuperación.
 
-```env
-ENVIRONMENT=production
-```
+## 20. Testing obligatorio
 
-No uses ese valor en un entorno donde se pretenda probar todas las funciones con la cuenta técnica.
-
-## 17. Testing
-
-Usa tests unitarios y `FastAPI TestClient`.
+Usa unit tests y `FastAPI TestClient`.
 
 Matriz IAM mínima:
 
-- usuario activo obtiene baseline `requests:read` aunque no tenga asignaciones;
-- no-producción: admin técnico obtiene todos los permisos activos;
-- no-producción: login expone `permission_codes` completos y `can_close=true` si el permiso está activo;
-- no-producción: admin técnico puede entrar en población `requests:approve`;
-- producción: admin técnico obtiene solo config/read;
-- producción: asignarle close accidentalmente sigue resultando DENY;
-- producción: endpoint de cierre devuelve 403;
-- producción: admin técnico queda fuera de población de aprobación;
-- usuario sin config obtiene 403 en IAM;
-- Grupo→Rol→Permiso cambia acceso inmediatamente;
-- permiso directo es aditivo;
-- rol técnico no se edita desde UI.
+- active user recibe baseline `requests:read`;
+- permiso directo funciona;
+- Rol directo funciona;
+- Grupo → Rol → Permiso funciona;
+- Cargo → Rol → Permiso funciona;
+- Cargo inactivo deja de conceder permiso;
+- `permission_sources()` distingue orígenes;
+- `users_with_permission()` reconoce Grupo y Cargo;
+- producción filtra permisos financieros de cuenta técnica aunque lleguen por Grupo/Cargo/Rol/directo;
+- no producción permite E2E técnico;
+- usuario sin `config:manage` obtiene 403 de administración IAM.
 
-Matriz de seguimiento/cancelación mínima:
+Matriz de seguimiento/cancelación:
 
-- usuario activo sin roles puede cargar dashboard;
-- usuario activo puede ver solicitud creada por otro usuario;
-- lectura baseline no concede cierre ni otras mutaciones;
-- solicitante recibe `can_cancel=true` para su solicitud abierta;
-- usuario ajeno recibe `can_cancel=false`;
-- usuario ajeno con `requests:create` recibe 403 al cancelar;
-- solicitante puede cancelar durante `QUOTATION_VOTING`;
-- cuenta técnica puede cancelar cualquier solicitud abierta;
-- `CLOSED`, `CANCELLED` y `REJECTED` no pueden cancelarse;
-- frontend build sustituye el guard legacy de cancelación por `x.can_cancel`.
+- usuario de solo lectura ve dashboard/solicitudes ajenas;
+- lectura no concede mutaciones;
+- solicitante puede cancelar propia solicitud abierta;
+- otro usuario no puede cancelarla por tener `requests:create`/approve/config;
+- system admin puede cancelar abierta;
+- cerrada no puede cancelarse.
 
-Matriz de correcciones mínima:
+Matriz de correcciones:
 
-- MULTI_QUOTE corregida permanece MULTI_QUOTE;
-- con la pestaña SIMPLE activa antes de corregir, una MULTI_QUOTE abre como múltiple;
-- un `draft` en `QUOTATION_VOTING` renderiza `Opciones para votación`;
-- un registro legacy `request_type=SIMPLE` con evidencia múltiple se trata/repara como MULTI_QUOTE;
-- `effectiveRequestType` gobierna render y payload en el formulario modular;
-- opciones y soportes existentes se restauran;
+- MULTI_QUOTE permanece MULTI_QUOTE;
+- pestaña SIMPLE previa no cambia el editor;
+- opciones/evidencia se preservan;
 - `flow_id` cambia;
-- votos vigentes se limpian;
-- invitaciones se reemplazan;
-- MULTI_QUOTE → SIMPLE por `resubmit` devuelve 409;
-- frontend build falla si la extracción del ExpenseForm legacy no puede aplicarse;
-- topología Alembic exige `0003` como único head.
+- ronda activa se reinicia;
+- conversión real devuelve 409;
+- migración 0003 repara legacy inconsistente.
 
-Matriz de correo mínima:
+Matriz de Feature 006:
 
-- `EMAIL_MODE=smtp` requiere credenciales SMTP;
-- local documenta Google SMTP 465/SSL y App Password;
-- producción documenta Brevo en Render;
-- secretos de correo no aparecen en frontend/Vercel;
-- `scripts.test_email` usa el transporte real configurado sin imprimir secretos.
+- Cargo Tesorero → Rol Aprobador → `requests:approve` produce permiso efectivo;
+- fuente visible correcta;
+- Grupo y Cargo pueden conceder simultáneamente;
+- población `requests:approve` incluye ambos caminos;
+- topología Alembic tiene `0004` como único head.
 
-CI ejecuta Python compile, backend tests, frontend build y builds/smoke tests Docker.
+CI debe ejecutar compilación/tests backend, build frontend, construcción/smoke de imágenes Docker.
 
-## 18. Seguridad
+## 21. Deuda legacy permitida solo si está explícita
 
-- backend authoritative;
-- secretos fuera del frontend/logs/repositorio;
-- CORS explícito;
-- rate limiting diferenciado;
-- ORM/consultas parametrizadas;
-- archivos privados;
-- default deny para capacidades mutables de usuarios operativos;
-- `requests:read` baseline para usuarios activos;
-- no bypass por `UserRole.ADMIN`;
-- no autorización por cargo;
-- cancelación ajena no se concede por `requests:create`;
-- Administrador del sistema para cancelación se identifica por `system_accounts`;
-- política ampliada de cuenta técnica únicamente fuera de producción y basada en ambiente, salvo la excepción explícita de cancelación administrativa.
+Puede permanecer temporalmente:
 
-## 19. Auditoría
+- `UserRole`;
+- `users.title`;
+- `can_*`;
+- `AccessProfile`;
+- `BOARD_CODES`;
+- `/api/users` legacy;
+- `main.jsx` monolítico;
+- `domain-normalization.js`;
+- transforms temporales Vite.
 
-Eventos significativos deben conservar actor, tiempo, entidad, cambios y motivo. La evolución del IAM debe incorporarse a auditoría para que cambios de roles/grupos/permisos no sean silenciosos.
+Pero ninguno de esos elementos puede ser autoridad de autorización nueva.
 
-Una corrección debe conservar el historial de rondas anteriores aunque limpie el estado vigente de votos/invitaciones.
+La pantalla autoritativa de acceso es **Configuración → Accesos**.
 
-Una cancelación debe conservar `cancelled_at`, `cancelled_by` y `cancellation_reason` y expirar decisiones abiertas sin borrar evidencia histórica.
+Retira progresivamente:
 
-## 20. Documentación obligatoria
+- comparaciones `user.role === "ADMIN"`;
+- `canClose={true}`;
+- pantallas legacy que mezclan Cargo y permiso;
+- cualquier dependencia runtime en `BOARD_CODES`.
 
-Un cambio no está terminado hasta revisar y actualizar cuando aplique Constitución, spec, plan, criterios de aceptación, README, este prompt, documentación técnica/funcional, terminología, HISTORY, CHANGELOG y PR.
+## 22. Documentación obligatoria
 
-## 21. Deuda permitida solo si está explícita
+Un cambio no está terminado hasta revisar y actualizar cuando aplique:
 
-Durante la transición pueden existir `UserRole`, `can_*`, router legacy `/api/users`, `main.jsx` monolítico, `domain-normalization.js` y `modularExpenseFormPlugin`.
+- Constitución;
+- spec;
+- plan;
+- criterios de aceptación;
+- README;
+- este prompt;
+- docs técnicos/funcionales;
+- terminología;
+- HISTORY;
+- CHANGELOG;
+- PR.
 
-`frontend/src/expense-form.jsx` ya es la implementación canónica del formulario; no reconstruyas el esquema anterior de parchear granularmente el ExpenseForm legacy. El plugin temporal retira la definición histórica del bundle y, mientras la tabla siga legacy, adapta el guard de cancelación para consumir `can_cancel`.
-
-No presentes ninguna deuda legacy como arquitectura objetivo. No debe ser fuente de autorización ni de invariantes críticos sin defensa backend.
-
-No reconstruyas funcionalidad inmobiliaria ni vuelvas a introducir roles/cargos organizacionales hardcodeados.
+No presentes deuda legacy como arquitectura objetivo y no reconstruyas dominio inmobiliario retirado.
