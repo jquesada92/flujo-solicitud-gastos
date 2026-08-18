@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-08-17 — Corrección MULTI_QUOTE usa tipo efectivo autoritativo
+
+### Fixed
+- Una solicitud en `QUOTATION_VOTING` ya no puede renderizar el formulario SIMPLE durante **Corregir / reenviar** por conservar temporalmente el estado React `requestType`.
+- Durante una corrección, `effectiveRequestType` se deriva del draft/evidencia durable y gobierna render, validaciones, payload y uploads.
+- El payload de `resubmit` ya no toma `request_type` del selector/pestaña de creación cuando existe un draft.
+- La UI muestra el tipo de solicitud corregida como dato de solo lectura y no ofrece cambiar SIMPLE ↔ MULTI_QUOTE durante una corrección.
+
+### Added
+- `backend/tests/test_frontend_revision_contract.py` protege el contrato frontend temporal mientras `ExpenseForm` permanezca en `main.jsx`.
+
+---
+
 ## 2026-08-17 — Enlaces de aprobación local usan el frontend Docker correcto
 
 ### Fixed
