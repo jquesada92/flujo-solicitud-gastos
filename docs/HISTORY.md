@@ -1,5 +1,38 @@
 # Historial funcional y técnico
 
+## 2026-08-17 — Corrección MULTI_QUOTE: el tipo efectivo pasa a ser autoritativo
+
+### Incidente observado
+
+Una nueva reproducción manual mostró que la solicitud estaba claramente en **Votación de cotizaciones**, pero al pulsar **Corregir / reenviar** aparecía el formulario SIMPLE con `Monto`, `Proveedor` y un solo soporte. El backend luego rechazaba el reenvío porque el payload intentaba degradar el flujo múltiple a sencillo.
+
+La primera corrección había restaurado `requestType` desde el draft, pero eso no era suficiente: el formulario legacy seguía usando directamente el estado React `requestType` en render, validaciones y construcción del payload.
+
+### Corrección consolidada
+
+Se introduce el concepto frontend temporal `effectiveRequestType`:
+
+```text
+si existe draft:
+    tipo efectivo = tipo canónico/inferido de la solicitud
+si es nueva solicitud:
+    tipo efectivo = pestaña seleccionada
+```
+
+Durante una corrección ese tipo efectivo gobierna:
+
+- qué editor se renderiza;
+- validación de soportes;
+- `request_type` enviado al backend;
+- `quotation_options`;
+- carga de archivos.
+
+El tipo de la solicitud se muestra como dato de solo lectura durante la corrección. No se permite cambiar SIMPLE ↔ MULTI_QUOTE dentro de **Corregir / reenviar**.
+
+Se agrega `test_frontend_revision_contract.py` para impedir que el transform temporal vuelva a utilizar `requestType` como autoridad de una corrección.
+
+---
+
 ## 2026-08-17 — Enlaces de correo local alineados con Docker Compose
 
 ### Problema observado
@@ -318,7 +351,7 @@ La consola consume `/api/iam/*` y no depende de perfiles/cargos hardcodeados del
 
 Pendientes separados:
 
-- fórmula exacta del motor de aprobación para cumplir la Constitución 2.3.2;
+- fórmula exacta del motor de aprobación para cumplir la Constitución 2.3.3;
 - regla de quorum/empate de votación de cotizaciones;
 - edición estructural de una ronda MULTI_QUOTE corregida (agregar/eliminar opciones con evidencia/versionado explícito);
 - retiro completo de `UserRole`, `can_*`, `/api/users` legacy y ramas legacy de `api/expenses.py`;
