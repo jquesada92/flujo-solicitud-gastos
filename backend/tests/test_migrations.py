@@ -12,8 +12,9 @@ class MigrationTopologyTests(unittest.TestCase):
         config.set_main_option('script_location', str(backend_dir / 'alembic'))
         script = ScriptDirectory.from_config(config)
 
-        self.assertEqual(script.get_heads(), ['20260818_0006'])
+        self.assertEqual(script.get_heads(), ['20260819_0007'])
         revisions = {revision.revision: revision.down_revision for revision in script.walk_revisions()}
+        self.assertEqual(revisions['20260819_0007'], '20260818_0006')
         self.assertEqual(revisions['20260818_0006'], '20260818_0005')
         self.assertEqual(revisions['20260818_0005'], '20260818_0004')
         self.assertEqual(revisions['20260818_0004'], '20260817_0003')
@@ -72,6 +73,25 @@ class MigrationTopologyTests(unittest.TestCase):
         self.assertIn('intentionally NOT assigned to any', migration)
         self.assertNotIn("'JUNTA_DIRECTIVA'", migration)
         self.assertNotIn("'ADMINISTRACION'", migration)
+
+    def test_configuration_read_migration_is_database_driven_and_read_only(self):
+        backend_dir = Path(__file__).resolve().parents[1]
+        migration = (
+            backend_dir
+            / 'alembic'
+            / 'versions'
+            / '20260819_0007_configuration_read_access.py'
+        ).read_text(encoding='utf-8')
+
+        self.assertIn("'config:read'", migration)
+        self.assertIn("'configuration-viewer'", migration)
+        self.assertIn("'Visor de configuración'", migration)
+        self.assertIn("'requests:approve'", migration)
+        self.assertIn('user_role_assignments', migration)
+        self.assertIn('position_roles', migration)
+        self.assertIn('migration-time bootstrap only', migration)
+        for organizational_name in ('PRESIDENTE', 'VICEPRESIDENTE', 'TESORERO', 'VOCERO'):
+            self.assertNotIn(organizational_name, migration)
 
 
 if __name__ == '__main__':
