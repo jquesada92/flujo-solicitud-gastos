@@ -12,8 +12,9 @@ class MigrationTopologyTests(unittest.TestCase):
         config.set_main_option('script_location', str(backend_dir / 'alembic'))
         script = ScriptDirectory.from_config(config)
 
-        self.assertEqual(script.get_heads(), ['20260818_0005'])
+        self.assertEqual(script.get_heads(), ['20260818_0006'])
         revisions = {revision.revision: revision.down_revision for revision in script.walk_revisions()}
+        self.assertEqual(revisions['20260818_0006'], '20260818_0005')
         self.assertEqual(revisions['20260818_0005'], '20260818_0004')
         self.assertEqual(revisions['20260818_0004'], '20260817_0003')
         self.assertEqual(revisions['20260817_0003'], '20260817_0002')
@@ -54,6 +55,23 @@ class MigrationTopologyTests(unittest.TestCase):
         self.assertIn("WHERE code = 'requests:close'", migration)
         self.assertIn("SET active = FALSE", migration)
         self.assertIn('Retirado como autoridad runtime', migration)
+
+    def test_area_management_migration_separates_technical_configuration(self):
+        backend_dir = Path(__file__).resolve().parents[1]
+        migration = (
+            backend_dir
+            / 'alembic'
+            / 'versions'
+            / '20260818_0006_area_management_permission.py'
+        ).read_text(encoding='utf-8')
+
+        self.assertIn("'areas:manage'", migration)
+        self.assertIn("'area-manager'", migration)
+        self.assertIn("'Gestor de áreas'", migration)
+        self.assertIn('system_accounts', migration)
+        self.assertIn('intentionally NOT assigned to any', migration)
+        self.assertNotIn("'JUNTA_DIRECTIVA'", migration)
+        self.assertNotIn("'ADMINISTRACION'", migration)
 
 
 if __name__ == '__main__':
