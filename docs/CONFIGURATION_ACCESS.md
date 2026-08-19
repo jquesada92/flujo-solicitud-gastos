@@ -130,6 +130,20 @@ El backend sigue siendo autoridad final.
 
 `iam-admin.jsx` solo inyecta **Accesos** cuando el menú se marca como perteneciente al System Admin.
 
+### Bridge temporal de inyección de Accesos
+
+Mientras `iam-admin.jsx` se conecte al shell legacy mediante el plugin de `vite.config.js`, el guard de `injectAccessMenu()` se transforma con una regex estructural tolerante a espacios y finales de línea LF/CRLF.
+
+La transformación exige exactamente una coincidencia. Cero o múltiples coincidencias abortan el build para evitar que un cambio de formato deje **Accesos** visible en un menú no técnico o transforme código ambiguo.
+
+No se debe volver a una coincidencia multilinea literal basada en indentación exacta. Este hardening corrige el fallo local observado con Vite 8.2.1:
+
+```text
+Legacy main.jsx extraction could not find: system-only access menu injection
+```
+
+La regla funcional no cambió; Constitución 2.8.0 continúa vigente.
+
 ## Migración 0006
 
 ```text
@@ -159,4 +173,5 @@ Debe demostrarse que:
 - usuario ordinario sin `areas:manage` no ve Configuración;
 - manipular frontend no permite acceder a IAM técnico;
 - `config:manage` legacy de usuario ordinario no es efectivo;
-- los Grupos/Cargos configurados reciben Áreas solo a través de Roles/Permisos persistidos.
+- los Grupos/Cargos configurados reciben Áreas solo a través de Roles/Permisos persistidos;
+- `npm run build` sigue siendo exitoso aunque el guard de `injectAccessMenu()` cambie únicamente en whitespace/LF/CRLF.
