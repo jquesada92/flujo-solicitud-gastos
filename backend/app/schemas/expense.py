@@ -38,13 +38,11 @@ class QuotationVoteOut(BaseModel):
 
 
 class ExpenseCreate(BaseModel):
-    """Canonical request contract.
+    """Canonical request contract shared by API, ORM and database.
 
-    The public API uses expense_area/expense_category. Legacy names are accepted
-    temporarily as validation aliases so older deployed clients do not fail while
-    the frontend transition completes. Internal persistence still receives the
-    legacy ORM attribute names through model_dump until the database model is
-    renamed in a dedicated migration.
+    New code uses expense_area / expense_category end to end. Legacy input names
+    remain accepted temporarily so an older deployed client fails gracefully
+    during rollout, but serialization and persistence always use canonical names.
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -72,22 +70,13 @@ class ExpenseCreate(BaseModel):
 
     @property
     def expense_type(self) -> str:
-        """Temporary internal compatibility alias."""
+        """Temporary compatibility alias for legacy backend callers."""
         return self.expense_area
 
     @property
     def expense_subcategory(self) -> str | None:
-        """Temporary internal compatibility alias."""
+        """Temporary compatibility alias for legacy backend callers."""
         return self.expense_category
-
-    def model_dump(self, *args, **kwargs):
-        """Map canonical API fields to the current ORM constructor names."""
-        values = super().model_dump(*args, **kwargs)
-        if 'expense_area' in values:
-            values['expense_type'] = values.pop('expense_area')
-        if 'expense_category' in values:
-            values['expense_subcategory'] = values.pop('expense_category')
-        return values
 
     @model_validator(mode='after')
     def require_support(self):
