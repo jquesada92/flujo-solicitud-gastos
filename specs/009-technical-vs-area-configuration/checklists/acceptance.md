@@ -69,4 +69,4 @@
 - [x] PROMPT_RECONSTRUCCION actualizado.
 - [x] HISTORY actualizado.
 - [x] CHANGELOG actualizado.
-- [ ] PR #9 actualizado.
+- [x] PR #9 actualizado.
