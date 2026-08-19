@@ -7,6 +7,7 @@ from app.core.security import require_permission
 from app.models.entities import Approval, ApprovalStatus, Expense, User
 from app.schemas.approval import ApprovalDecision
 from app.services.approval_engine import apply_decision
+from app.services.closure_service import can_delegate_closure
 from app.services.pending_action_service import (
     APPROVAL_DECISION,
     CLOSE_REQUEST,
@@ -52,7 +53,7 @@ def _attachment(item) -> dict:
     }
 
 
-def _request_payload(expense: Expense) -> dict:
+def _request_payload(expense: Expense, user: User) -> dict:
     general_supports = [
         _attachment(item)
         for item in expense.attachments
@@ -72,6 +73,7 @@ def _request_payload(expense: Expense) -> dict:
         'supplier': expense.supplier,
         'item_url': expense.item_url,
         'status': expense.status.value,
+        'can_delegate_close': can_delegate_closure(expense, user),
         'supports': general_supports,
         'quotation_options': [
             {
@@ -103,7 +105,7 @@ def get_my_request_actions(
     expense = _expense(db, request_id)
     action_codes = pending_actions_by_expense(db, user, expense_ids=[expense.id]).get(expense.id, [])
     return {
-        'request': _request_payload(expense),
+        'request': _request_payload(expense, user),
         'actions': [
             {'code': code, 'label': ACTION_LABELS[code]}
             for code in action_codes
