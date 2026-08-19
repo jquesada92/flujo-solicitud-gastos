@@ -1,5 +1,26 @@
 # Historial funcional y técnico
 
+## 2026-08-18 — Hardening del bridge Vite de Accesos
+
+Durante la validación local de Feature 009 con Vite 8.2.1 en Windows, `npm run build` falló con:
+
+```text
+Legacy main.jsx extraction could not find: system-only access menu injection
+```
+
+La regla funcional de autorización era correcta. El fallo estaba en `protectAccessMenuInjection()`: el bridge temporal buscaba mediante `replaceRequired()` una secuencia multilinea exacta dentro de `iam-admin.jsx`, por lo que un cambio de formato/transformación impedía localizar el guard de `injectAccessMenu()`.
+
+Decisión técnica:
+
+- mantener la frontera funcional de Constitución 2.8.0 sin cambios;
+- reemplazar la coincidencia multilinea literal por una regex estructural tolerante a whitespace y finales LF/CRLF;
+- exigir exactamente una coincidencia del guard para conservar fail-fast ante cero o múltiples matches;
+- mantener el comportamiento resultante: remover cualquier botón Accesos en menú no marcado `data-system-admin=true` e inyectarlo solo para System Admin;
+- reforzar `test_frontend_configuration_access.py` para impedir volver al bridge literal frágil;
+- mantener `npm run build` como gate manual pendiente hasta confirmar el fix en el entorno local del desarrollador.
+
+---
+
 ## 2026-08-18 — Configuración técnica se separa de Gestión de Áreas
 
 ### Problema observado
