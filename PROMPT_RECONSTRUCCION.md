@@ -477,6 +477,31 @@ Producción: Vercel + Render + Brevo (`EMAIL_MODE=brevo`). Local: Docker/FastAPI
 
 Mantén `python -m scripts.test_email --to destino@example.com` para diagnóstico.
 
+### Notificaciones IAM obligatorias
+
+Al crear un usuario activo, el correo de invitación con contraseña temporal debe incluir:
+
+```text
+Cargo(s) activos
+Permisos efectivos actuales
+```
+
+Los permisos se calculan después de aplicar todas las asignaciones mediante `effective_permission_codes()` y se muestran con nombre legible + código. Los Cargos se obtienen de `UserPosition → Position`.
+
+Cuando cambia realmente el conjunto `position_ids` de un usuario activo:
+
+```text
+aplicar Cargo nuevo
+→ recalcular permisos efectivos
+→ enviar Actualización de cargo y permisos
+```
+
+Guardar exactamente el mismo conjunto no genera correo duplicado. El correo de cambio de Cargo no contiene contraseña.
+
+La invitación inicial y el cambio de Cargo son operaciones IAM con notificación obligatoria: si falla el transporte, la operación no se confirma; para cambio de Cargo se hace rollback y se devuelve 502.
+
+Nunca construyas estos correos desde `UserRole`, `title` ni `can_*` legacy.
+
 ## 18. Arquitectura FastAPI
 
 ```text
@@ -512,6 +537,7 @@ closure_service.py
 pending_action_service.py
 approval_engine.py
 quotation_service.py
+email_service.py
 ```
 
 Modelos adicionales:
@@ -544,6 +570,8 @@ Cadena vigente:
 
 `0006` crea/activa `areas:manage`, crea el Rol neutral `Gestor de áreas` y documenta `config:manage` como administración técnica; no asigna acceso por nombres organizacionales.
 
+Feature 010 no requiere migración; reutiliza el modelo IAM existente.
+
 Inicio:
 
 ```text
@@ -564,6 +592,10 @@ Matriz mínima:
 - usuario `areas:manage` no accede a IAM/Usuarios/Organigrama;
 - `config:manage` legacy asignado a usuario ordinario no es efectivo;
 - `is_system_account` explícito en login/`/auth/me`;
+- invitación de usuario incluye Cargo(s) y permisos efectivos;
+- cambio real de Cargo envía permisos recalculados;
+- guardar mismo Cargo no duplica notificación;
+- fallo de correo de cambio de Cargo revierte la actualización;
 - política técnica producción/no-producción (`read + areas + config` en producción);
 - menú System Admin vs Gestor de áreas vs usuario sin configuración;
 - topología Alembic con `0006` único head;
