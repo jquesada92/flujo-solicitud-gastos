@@ -13,6 +13,7 @@
 - [Feature 007 — Enviar a revisión + propiedad de corrección](../specs/007-revision-handoff-correction-ownership/spec.md)
 - [Feature 008 — cierre/factura por propiedad o delegación](../specs/008-request-closure-delegation/spec.md)
 - [Feature 009 — configuración técnica vs gestión de Áreas](../specs/009-technical-vs-area-configuration/spec.md)
+- [Feature 010 — notificaciones de Cargo y permisos efectivos](../specs/010-user-access-notifications/spec.md)
 
 Cada feature mantiene `spec.md`, `plan.md` y `checklists/acceptance.md`.
 
@@ -76,6 +77,14 @@ Usuario ordinario con areas:manage
 Alembic `0006` crea el Rol neutral **Gestor de áreas**. La organización decide a qué Grupos/Cargos asociarlo; no existe autorización por nombres como Administración o Junta Directiva.
 
 Ver [CONFIGURATION_ACCESS.md](CONFIGURATION_ACCESS.md).
+
+## Notificaciones IAM al usuario
+
+Al crear un usuario activo, el correo con contraseña temporal incluye Cargo(s) y permisos efectivos.
+
+Cuando cambia realmente su Cargo, se envía **Actualización de cargo y permisos** con el nuevo Cargo y los permisos recalculados. Guardar el mismo Cargo no duplica el correo. Estas notificaciones usan `effective_permission_codes()` y no flags legacy.
+
+Ver [EMAIL_CONFIGURATION.md](EMAIL_CONFIGURATION.md).
 
 ## Capacidades por recurso
 
@@ -166,6 +175,7 @@ MULTI_QUOTE corregida reinicia ronda y excluye siempre al solicitante original.
 - `0004`: `position_roles` + import legacy a IAM.
 - `0005`: `expense_closure_delegations` + retiro operativo de `requests:close`.
 - `0006`: `areas:manage` + Rol Gestor de áreas + separación de configuración técnica.
+- Feature 010 no requiere migración.
 
 Contrato de arranque:
 
@@ -181,6 +191,8 @@ uvicorn app.application:app
 Producción: Brevo / Render
 Local: Google SMTP / Docker
 ```
+
+La invitación de usuario y la notificación de cambio de Cargo son obligatorias para la operación IAM; ver `EMAIL_CONFIGURATION.md` para semántica de fallo.
 
 ## GitHub Actions sin cuota
 
