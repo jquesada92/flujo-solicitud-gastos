@@ -99,7 +99,48 @@ def _layout(title: str, content: str) -> str:
 <div style="padding:26px">{content}</div></div></body></html>'''
 
 
-def send_user_invitation(user, temporary_password: str) -> None:
+def _access_summary_text(
+    position_names: list[str] | None,
+    permissions: list[tuple[str, str]] | None,
+) -> str:
+    positions = position_names or []
+    effective = permissions or []
+    position_lines = '\n'.join(f'- {name}' for name in positions) or '- Sin cargo asignado'
+    permission_lines = '\n'.join(
+        f'- {name} ({code})' for name, code in effective
+    ) or '- Sin permisos efectivos adicionales'
+    return f'''Cargo(s):
+{position_lines}
+
+Permisos efectivos:
+{permission_lines}'''
+
+
+def _access_summary_html(
+    position_names: list[str] | None,
+    permissions: list[tuple[str, str]] | None,
+) -> str:
+    positions = position_names or []
+    effective = permissions or []
+    position_items = ''.join(f'<li>{html.escape(name)}</li>' for name in positions) or '<li>Sin cargo asignado</li>'
+    permission_items = ''.join(
+        f'<li>{html.escape(name)} <code>{html.escape(code)}</code></li>'
+        for name, code in effective
+    ) or '<li>Sin permisos efectivos adicionales</li>'
+    return f'''<div style="background:#f7f8fa;padding:16px;border-radius:10px;margin:18px 0">
+<b>Cargo(s)</b><ul>{position_items}</ul>
+<b>Permisos efectivos</b><ul>{permission_items}</ul>
+</div>'''
+
+
+def send_user_invitation(
+    user,
+    temporary_password: str,
+    position_names: list[str] | None = None,
+    permissions: list[tuple[str, str]] | None = None,
+) -> None:
+    access_text = _access_summary_text(position_names, permissions)
+    access_html = _access_summary_html(position_names, permissions)
     text_body = f'''Acceso a {PRODUCT_NAME}
 
 Hola {user.name},
@@ -110,6 +151,8 @@ Usuario: {user.email}
 Contraseña temporal: {temporary_password}
 Acceso: {PUBLIC_URL}
 
+{access_text}
+
 Al iniciar sesión deberás crear una contraseña nueva antes de continuar.
 No compartas estas credenciales.
 '''
@@ -117,10 +160,40 @@ No compartas estas credenciales.
         'INVITACIÓN DE USUARIO',
         f'''<h2>Hola {html.escape(user.name)}</h2><p>Se creó una cuenta para ti.</p>
 <div style="background:#f7f8fa;padding:16px;border-radius:10px;line-height:1.8"><b>Usuario:</b> {html.escape(user.email)}<br><b>Contraseña temporal:</b> <code>{html.escape(temporary_password)}</code></div>
+{access_html}
 <p>Al iniciar sesión deberás reemplazar esta contraseña antes de usar el sistema.</p>
 <a href="{html.escape(PUBLIC_URL)}" style="display:inline-block;background:#172033;color:white;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">Iniciar sesión</a>''',
     )
     _send(user.email, f'Tu acceso a {PRODUCT_NAME}', text_body, html_body)
+
+
+def send_user_access_updated(
+    user,
+    position_names: list[str],
+    permissions: list[tuple[str, str]],
+) -> None:
+    access_text = _access_summary_text(position_names, permissions)
+    access_html = _access_summary_html(position_names, permissions)
+    text_body = f'''Actualización de acceso a {PRODUCT_NAME}
+
+Hola {user.name},
+
+Tu cargo en el sistema fue actualizado. A continuación se muestra tu configuración vigente:
+
+{access_text}
+
+Estos permisos son los permisos efectivos actuales de tu cuenta y pueden provenir de tu cargo, grupos, roles o asignaciones directas.
+Acceso: {PUBLIC_URL}
+'''
+    html_body = _layout(
+        'ACTUALIZACIÓN DE CARGO Y PERMISOS',
+        f'''<h2>Hola {html.escape(user.name)}</h2>
+<p>Tu cargo en el sistema fue actualizado. Esta es tu configuración vigente:</p>
+{access_html}
+<p style="color:#697386">Los permisos mostrados son los permisos efectivos actuales de tu cuenta y pueden provenir de tu cargo, grupos, roles o asignaciones directas.</p>
+<a href="{html.escape(PUBLIC_URL)}" style="display:inline-block;background:#172033;color:white;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">Abrir sistema</a>''',
+    )
+    _send(user.email, f'Actualización de cargo y permisos · {PRODUCT_NAME}', text_body, html_body)
 
 
 def send_approval_request(approval) -> None:
