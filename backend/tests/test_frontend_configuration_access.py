@@ -6,23 +6,33 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class FrontendConfigurationAccessTests(unittest.TestCase):
-    def test_vite_bridge_uses_system_account_for_technical_configuration(self):
+    def test_vite_bridge_separates_configuration_read_from_manage(self):
         vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')
         self.assertIn('isSystemAdmin = user.is_system_account === true', vite)
-        self.assertIn('(user.permission_codes || []).includes("areas:manage")', vite)
+        self.assertIn('permissionCodes = user.permission_codes || []', vite)
+        self.assertIn('canReadConfiguration = isSystemAdmin || permissionCodes.includes("config:read")', vite)
+        self.assertIn('canManageAreas = isSystemAdmin || permissionCodes.includes("areas:manage")', vite)
         self.assertIn('canConfigure = isSystemAdmin', vite)
-        self.assertIn('canAccessOrganization = isSystemAdmin', vite)
-        self.assertIn('data-system-admin={isSystemAdmin ? "true" : "false"}', vite)
+        self.assertIn('canAccessOrganization = canReadConfiguration', vite)
+        self.assertIn('data-config-access={canReadConfiguration ? "true" : "false"}', vite)
+        self.assertIn('data-config-readonly={canReadConfiguration && !isSystemAdmin ? "true" : "false"}', vite)
 
-    def test_area_menu_is_independent_from_technical_configuration(self):
+    def test_area_menu_is_available_to_configuration_viewer_or_area_manager(self):
         vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')
-        self.assertIn('canManageAreas && <button onClick={() => navigateTo("categories")}', vite)
-        self.assertIn('tab === "categories" && canManageAreas ?', vite)
+        self.assertIn('(canReadConfiguration || canManageAreas) && <button onClick={() => navigateTo("categories")}', vite)
+        self.assertIn('tab === "categories" && (canReadConfiguration || canManageAreas) ?', vite)
 
-    def test_access_console_is_injected_only_for_system_admin_menu(self):
+    def test_read_only_configuration_exposes_users_rules_and_audit(self):
+        vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')
+        self.assertIn('canReadConfiguration && <button onClick={() => navigateTo("people")}', vite)
+        self.assertIn('canReadConfiguration && <button onClick={() => navigateTo("rules")}', vite)
+        self.assertIn('tab === "rules" && canReadConfiguration ?', vite)
+        self.assertIn('tab === "audit" && canReadConfiguration ?', vite)
+
+    def test_access_console_is_injected_for_configuration_readers(self):
         vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')
         self.assertIn('protectAccessMenuInjection', vite)
-        self.assertIn('menu.dataset.systemAdmin !== "true"', vite)
+        self.assertIn('menu.dataset.configAccess !== "true"', vite)
         self.assertIn('existing?.remove()', vite)
         self.assertIn('iam-admin access menu extraction expected 1 injection guard', vite)
 
@@ -37,11 +47,23 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertNotIn('replaceRequired(', function)
         self.assertNotIn('system-only access menu injection', function)
 
-    def test_area_api_uses_dedicated_permission(self):
+    def test_area_api_uses_dedicated_write_permission_and_configuration_read(self):
         source = (REPO_ROOT / 'backend' / 'app' / 'api' / 'areas.py').read_text(encoding='utf-8')
         self.assertIn("require_permission('areas:manage')", source)
         self.assertIn("has_permission(db, user.id, 'areas:manage')", source)
+        self.assertIn("has_permission(db, user.id, 'config:read')", source)
         self.assertNotIn("require_permission('config:manage')", source)
+
+    def test_read_only_ui_blocks_configuration_mutations_and_has_access_viewer(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'config-readonly.js').read_text(encoding='utf-8')
+        index = (REPO_ROOT / 'frontend' / 'index.html').read_text(encoding='utf-8')
+        self.assertIn("state.permissionCodes.has('config:read')", source)
+        self.assertIn("!state.permissionCodes.has('config:manage')", source)
+        self.assertIn('!SAFE_METHODS.has(method)', source)
+        self.assertIn("'Tienes acceso de solo lectura a Configuración.'", source)
+        self.assertIn("readJson('/api/iam/users')", source)
+        self.assertIn("readJson('/api/iam/positions')", source)
+        self.assertIn('/src/config-readonly.js', index)
 
 
 if __name__ == '__main__':
