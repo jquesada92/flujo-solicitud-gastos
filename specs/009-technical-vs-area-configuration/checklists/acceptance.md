@@ -31,6 +31,8 @@
 - [x] **Áreas** se muestra para System Admin o usuario con `areas:manage`.
 - [x] usuario con `areas:manage` no recibe acceso visual a Usuarios/Organigrama/Accesos.
 - [x] usuario sin ninguna capacidad de configuración no recibe menú Configuración.
+- [x] bridge temporal de `injectAccessMenu()` tolera whitespace/LF/CRLF y exige exactamente una coincidencia.
+- [x] el bridge de Accesos no usa `replaceRequired()` con un bloque multilinea literal para el guard de inyección.
 - [ ] validar manualmente menú System Admin.
 - [ ] validar manualmente menú de usuario con `areas:manage`.
 - [ ] validar manualmente usuario ordinario sin Configuración.
@@ -48,10 +50,10 @@
 ## Pruebas
 
 - [x] `test_iam_api.py` cubre system-only config y `areas:manage` ordinario.
-- [x] `test_frontend_configuration_access.py` protege separación de menú.
+- [x] `test_frontend_configuration_access.py` protege separación de menú y robustez del bridge.
 - [x] `test_migrations.py` protege `0006`.
 - [ ] suite backend completa ejecutada localmente en head final.
-- [ ] `npm run build` ejecutado localmente en head final.
+- [ ] `npm run build` ejecutado localmente con éxito en head final.
 - [ ] Docker build/smoke ejecutado localmente en head final.
 - [ ] CI remoto verde cuando vuelva la cuota de GitHub Actions.
 
@@ -70,3 +72,9 @@
 - [x] HISTORY actualizado.
 - [x] CHANGELOG actualizado.
 - [x] PR #9 actualizado.
+
+## Build hardening observado
+
+- [x] se documentó el fallo local `Legacy main.jsx extraction could not find: system-only access menu injection`.
+- [x] se sustituyó la coincidencia multilinea literal por regex estructural tolerante.
+- [ ] rerun local de `npm run build` confirma el fix en el entorno Windows/Vite 8.2.1 del desarrollador.
