@@ -252,7 +252,7 @@ Usuarios/Organigrama/Accesos/Reglas/Audit → isSystemAdmin
 
 `iam-admin.jsx` solo inyecta Accesos dentro de un menú marcado `data-system-admin=true`.
 
-Los bridges temporales no deben depender de indentación o saltos de línea exactos. La inserción de delegación usa regex tolerante a LF/CRLF y exige exactamente una coincidencia.
+Los bridges temporales no deben depender de indentación o saltos de línea exactos. La inserción de delegación usa regex tolerante a LF/CRLF y exige exactamente una coincidencia. La protección de `injectAccessMenu()` aplica la misma regla: regex estructural tolerante a whitespace/LF/CRLF, exactamente una coincidencia y fail-fast ante cero o múltiples guards. No debe volver a una sustitución multilinea literal mediante `replaceRequired()`.
 
 ## Response models
 
@@ -343,7 +343,7 @@ test_migrations.py
 test_container_portability.py
 ```
 
-Feature 009 exige probar `areas:manage` ordinario, `config:manage` system-only, `is_system_account`, separación visual del menú y topología `0006`.
+Feature 009 exige probar `areas:manage` ordinario, `config:manage` system-only, `is_system_account`, separación visual del menú, robustez del bridge de inyección de Accesos y topología `0006`.
 
 Mientras GitHub Actions no tenga cuota, backend tests + `npm run build` + Docker build/smoke son gates locales obligatorios.
 
