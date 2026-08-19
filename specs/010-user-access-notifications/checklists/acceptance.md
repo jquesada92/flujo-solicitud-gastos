@@ -37,4 +37,4 @@
 - [x] CHANGELOG actualizado.
 - [x] README principal actualizado.
 - [x] PROMPT_RECONSTRUCCION actualizado.
-- [ ] PR #9 actualizado.
+- [x] PR #9 actualizado.
