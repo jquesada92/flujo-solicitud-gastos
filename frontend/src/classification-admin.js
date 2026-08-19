@@ -5,6 +5,8 @@ const state = {
   areas: [],
   categories: [],
   selectedAreaId: '',
+  assignmentDrafts: {},
+  savingAssignmentId: null,
   loading: false,
   message: null,
 };
@@ -50,19 +52,50 @@ async function request(path, options = {}) {
   return response.json();
 }
 
+function persistedAssignment(category, areaId = state.selectedAreaId) {
+  const numericAreaId = Number(areaId);
+  return (category.area_ids || []).map(Number).includes(numericAreaId);
+}
+
+function resetAssignmentDrafts(areaId = state.selectedAreaId) {
+  state.assignmentDrafts = Object.fromEntries(
+    state.categories.map((category) => [String(category.id), persistedAssignment(category, areaId)]),
+  );
+}
+
+function assignmentDraft(category) {
+  const key = String(category.id);
+  return key in state.assignmentDrafts
+    ? Boolean(state.assignmentDrafts[key])
+    : persistedAssignment(category);
+}
+
+function assignmentChanged(category) {
+  return assignmentDraft(category) !== persistedAssignment(category);
+}
+
+function hasAssignmentChanges() {
+  return state.categories.some(assignmentChanged);
+}
+
+async function refreshCatalogs({ resetAssignments = true } = {}) {
+  const [areas, categories] = await Promise.all([
+    request('/api/areas?include_inactive=true'),
+    request('/api/areas/categories?include_inactive=true'),
+  ]);
+  state.areas = areas;
+  state.categories = categories;
+  if (!state.areas.some((item) => String(item.id) === String(state.selectedAreaId))) {
+    state.selectedAreaId = String(state.areas.find((item) => item.active)?.id || state.areas[0]?.id || '');
+  }
+  if (resetAssignments) resetAssignmentDrafts();
+}
+
 async function loadData() {
   state.loading = true;
   renderMounted();
   try {
-    const [areas, categories] = await Promise.all([
-      request('/api/areas?include_inactive=true'),
-      request('/api/areas/categories?include_inactive=true'),
-    ]);
-    state.areas = areas;
-    state.categories = categories;
-    if (!state.areas.some((item) => String(item.id) === String(state.selectedAreaId))) {
-      state.selectedAreaId = String(state.areas.find((item) => item.active)?.id || state.areas[0]?.id || '');
-    }
+    await refreshCatalogs();
     state.message = null;
   } catch (error) {
     state.message = { type: 'error', text: error.message };
@@ -76,12 +109,7 @@ async function mutate(action, successText) {
   try {
     await action();
     state.message = { type: 'success', text: successText };
-    const [areas, categories] = await Promise.all([
-      request('/api/areas?include_inactive=true'),
-      request('/api/areas/categories?include_inactive=true'),
-    ]);
-    state.areas = areas;
-    state.categories = categories;
+    await refreshCatalogs();
   } catch (error) {
     state.message = { type: 'error', text: error.message };
   }
@@ -177,14 +205,93 @@ function buildCreateCard(kind) {
   return card;
 }
 
+async function saveAssignment(category) {
+  if (!state.selectedAreaId || !assignmentChanged(category)) return;
+  const categoryId = String(category.id);
+  const assigned = assignmentDraft(category);
+  state.savingAssignmentId = categoryId;
+  state.message = null;
+  renderMounted();
+  try {
+    const path = `/api/areas/${state.selectedAreaId}/categories/${category.id}`;
+    await request(path, { method: assigned ? 'POST' : 'DELETE' });
+    await refreshCatalogs();
+    state.message = {
+      type: 'success',
+      text: assigned
+        ? `${category.name} fue asignada al área.`
+        : `${category.name} fue removida del área.`,
+    };
+  } catch (error) {
+    state.message = { type: 'error', text: error.message };
+  } finally {
+    state.savingAssignmentId = null;
+    renderMounted();
+  }
+}
+
+function buildAssignmentsTable() {
+  const wrap = node('div', 'table-wrap classification-assignment-table-wrap');
+  const table = node('table', 'classification-assignment-table');
+  const thead = node('thead');
+  const headRow = node('tr');
+  ['Categoría', 'Asignada', 'Estado', 'Áreas asignadas', 'Acción'].forEach((label) => {
+    headRow.appendChild(node('th', '', label));
+  });
+  thead.appendChild(headRow);
+
+  const tbody = node('tbody');
+  state.categories.forEach((category) => {
+    const tr = node('tr', category.active ? '' : 'catalog-inactive');
+    const nameCell = node('td');
+    nameCell.appendChild(node('strong', '', category.name));
+
+    const assignmentCell = node('td', 'classification-assignment-check-cell');
+    const checkbox = node('input');
+    checkbox.type = 'checkbox';
+    checkbox.setAttribute('aria-label', `Asignar ${category.name}`);
+    const persisted = persistedAssignment(category);
+    checkbox.checked = assignmentDraft(category);
+    checkbox.disabled = state.loading || Boolean(state.savingAssignmentId) || (!category.active && !persisted);
+    checkbox.addEventListener('change', () => {
+      state.assignmentDrafts[String(category.id)] = checkbox.checked;
+      state.message = null;
+      renderMounted();
+    });
+    assignmentCell.appendChild(checkbox);
+
+    const statusCell = node('td');
+    statusCell.appendChild(statusBadge(category.active));
+
+    const countCell = node('td', '', String((category.area_ids || []).length));
+
+    const actionCell = node('td');
+    const save = actionButton(
+      state.savingAssignmentId === String(category.id) ? 'Guardando...' : 'Guardar',
+      'primary classification-save-assignment',
+      () => saveAssignment(category),
+    );
+    save.disabled = !assignmentChanged(category) || Boolean(state.savingAssignmentId);
+    actionCell.appendChild(save);
+
+    tr.append(nameCell, assignmentCell, statusCell, countCell, actionCell);
+    tbody.appendChild(tr);
+  });
+
+  table.append(thead, tbody);
+  wrap.appendChild(table);
+  return wrap;
+}
+
 function buildAssignmentsCard() {
   const card = node('section', 'card classification-assign-card');
   card.append(
-    node('p', 'eyebrow', 'RELACIÓN ÁREA → CATEGORÍA'),
-    node('h2', '', 'Asignar categorías a las áreas'),
-    node('p', 'muted', 'Selecciona un área y habilita las categorías que pueden utilizarse en sus solicitudes. Una categoría puede pertenecer a todas las áreas.'),
+    node('p', 'eyebrow', 'ASIGNACIÓN DE CATEGORÍAS'),
+    node('h2', '', 'Categorías por área'),
+    node('p', 'muted', 'Selecciona un área y define qué categorías puede utilizar. Los cambios se guardan por fila, siguiendo el mismo patrón de configuración de perfiles de acceso.'),
   );
 
+  const toolbar = node('div', 'classification-assignment-toolbar');
   const selector = node('label', 'classification-area-selector');
   selector.appendChild(node('span', '', 'Área'));
   const select = node('select');
@@ -194,13 +301,33 @@ function buildAssignmentsCard() {
     option.selected = String(area.id) === String(state.selectedAreaId);
     select.appendChild(option);
   });
-  select.disabled = !state.areas.length;
+  select.disabled = !state.areas.length || Boolean(state.savingAssignmentId);
   select.addEventListener('change', () => {
-    state.selectedAreaId = select.value;
+    const nextAreaId = select.value;
+    if (hasAssignmentChanges()) {
+      const discard = window.confirm('Hay cambios de categorías sin guardar. ¿Deseas descartarlos y cambiar de área?');
+      if (!discard) {
+        select.value = state.selectedAreaId;
+        return;
+      }
+    }
+    state.selectedAreaId = nextAreaId;
+    resetAssignmentDrafts(nextAreaId);
+    state.message = null;
     renderMounted();
   });
   selector.appendChild(select);
-  card.appendChild(selector);
+  toolbar.appendChild(selector);
+
+  if (state.areas.length) {
+    const dirtyCount = state.categories.filter(assignmentChanged).length;
+    toolbar.appendChild(node(
+      'span',
+      'filter-count classification-assignment-count',
+      dirtyCount ? `${dirtyCount} cambio(s) sin guardar` : `${state.categories.length} categoría(s)`,
+    ));
+  }
+  card.appendChild(toolbar);
 
   if (!state.areas.length) {
     card.appendChild(node('p', 'muted', 'Crea al menos un área antes de asignar categorías.'));
@@ -211,37 +338,17 @@ function buildAssignmentsCard() {
     return card;
   }
 
-  const selectedAreaId = Number(state.selectedAreaId);
-  const checks = node('div', 'classification-category-checks');
-  state.categories.forEach((category) => {
-    const row = node('label', `classification-category-check ${category.active ? '' : 'catalog-inactive'}`);
-    const checkbox = node('input');
-    checkbox.type = 'checkbox';
-    const assigned = (category.area_ids || []).includes(selectedAreaId);
-    checkbox.checked = assigned;
-    checkbox.disabled = !category.active && !assigned;
-    checkbox.addEventListener('change', async () => {
-      checkbox.disabled = true;
-      const path = `/api/areas/${selectedAreaId}/categories/${category.id}`;
-      await mutate(
-        () => request(path, { method: checkbox.checked ? 'POST' : 'DELETE' }),
-        checkbox.checked
-          ? `${category.name} asignada al área.`
-          : `${category.name} removida del área.`,
-      );
-    });
-    const copy = node('span', 'classification-category-copy');
-    copy.append(node('strong', '', category.name), node('small', 'subtext', category.active ? 'Disponible' : 'Categoría inactiva'));
-    row.append(checkbox, copy);
-    checks.appendChild(row);
-  });
-  card.appendChild(checks);
+  card.appendChild(buildAssignmentsTable());
   return card;
 }
 
 function buildCanonicalUi() {
   const wrapper = node('div', 'classification-canonical');
   wrapper.dataset.canonicalClassificationSettings = 'true';
+  const dirtyMarker = node('span');
+  dirtyMarker.hidden = true;
+  dirtyMarker.dataset.unsaved = hasAssignmentChanges() ? 'true' : 'false';
+  wrapper.appendChild(dirtyMarker);
   if (state.message) wrapper.appendChild(node('div', `notice ${state.message.type}`, state.message.text));
   if (state.loading) wrapper.appendChild(node('p', 'muted', 'Cargando áreas y categorías…'));
 
@@ -307,15 +414,23 @@ styles.textContent = `
   .classification-master-main { display:grid; gap:5px; min-width:0; }
   .classification-master-main strong { overflow-wrap:anywhere; }
   .classification-master-main .catalog-status { width:max-content; }
-  .classification-area-selector { max-width:520px; margin:18px 0; }
-  .classification-category-checks { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
-  .classification-category-check { display:flex; gap:10px; align-items:flex-start; padding:12px; border:1px solid var(--border, #dfe4ec); border-radius:10px; cursor:pointer; }
-  .classification-category-check input { margin-top:4px; }
-  .classification-category-copy { display:grid; gap:3px; }
+  .classification-assignment-toolbar { display:flex; align-items:end; justify-content:space-between; gap:16px; margin:18px 0 14px; }
+  .classification-area-selector { flex:1; max-width:520px; margin:0; }
+  .classification-assignment-count { white-space:nowrap; padding-bottom:10px; }
+  .classification-assignment-table-wrap { margin-top:8px; }
+  .classification-assignment-table th:nth-child(2),
+  .classification-assignment-table td:nth-child(2),
+  .classification-assignment-table th:nth-child(4),
+  .classification-assignment-table td:nth-child(4) { text-align:center; }
+  .classification-assignment-check-cell input { width:16px; height:16px; }
+  .classification-save-assignment { min-width:92px; }
   @media (max-width: 820px) {
-    .classification-master-grid, .classification-category-checks { grid-template-columns:1fr; }
+    .classification-master-grid { grid-template-columns:1fr; }
     .classification-create-form { grid-template-columns:1fr; }
     .classification-master-row { align-items:flex-start; flex-direction:column; }
+    .classification-assignment-toolbar { align-items:stretch; flex-direction:column; }
+    .classification-area-selector { max-width:none; }
+    .classification-assignment-count { padding-bottom:0; }
   }
 `;
 document.head.appendChild(styles);
