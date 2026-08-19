@@ -147,11 +147,16 @@ function replaceConfigurationAccess(source) {
 }
 
 function protectAccessMenuInjection(source) {
-  return replaceRequired(
-    source,
-    'document.querySelectorAll(".config-menu-items").forEach((menu) => {\n    if (menu.querySelector(\'[data-iam-access="true"]\')) return;',
-    'document.querySelectorAll(".config-menu-items").forEach((menu) => {\n    const existing = menu.querySelector(\'[data-iam-access="true"]\');\n    if (menu.dataset.systemAdmin !== "true") { existing?.remove(); return; }\n    if (existing) return;',
-    "system-only access menu injection",
+  const pattern = /(document\.querySelectorAll\(["']\.config-menu-items["']\)\.forEach\(\(menu\)\s*=>\s*\{\s*)if\s*\(\s*menu\.querySelector\(\s*['"]\[data-iam-access="true"\]['"]\s*\)\s*\)\s*return\s*;/g;
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length !== 1) {
+    throw new Error(
+      `iam-admin access menu extraction expected 1 injection guard, found ${matches.length}`,
+    );
+  }
+  return source.replace(
+    pattern,
+    '$1const existing = menu.querySelector(\'[data-iam-access="true"]\');\n    if (menu.dataset.systemAdmin !== "true") { existing?.remove(); return; }\n    if (existing) return;',
   );
 }
 
