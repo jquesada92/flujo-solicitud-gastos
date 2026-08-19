@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.7.0  
+**Versión:** 2.8.0  
 **Vigente desde:** 2026-08-18
 
 ## 1. Evolucionar, no reconstruir sin necesidad
@@ -63,12 +63,17 @@ Un mismo Rol puede reutilizarse simultáneamente en Grupos, Cargos y asignacione
 
 Para capacidades mutables no concedidas explícitamente por una de estas relaciones, el resultado es **DENY**, salvo reglas de recurso explícitas definidas por esta Constitución, como cancelar, corregir o cerrar/gestionar factura de una solicitud cuando el actor sea propietario, cuenta técnica protegida o delegado válido según corresponda.
 
-Permisos funcionales activos iniciales:
+Permisos funcionales activos:
 
-- `requests:read`;
-- `requests:create`;
-- `requests:approve`;
-- `config:manage`.
+- `requests:read` — baseline de consulta;
+- `requests:create` — crear nuevas solicitudes;
+- `requests:approve` — aprobar/votar/enviar a revisión cuando exista asignación;
+- `areas:manage` — administrar Áreas y sus Categorías asociadas;
+- `config:manage` — **administración técnica reservada exclusivamente a `system_accounts`**.
+
+`areas:manage` sí es un permiso organizacional configurable y puede heredarse por Rol, Grupo, Cargo o asignación directa. El código nunca debe preguntar si el usuario pertenece a un grupo llamado Administración, Junta Directiva u otro nombre concreto.
+
+`config:manage` es una capacidad **system-only**. Un usuario ordinario no puede obtenerla efectivamente mediante Rol, Grupo, Cargo o permiso directo, aunque permanezca una asignación legacy en la base de datos. Usuarios, Organigrama, Accesos/IAM, reglas y auditoría técnica permanecen bajo esa frontera administrativa.
 
 `requests:close` puede permanecer físicamente como **permiso legacy inactivo** para trazabilidad/compatibilidad histórica, pero no autoriza runtime de cierre, factura ni delegación. No debe presentarse como capacidad operativa configurable.
 
@@ -89,7 +94,8 @@ La lectura universal no concede ninguna acción mutable. Un usuario puede tener 
 - crear nuevas solicitudes (`requests:create`);
 - aprobar o votar (`requests:approve`);
 - cerrar/gestionar factura de una solicitud ajena sin delegación;
-- administrar configuración (`config:manage`).
+- administrar Áreas (`areas:manage`);
+- administrar configuración técnica (`config:manage`).
 
 **Corregir / reenviar no se concede por `requests:create` sobre solicitudes ajenas.** Es una capacidad por recurso reservada al solicitante original y a la cuenta protegida Administrador del sistema según la sección 12.
 
@@ -122,6 +128,7 @@ La política depende exclusivamente del ambiente declarado por `ENVIRONMENT`.
 Cuando `ENVIRONMENT=production`, la cuenta técnica mantiene segregación estricta de funciones. Sus permisos efectivos máximos son:
 
 - `config:manage`;
+- `areas:manage`;
 - `requests:read`.
 
 En producción no puede obtener ni ejercer:
@@ -166,7 +173,23 @@ La interfaz debe permitir administrar, sin despliegue de código:
 - políticas de aprobación y demás configuración organizacional cuando corresponda;
 - delegación/revocación del cierre y factura de una solicitud por parte de su solicitante.
 
-La interfaz IAM debe distinguir las capacidades configurables de las capacidades base y por recurso. No debe presentar `requests:read` como revocable ni `requests:close` como permiso operativo vigente.
+La navegación de configuración se separa en dos fronteras:
+
+```text
+Administrador del sistema (system_accounts)
+→ Usuarios
+→ Organigrama
+→ Accesos/IAM
+→ Áreas
+→ demás configuración técnica
+
+Usuario ordinario con areas:manage
+→ Áreas solamente
+```
+
+La organización puede asociar `areas:manage` a un Rol y ese Rol a cualquier Grupo o Cargo que decida. Nombres como Administración o Junta Directiva son configuración del cliente y no aparecen como condiciones en código ni migraciones.
+
+La interfaz IAM debe distinguir las capacidades configurables de las capacidades base, system-only y por recurso. No debe presentar `requests:read` como revocable ni `requests:close` como permiso operativo vigente. `config:manage` debe identificarse como administración técnica reservada.
 
 La vista de permisos efectivos debe explicar el origen, por ejemplo:
 
@@ -189,6 +212,8 @@ El frontend puede ocultar o mostrar acciones por UX, pero el backend es la autor
 - capacidades base;
 - herencia Grupo → Rol → Permiso;
 - herencia Cargo → Rol → Permiso;
+- frontera system-only de `config:manage`;
+- administración de Áreas mediante `areas:manage`;
 - transiciones;
 - población de participantes;
 - acceso a documentos;
@@ -430,6 +455,8 @@ Las migraciones de compatibilidad pueden leer estructuras legacy una sola vez pa
 Como mínimo:
 
 - default deny para capacidades mutables; `requests:read` es la excepción base explícita para usuarios activos;
+- `config:manage` system-only aunque existan asignaciones legacy a usuarios ordinarios;
+- `areas:manage` como permiso configurable independiente de la administración técnica;
 - reglas de recurso explícitas para corrección, cancelación y cierre/factura en lugar de ampliar permisos globales;
 - delegaciones por solicitud con un solo registro activo y trazabilidad de revocación;
 - backend authoritative;
@@ -458,10 +485,14 @@ Los cambios incluyen pruebas proporcionales al riesgo. Para IAM son obligatorias
 - herencia Cargo/Posición → Rol → Permiso;
 - origen de permisos efectivo distinguible entre Grupo, Cargo, Rol directo y asignación directa;
 - cargo inactivo no concede permisos;
+- `areas:manage` puede heredarse por una relación configurable sin usar nombres organizacionales en código;
+- un usuario ordinario con `areas:manage` puede administrar Áreas pero no Usuarios/Organigrama/Accesos;
+- una asignación legacy `config:manage` a un usuario ordinario no se convierte en permiso efectivo;
+- `/auth/me` expone de forma explícita si la cuenta pertenece a `system_accounts` para UX, sin convertir el frontend en autoridad;
 - cuenta técnica con todos los permisos atómicos activos en no producción;
 - cuenta técnica incluida en poblaciones de aprobación/votación fuera de producción;
-- cuenta técnica restringida a `config:manage` + `requests:read` en producción;
-- endpoints `config:manage`;
+- cuenta técnica restringida a `config:manage` + `areas:manage` + `requests:read` en producción;
+- endpoints técnicos reservados al Administrador del sistema;
 - cambios de permisos efectivos sin reiniciar la app;
 - login/respuesta de usuario exponiendo permisos efectivos coherentes con el ambiente.
 
@@ -517,56 +548,3 @@ CI debe ejecutar backend tests, compilación frontend, construcción de imágene
 ## 18. Documentación es parte del código
 
 Ningún cambio funcional, de dominio, UX, API, modelo de datos, seguridad, migración o arquitectura se considera terminado si la documentación afectada no queda actualizada en el mismo PR.
-
-Revisar cuando aplique:
-
-- `.specify/memory/constitution.md`;
-- `specs/<feature>/spec.md`;
-- `specs/<feature>/plan.md`;
-- criterios de aceptación;
-- `README.md`;
-- `PROMPT_RECONSTRUCCION.md`;
-- `docs/` funcionales/técnicos;
-- `docs/TERMINOLOGY.md`;
-- `docs/HISTORY.md`;
-- `CHANGELOG.md`;
-- contratos/API y comentarios técnicos.
-
-## 19. Consistencia entre artefactos
-
-Prioridad:
-
-1. Constitución vigente.
-2. Especificación funcional.
-3. Aclaraciones/criterios de aceptación.
-4. Plan técnico.
-5. Tareas y código.
-6. README, prompts y documentación derivada.
-
-Una discrepancia código-documentación es un defecto salvo que esté expresamente marcada como deuda/transición.
-
-## 20. Definition of Done
-
-Una feature está terminada cuando:
-
-- comportamiento implementado coincide con requisitos y criterios;
-- autorización no depende de nombres organizacionales hardcodeados;
-- herencia de permisos por Grupo y Cargo utiliza relaciones configurables, no comparaciones de nombres;
-- `requests:read` permanece disponible para todo usuario activo y no se filtra por identidad del solicitante;
-- dashboard y seguimiento compartido están protegidos por pruebas cuando se modifica acceso/solicitudes;
-- la política de cuenta técnica está probada en producción y no producción;
-- invariantes de cancelación/corrección están protegidos en backend y probados;
-- solo solicitante/Admin del sistema pueden corregir solicitudes y los aprobadores usan **Enviar a revisión** con comentario;
-- una solicitud válida de revisión interrumpe la ronda y devuelve la tarea al solicitante;
-- cierre/factura se autoriza únicamente por solicitante, Administrador del sistema o delegación activa por solicitud;
-- solo el solicitante puede administrar la delegación de cierre/factura y su historial es trazable;
-- `requests:close` no vuelve a convertirse en autoridad global de cierre;
-- el editor de corrección deriva su tipo de la solicitud y no conserva la pestaña de creación previa;
-- la configuración de correo por ambiente está documentada y puede diagnosticarse sin exponer secretos;
-- migraciones son versionadas y desplegables;
-- términos visibles coinciden con `docs/TERMINOLOGY.md`;
-- README/prompt no reconstruyen conceptos retirados;
-- HISTORY explica decisiones relevantes;
-- CHANGELOG registra el entregable;
-- CI y pruebas mencionadas realmente existen y pasan;
-- deuda temporal queda explícita, con ruta de retiro.
