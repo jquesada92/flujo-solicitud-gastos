@@ -349,7 +349,11 @@ class ApprovalStepEvent(Base):
         Index('ix_approval_step_events_occurred_at', 'occurred_at'),
     )
 
-    event_sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_sequence: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, 'sqlite'),
+        primary_key=True,
+        autoincrement=True,
+    )
     event_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
