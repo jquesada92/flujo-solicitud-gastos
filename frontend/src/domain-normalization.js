@@ -183,16 +183,15 @@ function productTerminology(text) {
   return userTerminology(classificationTerminology(text));
 }
 
-function isCanonicalExpenseFormNode(node) {
+function isCanonicalTerminologyNode(node) {
   const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
-  return Boolean(element?.closest?.('#expense-form'));
+  return Boolean(element?.closest?.('#expense-form, [data-canonical-classification-settings="true"]'));
 }
 
 function terminologyForNode(node, text) {
-  // The modular expense form already uses the canonical labels Área and Categoría.
-  // Applying the legacy classification adapter there would turn Categoría into Área,
-  // causing both selectors to be shown as Área.
-  return isCanonicalExpenseFormNode(node) ? userTerminology(text) : productTerminology(text);
+  // Canonical UI already uses Área/Categoría explicitly. The legacy terminology
+  // adapter must not rewrite Categoría to Área inside those components.
+  return isCanonicalTerminologyNode(node) ? userTerminology(text) : productTerminology(text);
 }
 
 function normalizeTextNodes(root) {
