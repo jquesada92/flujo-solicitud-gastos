@@ -145,7 +145,12 @@ def list_areas(
     user: User = Depends(current_user),
 ):
     _ensure_category_catalog(db)
-    include_all = include_inactive and has_permission(db, user.id, 'areas:manage')
+    can_inspect_configuration = (
+        has_permission(db, user.id, 'areas:manage')
+        or has_permission(db, user.id, 'config:read')
+        or has_permission(db, user.id, 'config:manage')
+    )
+    include_all = include_inactive and can_inspect_configuration
     stmt = select(ExpenseArea).order_by(ExpenseArea.name)
     if not include_all:
         stmt = stmt.where(ExpenseArea.active.is_(True))
@@ -178,7 +183,12 @@ def list_categories(
     user: User = Depends(current_user),
 ):
     _ensure_category_catalog(db)
-    include_all = include_inactive and has_permission(db, user.id, 'areas:manage')
+    can_inspect_configuration = (
+        has_permission(db, user.id, 'areas:manage')
+        or has_permission(db, user.id, 'config:read')
+        or has_permission(db, user.id, 'config:manage')
+    )
+    include_all = include_inactive and can_inspect_configuration
     stmt = select(ExpenseCategoryCatalog).order_by(ExpenseCategoryCatalog.name)
     if not include_all:
         stmt = stmt.where(ExpenseCategoryCatalog.active.is_(True))
