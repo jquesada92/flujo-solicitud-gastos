@@ -261,6 +261,7 @@ class PendingActionTests(unittest.TestCase):
         with self.Session() as db:
             self._expense(db, 'REQ-REVISION', ExpenseStatus.NEEDS_REVISION, self.requester.email)
             closable = self._expense(db, 'REQ-CLOSE', ExpenseStatus.APPROVED, self.requester.email)
+            closable_id = closable.id
             db.commit()
 
         requester = self.client.get('/api/expenses/dashboard', headers=self.auth(self.requester_token))
@@ -274,7 +275,7 @@ class PendingActionTests(unittest.TestCase):
 
         with self.Session() as db:
             db.add(ExpenseClosureDelegation(
-                expense_id=closable.id,
+                expense_id=closable_id,
                 delegate_user_id=self.closer.id,
                 delegated_by_user_id=self.requester.id,
                 delegated_by_email=self.requester.email,
