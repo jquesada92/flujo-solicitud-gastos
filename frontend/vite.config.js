@@ -98,8 +98,8 @@ function replaceConfigurationAccess(source) {
   let next = replaceRequired(
     source,
     'canConfigure = user.role === "ADMIN" || user.can_configure,',
-    'isSystemAdmin = user.is_system_account === true,\n    canManageAreas = isSystemAdmin || (user.permission_codes || []).includes("areas:manage"),\n    canConfigure = isSystemAdmin,',
-    "system administration capability",
+    'isSystemAdmin = user.is_system_account === true,\n    permissionCodes = user.permission_codes || [],\n    canReadConfiguration = isSystemAdmin || permissionCodes.includes("config:read"),\n    canManageAreas = isSystemAdmin || permissionCodes.includes("areas:manage"),\n    canConfigure = isSystemAdmin,',
+    "configuration capabilities",
   );
   next = replaceRequired(
     next,
@@ -110,38 +110,62 @@ function replaceConfigurationAccess(source) {
   next = replaceRequired(
     next,
     'canManagePeople = canConfigure || canEditPeople || isBoardMember,',
-    'canManagePeople = isSystemAdmin || canManageAreas,',
+    'canManagePeople = canReadConfiguration || canManageAreas,',
     "configuration menu capability",
   );
   next = replaceRequired(
     next,
     'canAccessOrganization = canConfigure || isBoardMember;',
-    'canAccessOrganization = isSystemAdmin;',
-    "organization capability",
+    'canAccessOrganization = canReadConfiguration;',
+    "organization visibility capability",
+  );
+  next = replaceRequired(
+    next,
+    '{canConfigure && (\n            <button onClick={() => navigateTo("audit")}>Auditoría</button>\n          )}',
+    '{canReadConfiguration && (\n            <button onClick={() => navigateTo("audit")}>Auditoría</button>\n          )}',
+    "audit menu visibility",
   );
   next = replaceRequired(
     next,
     '{configOpen && <div className="config-menu-items">',
-    '{configOpen && <div className="config-menu-items" data-system-admin={isSystemAdmin ? "true" : "false"}>',
+    '{configOpen && <div className="config-menu-items" data-config-access={canReadConfiguration ? "true" : "false"} data-config-readonly={canReadConfiguration && !isSystemAdmin ? "true" : "false"}>',
     "configuration menu marker",
   );
   next = replaceRequired(
     next,
     '<button onClick={() => navigateTo("people")}>Personas</button>',
-    '{isSystemAdmin && <button onClick={() => navigateTo("people")}>Personas</button>}',
+    '{canReadConfiguration && <button onClick={() => navigateTo("people")}>Personas</button>}',
     "users menu visibility",
   );
   next = replaceRequired(
     next,
     '{canConfigure && <button onClick={() => navigateTo("categories")}>Categorías</button>}',
-    '{canManageAreas && <button onClick={() => navigateTo("categories")}>Categorías</button>}',
+    '{(canReadConfiguration || canManageAreas) && <button onClick={() => navigateTo("categories")}>Categorías</button>}',
     "areas menu visibility",
   );
   next = replaceRequired(
     next,
+    '{canConfigure && <button onClick={() => navigateTo("rules")}>Reglas</button>}',
+    '{canReadConfiguration && <button onClick={() => navigateTo("rules")}>Reglas</button>}',
+    "rules menu visibility",
+  );
+  next = replaceRequired(
+    next,
     'tab === "categories" && canConfigure ?',
-    'tab === "categories" && canManageAreas ?',
+    'tab === "categories" && (canReadConfiguration || canManageAreas) ?',
     "areas page capability",
+  );
+  next = replaceRequired(
+    next,
+    'tab === "rules" && canConfigure ?',
+    'tab === "rules" && canReadConfiguration ?',
+    "rules page capability",
+  );
+  next = replaceRequired(
+    next,
+    'tab === "audit" && canConfigure ?',
+    'tab === "audit" && canReadConfiguration ?',
+    "audit page capability",
   );
   return next;
 }
@@ -156,7 +180,7 @@ function protectAccessMenuInjection(source) {
   }
   return source.replace(
     pattern,
-    '$1const existing = menu.querySelector(\'[data-iam-access="true"]\');\n    if (menu.dataset.systemAdmin !== "true") { existing?.remove(); return; }\n    if (existing) return;',
+    '$1const existing = menu.querySelector(\'[data-iam-access="true"]\');\n    if (menu.dataset.configAccess !== "true") { existing?.remove(); return; }\n    if (existing) return;',
   );
 }
 
