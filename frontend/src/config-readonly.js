@@ -178,11 +178,13 @@ function applyReadOnlyUi() {
     main.querySelectorAll('.catalog-card .row-actions button').forEach((button) => { button.disabled = true; });
     main.querySelectorAll('.sub-create').forEach((element) => { element.hidden = true; });
     main.querySelectorAll('.confirm-overlay').forEach((element) => { element.hidden = true; });
+    disableMutationButtons(main);
   }
 
   if (title.includes('reglas')) {
     main.querySelectorAll('.rules-form-card').forEach((section) => { section.hidden = true; });
     main.querySelectorAll('.rules-list-card .row-actions button').forEach((button) => { button.disabled = true; });
+    disableMutationButtons(main);
   }
 }
 
@@ -316,7 +318,14 @@ async function openAccessViewer() {
 
 document.addEventListener('click', (event) => {
   const accessButton = event.target.closest?.('[data-iam-access="true"]');
-  if (!accessButton || !state.readOnly) return;
+  if (!accessButton) return;
+  const menuReadOnly = accessButton.closest('.config-menu-items')?.dataset.configReadonly === 'true';
+  if (!state.readOnly && !menuReadOnly) return;
+  if (menuReadOnly && !state.readOnly) {
+    state.readOnly = true;
+    document.documentElement.setAttribute('data-config-readonly', 'true');
+    applyReadOnlyUi();
+  }
   event.preventDefault();
   event.stopPropagation();
   event.stopImmediatePropagation();
@@ -324,6 +333,11 @@ document.addEventListener('click', (event) => {
 }, true);
 
 const observer = new MutationObserver(() => {
+  const menuReadOnly = document.querySelector('.config-menu-items[data-config-readonly="true"]');
+  if (menuReadOnly && !state.readOnly) {
+    state.readOnly = true;
+    document.documentElement.setAttribute('data-config-readonly', 'true');
+  }
   if (state.readOnly) applyReadOnlyUi();
 });
 observer.observe(document.documentElement, { childList: true, subtree: true });
