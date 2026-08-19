@@ -24,6 +24,18 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn('protectAccessMenuInjection', vite)
         self.assertIn('menu.dataset.systemAdmin !== "true"', vite)
         self.assertIn('existing?.remove()', vite)
+        self.assertIn('iam-admin access menu extraction expected 1 injection guard', vite)
+
+    def test_access_menu_bridge_is_whitespace_tolerant_and_fail_fast(self):
+        vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')
+        function = vite.split('function protectAccessMenuInjection(source) {', 1)[1].split(
+            '\n}\n\nfunction modularExpenseFormPlugin()', 1
+        )[0]
+        self.assertIn('\\s*', function)
+        self.assertIn('source.matchAll(pattern)', function)
+        self.assertIn('matches.length !== 1', function)
+        self.assertNotIn('replaceRequired(', function)
+        self.assertNotIn('system-only access menu injection', function)
 
     def test_area_api_uses_dedicated_permission(self):
         source = (REPO_ROOT / 'backend' / 'app' / 'api' / 'areas.py').read_text(encoding='utf-8')
