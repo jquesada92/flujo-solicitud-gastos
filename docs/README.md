@@ -2,7 +2,7 @@
 
 ## Gobierno y especificaciones
 
-- [Constitución](../.specify/memory/constitution.md) — versión vigente **2.7.0**.
+- [Constitución](../.specify/memory/constitution.md) — versión vigente **2.8.0**.
 - [Política documental](DOCUMENTATION_POLICY.md).
 - [Feature 001 — normalización de dominio](../specs/001-domain-normalization/spec.md)
 - [Feature 002 — IAM configurable + FastAPI](../specs/002-configurable-iam-fastapi-hardening/spec.md)
@@ -12,12 +12,14 @@
 - [Feature 006 — Cargo/Grupo → Rol → Permiso](../specs/006-position-group-role-inheritance/spec.md)
 - [Feature 007 — Enviar a revisión + propiedad de corrección](../specs/007-revision-handoff-correction-ownership/spec.md)
 - [Feature 008 — cierre/factura por propiedad o delegación](../specs/008-request-closure-delegation/spec.md)
+- [Feature 009 — configuración técnica vs gestión de Áreas](../specs/009-technical-vs-area-configuration/spec.md)
 
 Cada feature mantiene `spec.md`, `plan.md` y `checklists/acceptance.md`.
 
 ## Documentos funcionales/técnicos
 
 - [Modelo IAM](IAM_MODEL.md)
+- [Acceso a Configuración](CONFIGURATION_ACCESS.md)
 - [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md)
 - [Área + Categoría](CLASSIFICATION_MODEL.md)
 - [Correcciones, reenvío y handoff](REQUEST_CORRECTIONS.md)
@@ -41,11 +43,39 @@ Usuario → Grupo ─────────→ Rol → Permiso
        ↘ capacidades/delegaciones por recurso
 ```
 
-Permisos operativos: `requests:read`, `requests:create`, `requests:approve`, `config:manage`.
+Permisos vigentes:
+
+```text
+requests:read
+requests:create
+requests:approve
+areas:manage
+config:manage  # system-only
+```
 
 `requests:close` es un registro legacy inactivo desde migración `0005`; no autoriza runtime.
 
-La consola autoritativa IAM es **Configuración → Accesos**. La delegación de cierre se configura desde una solicitud, no desde IAM global.
+## Configuración
+
+Frontera vigente:
+
+```text
+System Admin
+→ Usuarios
+→ Organigrama
+→ Accesos
+→ Áreas
+→ Reglas/Auditoría técnica
+
+Usuario ordinario con areas:manage
+→ Áreas solamente
+```
+
+`config:manage` solo es efectivo para `system_accounts`. `areas:manage` es configurable por Rol/Grupo/Cargo/usuario.
+
+Alembic `0006` crea el Rol neutral **Gestor de áreas**. La organización decide a qué Grupos/Cargos asociarlo; no existe autorización por nombres como Administración o Junta Directiva.
+
+Ver [CONFIGURATION_ACCESS.md](CONFIGURATION_ACCESS.md).
 
 ## Capacidades por recurso
 
@@ -109,7 +139,7 @@ Ver [CLOSURE_DELEGATION.md](CLOSURE_DELEGATION.md).
 
 ```text
 ENVIRONMENT=production
-→ IAM: config:manage + requests:read
+→ IAM: config:manage + areas:manage + requests:read
 → no approval/vote
 → puede cancelar/corregir/cerrar como excepciones por recurso
 
@@ -129,12 +159,13 @@ MULTI_QUOTE corregida reinicia ronda y excluye siempre al solicitante original.
 ## Alembic
 
 ```text
-0000 → 0001 → 0002 → 0003 → 0004 → 0005
+0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006
 ```
 
 - `0003`: reparación `request_type` MULTI_QUOTE.
 - `0004`: `position_roles` + import legacy a IAM.
 - `0005`: `expense_closure_delegations` + retiro operativo de `requests:close`.
+- `0006`: `areas:manage` + Rol Gestor de áreas + separación de configuración técnica.
 
 Contrato de arranque:
 
