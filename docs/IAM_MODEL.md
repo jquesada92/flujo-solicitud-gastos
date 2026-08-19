@@ -119,6 +119,34 @@ Cargo Tesorero → Rol Aprobador → requests:approve
 
 Grupo y Cargo son fuentes independientes y acumulativas. Prohibido autorizar con comparaciones de nombres.
 
+## Notificaciones de Cargo y permisos efectivos
+
+La comunicación al usuario también debe usar el IAM canónico.
+
+### Creación de usuario
+
+Después de aplicar las asignaciones iniciales, la invitación con contraseña temporal incluye:
+
+```text
+Cargo(s) activos
+Permisos efectivos
+```
+
+Los permisos se obtienen de `effective_permission_codes()` y se presentan con nombre legible + código.
+
+### Cambio de Cargo
+
+Cuando cambia realmente el conjunto `position_ids` de un usuario activo:
+
+1. se aplican los nuevos `UserPosition`;
+2. se recalculan permisos efectivos;
+3. se envía **Actualización de cargo y permisos**;
+4. si falla la entrega, la transacción se revierte y la API devuelve 502.
+
+Guardar el mismo conjunto de Cargos no genera notificación duplicada.
+
+Estas notificaciones no usan `UserRole`, `title` ni `can_*` como fuente de verdad.
+
 ## Fuentes visibles
 
 `permission_sources()` puede explicar:
@@ -275,6 +303,8 @@ Un usuario ordinario con `areas:manage` ve **Configuración → Áreas** pero no
 
 Cadena completa actual termina en `20260818_0006`.
 
+Feature 010 no requiere migración; reutiliza `UserPosition`, `Position` y el resolver IAM vigente.
+
 ## Pruebas mínimas
 
 - permiso directo / Rol directo / Grupo→Rol / Cargo→Rol;
@@ -282,6 +312,10 @@ Cadena completa actual termina en `20260818_0006`.
 - `areas:manage` para usuario ordinario sin acceso IAM técnico;
 - `config:manage` legacy ignorado para usuario ordinario;
 - `is_system_account` explícito en sesión;
+- invitación incluye Cargo(s) y permisos efectivos;
+- cambio real de Cargo recalcula/notifica permisos;
+- guardar mismo Cargo no duplica correo;
+- fallo del correo de Cargo revierte la actualización;
 - política técnica producción/no-producción;
 - `can_cancel` requester/Admin;
 - `can_correct` requester/Admin;
