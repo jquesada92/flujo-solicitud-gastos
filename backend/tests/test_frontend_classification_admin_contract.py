@@ -16,13 +16,28 @@ class FrontendClassificationAdminContractTests(unittest.TestCase):
         self.assertIn("/api/areas?include_inactive=true", script)
         self.assertIn("/api/areas/categories?include_inactive=true", script)
         self.assertIn("const path = isArea ? '/api/areas' : '/api/areas/categories';", script)
-        self.assertIn("`/api/areas/${selectedAreaId}/categories/${category.id}`", script)
-        self.assertIn("method: checkbox.checked ? 'POST' : 'DELETE'", script)
         self.assertIn("Crea cada categoría una sola vez", script)
         self.assertNotIn("/api/categories/subcategories", script)
         self.assertIn('[data-canonical-classification-settings="true"]', normalizer)
         self.assertIn('isCanonicalTerminologyNode', normalizer)
         self.assertIn('/src/classification-admin.js', index)
+
+    def test_category_assignment_is_staged_and_saved_per_row(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        script = (repo_root / 'frontend' / 'src' / 'classification-admin.js').read_text(encoding='utf-8')
+
+        self.assertIn("node('h2', '', 'Categorías por área')", script)
+        self.assertIn("['Categoría', 'Asignada', 'Estado', 'Áreas asignadas', 'Acción']", script)
+        self.assertIn('assignmentDrafts', script)
+        self.assertIn("checkbox.addEventListener('change', () => {", script)
+        self.assertNotIn("checkbox.addEventListener('change', async", script)
+        self.assertIn('async function saveAssignment(category)', script)
+        self.assertIn("`/api/areas/${state.selectedAreaId}/categories/${category.id}`", script)
+        self.assertIn("method: assigned ? 'POST' : 'DELETE'", script)
+        self.assertIn("save.disabled = !assignmentChanged(category)", script)
+        self.assertIn('Hay cambios de categorías sin guardar', script)
+        self.assertIn('!category.active && !persisted', script)
+        self.assertIn("dirtyMarker.dataset.unsaved = hasAssignmentChanges() ? 'true' : 'false'", script)
 
 
 if __name__ == '__main__':
