@@ -1,5 +1,47 @@
 # Historial funcional y técnico
 
+## 2026-08-18 — Notificaciones de Cargo y permisos efectivos
+
+### Necesidad
+
+Al crear usuarios o modificar su Cargo, el usuario debía recibir una comunicación explícita de su posición organizacional y de los permisos efectivos que realmente tiene en el sistema.
+
+### Decisión funcional
+
+Se incorpora Feature 010:
+
+```text
+Creación de usuario activo
+→ correo de invitación
+→ contraseña temporal
+→ Cargo(s)
+→ permisos efectivos
+
+Cambio real de Cargo
+→ recalcular permisos efectivos
+→ correo Actualización de cargo y permisos
+```
+
+El correo usa `UserPosition → Position` y `effective_permission_codes()` como fuentes de verdad. No usa `UserRole`, `title` ni `can_*` legacy.
+
+Guardar el mismo conjunto de `position_ids` no genera correo duplicado.
+
+### Semántica de entrega
+
+La invitación inicial conserva su comportamiento obligatorio. El cambio de Cargo adopta la misma garantía: si el proveedor de correo falla, la transacción se revierte y el endpoint devuelve 502.
+
+Esto es distinto de algunos correos de workflow, que actualmente pueden ser best-effort. La deuda futura sigue siendo una outbox/reintentos persistentes.
+
+### Código y pruebas
+
+- `email_service.send_user_invitation()` ahora recibe Cargo(s) y permisos efectivos.
+- se agrega `send_user_access_updated()` sin contraseña temporal.
+- `iam_users.py` detecta cambios reales de `position_ids`, recalcula el acceso y notifica.
+- `test_user_access_notifications.py` cubre creación, cambio real, no duplicación, rollback por fallo de correo y contenido HTML/texto.
+- no requiere nueva migración; Constitución permanece **2.8.0**.
+
+---
+
 ## 2026-08-18 — Hardening del bridge Vite de Accesos
 
 Durante la validación local de Feature 009 con Vite 8.2.1 en Windows, `npm run build` falló con:
