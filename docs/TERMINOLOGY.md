@@ -18,18 +18,57 @@ Conjunto configurable y reutilizable de Permisos. Puede asociarse a Usuarios, Gr
 
 Capacidad IAM atómica implementada por el producto.
 
-Permisos operativos actuales:
+Permisos vigentes:
 
 - `requests:read` — Consultar dashboard/solicitudes/evidencia; baseline para usuarios activos.
 - `requests:create` — Crear nuevas solicitudes y cargar soportes asociados.
 - `requests:approve` — Votar/aprobar/rechazar/enviar a revisión según asignación.
-- `config:manage` — Administrar configuración e IAM.
+- `areas:manage` — Administrar Áreas, Categorías y sus relaciones; configurable para usuarios ordinarios.
+- `config:manage` — Administración técnica **system-only**, reservada a `system_accounts`.
 
 `requests:close` permanece como **registro legacy inactivo** para trazabilidad. No autoriza cierre, factura ni delegación.
 
 ## Permiso efectivo
 
-Unión de baseline, permisos directos, Roles directos, Roles heredados por Grupos/Cargos y política técnica aplicable. Las capacidades por recurso y delegaciones no se convierten en permisos IAM.
+Unión de baseline, permisos directos, Roles directos, Roles heredados por Grupos/Cargos y política técnica aplicable, menos capacidades system-only no aplicables al actor.
+
+Para un usuario ordinario, una asignación de `config:manage` no se convierte en permiso efectivo. Las capacidades por recurso y delegaciones tampoco se convierten en permisos IAM.
+
+## Administración técnica
+
+Conjunto de funciones reservadas a la cuenta protegida del sistema:
+
+```text
+Usuarios
+Organigrama
+Accesos / IAM
+Reglas
+Auditoría técnica
+```
+
+Su permiso canónico es `config:manage`, pero la identidad final se verifica mediante `system_accounts`/política IAM, no por cargo o `UserRole.ADMIN`.
+
+## Gestión de Áreas
+
+Configuración organizacional del catálogo Área + Categoría.
+
+Permiso:
+
+```text
+areas:manage
+```
+
+Puede heredarse por Rol/Grupo/Cargo o asignarse directamente. Un usuario con esta capacidad ve **Configuración → Áreas** sin recibir administración técnica.
+
+## Gestor de áreas
+
+Rol neutral sembrado por migración `0006`:
+
+```text
+Gestor de áreas → areas:manage
+```
+
+La organización decide a qué Grupos/Cargos/Usuarios asociarlo. No significa automáticamente Administración, Junta Directiva ni ningún nombre concreto.
 
 ## Cargo / Posición
 
@@ -39,7 +78,9 @@ Elemento configurable de estructura organizacional que puede heredar Roles. El n
 
 Cuenta protegida persistida en `system_accounts`.
 
-Producción: IAM máximo `config:manage + requests:read` y exclusión de aprobación/votación. Conserva excepciones administrativas por recurso para cancelar, corregir y gestionar cierre/factura. No administra delegaciones ordinarias en nombre del solicitante.
+Producción: IAM máximo `config:manage + areas:manage + requests:read` y exclusión de aprobación/votación. Conserva excepciones administrativas por recurso para cancelar, corregir y gestionar cierre/factura. No administra delegaciones ordinarias en nombre del solicitante.
+
+El frontend recibe `is_system_account` para UX; ese booleano no reemplaza la autorización backend.
 
 ## Área
 
@@ -167,4 +208,4 @@ Pueden aparecer físicamente, pero no son arquitectura objetivo:
 
 ## Regla de consistencia
 
-Usar siempre Usuario, Grupo, Rol, Permiso, Cargo/Posición, Área, Categoría, SIMPLE/MULTI_QUOTE, Enviar a revisión, Corregir/reenviar, Cancelar solicitud y Delegación de cierre/factura según las definiciones anteriores.
+Usar siempre Usuario, Grupo, Rol, Permiso, Cargo/Posición, Área, Categoría, Gestión de Áreas, Administración técnica, SIMPLE/MULTI_QUOTE, Enviar a revisión, Corregir/reenviar, Cancelar solicitud y Delegación de cierre/factura según las definiciones anteriores.
