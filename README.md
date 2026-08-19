@@ -24,6 +24,7 @@ Aplicación web neutral respecto al tipo de organización para solicitar, evalua
 - `APPROVED` no equivale a `CLOSED`.
 - Área y Categoría son dimensiones independientes.
 - SIMPLE/MULTI_QUOTE no cambia silenciosamente durante corrección.
+- Las invitaciones de usuario y los cambios reales de Cargo notifican Cargo(s) y permisos efectivos.
 - Documentos e historial forman parte del expediente auditable.
 - Alembic es el mecanismo canónico de migraciones.
 
@@ -179,6 +180,36 @@ canManageAreas = isSystemAdmin OR permission_codes contiene areas:manage
 `iam-admin.jsx` solo inyecta **Accesos** en un menú marcado como perteneciente al System Admin.
 
 Ver [docs/CONFIGURATION_ACCESS.md](docs/CONFIGURATION_ACCESS.md).
+
+## Notificaciones de acceso
+
+### Creación de usuario
+
+Cuando se crea un usuario activo, el correo que contiene la contraseña temporal también informa:
+
+```text
+Cargo(s) activos
+Permisos efectivos actuales
+```
+
+Los permisos se calculan después de aplicar Grupo/Rol/Cargo/permisos directos y se muestran con nombre legible + código.
+
+### Cambio de Cargo
+
+Cuando cambia realmente el conjunto `position_ids` de un usuario activo, el sistema recalcula su acceso y envía **Actualización de cargo y permisos**. Guardar el mismo Cargo no genera correo duplicado.
+
+Si falla el correo obligatorio de cambio de Cargo, la transacción se revierte y el endpoint devuelve 502. El correo de cambio de Cargo nunca incluye contraseña temporal.
+
+Fuente de verdad:
+
+```text
+Cargo(s) → UserPosition / Position
+Permisos → effective_permission_codes()
+```
+
+Nunca se usan `UserRole`, `title` ni `can_*` legacy para construir el contenido.
+
+Ver [docs/EMAIL_CONFIGURATION.md](docs/EMAIL_CONFIGURATION.md) y Feature 010.
 
 ## Dashboard y seguimiento universal
 
@@ -598,6 +629,8 @@ Cadena Alembic actual:
 - describe `config:manage` como administración técnica;
 - no asigna acceso a grupos/cargos por nombre.
 
+Feature 010 no requiere migración; reutiliza el IAM existente.
+
 El contenedor inicia con:
 
 ```text
@@ -638,6 +671,8 @@ Enviar a revisión
 ```
 
 El solicitante recibe el comentario cuando una solicitud entra en `NEEDS_REVISION`.
+
+Los correos IAM de invitación y cambio de Cargo incluyen Cargo(s) + permisos efectivos. El cambio de Cargo es obligatorio: fallo de entrega revierte la actualización.
 
 Para probar transporte:
 
@@ -695,6 +730,17 @@ docker compose ps
 4. volver a iniciar sesión con ese usuario;
 5. Configuración debe mostrar únicamente Áreas;
 6. verificar que no pueda abrir /api/iam/* ni Usuarios/Organigrama aunque manipule el frontend.
+```
+
+### Notificaciones de Cargo y permisos
+
+```text
+1. crear usuario activo con Cargo Tesorero;
+2. confirmar que la invitación muestra Tesorero y permisos efectivos;
+3. cambiar su Cargo a otro Cargo con permisos diferentes;
+4. confirmar correo Actualización de cargo y permisos;
+5. comprobar que los permisos del correo coinciden con Permisos efectivos en Accesos;
+6. guardar nuevamente el mismo Cargo y confirmar que no llega correo duplicado.
 ```
 
 ### Enviar a revisión / corrección
@@ -764,7 +810,8 @@ Features vigentes relevantes:
 - Feature 006 — Grupo/Cargo → Rol → Permiso;
 - Feature 007 — **Enviar a revisión** + propiedad de **Corregir / reenviar**;
 - Feature 008 — cierre/factura por solicitante/Admin/delegación;
-- Feature 009 — separación de configuración técnica vs Gestión de Áreas.
+- Feature 009 — separación de configuración técnica vs Gestión de Áreas;
+- Feature 010 — notificaciones de Cargo y permisos efectivos.
 
 ## Deuda de transición conocida
 
