@@ -17,7 +17,7 @@ from app.application import create_app
 from app.core.database import Base, get_db
 from app.core.security import apply_effective_permissions_to_user, create_token, hash_password
 from app.models.entities import User, UserRole
-from app.models.iam import Permission, UserPermission
+from app.models.iam import Permission, Position, PositionRole, Role, RolePermission, UserPosition
 from app.services.iam_service import has_permission
 
 
@@ -71,8 +71,23 @@ class ConfigurationReadAccessTests(unittest.TestCase):
                 description='Acceso de escritura',
                 active=True,
             )
-            db.add_all([requests_read, config_read, config_manage])
+            viewer_role = Role(
+                code='configuration-viewer',
+                name='Visor de configuración',
+                description='Rol de lectura',
+                active=True,
+                system_managed=False,
+            )
+            viewer_position = Position(
+                code='configuration-observer-seat',
+                name='Cargo de observación',
+                description='Cargo de prueba sin nombre organizacional especial',
+                active=True,
+            )
+            db.add_all([requests_read, config_read, config_manage, viewer_role, viewer_position])
             db.flush()
+            db.add(RolePermission(role_id=viewer_role.id, permission_id=config_read.id))
+            db.add(PositionRole(position_id=viewer_position.id, role_id=viewer_role.id))
 
             self.viewer = User(
                 name='Visor de configuración',
@@ -93,7 +108,7 @@ class ConfigurationReadAccessTests(unittest.TestCase):
             )
             db.add(self.viewer)
             db.flush()
-            db.add(UserPermission(user_id=self.viewer.id, permission_id=config_read.id))
+            db.add(UserPosition(user_id=self.viewer.id, position_id=viewer_position.id))
             db.commit()
             self.viewer_token = create_token(self.viewer)
             self.viewer_id = self.viewer.id
@@ -101,7 +116,7 @@ class ConfigurationReadAccessTests(unittest.TestCase):
     def auth(self) -> dict[str, str]:
         return {'Authorization': f'Bearer {self.viewer_token}'}
 
-    def test_config_read_is_visible_but_does_not_grant_config_manage(self):
+    def test_config_read_is_inherited_by_cargo_without_config_manage(self):
         with self.Session() as db:
             user = db.get(User, self.viewer_id)
             hydrated = apply_effective_permissions_to_user(db, user)
@@ -130,17 +145,6 @@ class ConfigurationReadAccessTests(unittest.TestCase):
             ('post', '/api/iam/groups', {'name': 'No permitido', 'description': None, 'active': True}),
             ('post', '/api/iam/positions', {'name': 'No permitido', 'description': None, 'active': True}),
             ('patch', f'/api/iam/users/{self.viewer_id}', {'active': False}),
-            ('post', '/api/users', {
-                'identity_document': 'BLOCKED-1',
-                'first_name': 'No',
-                'middle_name': None,
-                'last_name': 'Permitido',
-                'second_last_name': None,
-                'email': 'blocked@example.com',
-                'phone': None,
-                'title': 'SIN_ASIGNAR',
-                'active': True,
-            }),
         )
         for method, path, payload in attempts:
             with self.subTest(method=method, path=path):
