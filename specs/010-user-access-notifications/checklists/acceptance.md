@@ -35,6 +35,6 @@
 - [x] docs/README actualizado.
 - [x] HISTORY actualizado.
 - [x] CHANGELOG actualizado.
-- [ ] README principal actualizado.
-- [ ] PROMPT_RECONSTRUCCION actualizado.
+- [x] README principal actualizado.
+- [x] PROMPT_RECONSTRUCCION actualizado.
 - [ ] PR #9 actualizado.
