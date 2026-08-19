@@ -18,7 +18,15 @@ from app.application import create_app
 from app.core.database import Base, get_db
 from app.core.security import create_token, hash_password
 from app.models.entities import User, UserRole
-from app.models.iam import Permission, Position, PositionRole, Role, RolePermission, SystemAccount
+from app.models.iam import (
+    Permission,
+    Position,
+    PositionRole,
+    Role,
+    RolePermission,
+    SystemAccount,
+    UserPosition,
+)
 from app.services import email_service
 
 
@@ -130,11 +138,12 @@ class UserAccessNotificationTests(unittest.TestCase):
         self.assertIn(('Aprobar solicitudes', 'requests:approve'), permissions)
 
     def test_real_position_change_sends_updated_effective_permissions(self):
-        first = self.client.patch(
-            f'/api/iam/users/{self.member_id}',
-            headers=self.auth(),
-            json={'position_ids': [self.vocal_id]},
-        )
+        with patch('app.api.iam_users.send_user_access_updated'):
+            first = self.client.patch(
+                f'/api/iam/users/{self.member_id}',
+                headers=self.auth(),
+                json={'position_ids': [self.vocal_id]},
+            )
         self.assertEqual(first.status_code, 200, first.text)
 
         with patch('app.api.iam_users.send_user_access_updated') as notification:
@@ -178,10 +187,7 @@ class UserAccessNotificationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 502, response.text)
         with self.Session() as db:
             position_ids = set(db.scalars(
-                select(Position.id)
-                .join_from(Position, __import__('app.models.iam', fromlist=['UserPosition']).UserPosition,
-                           __import__('app.models.iam', fromlist=['UserPosition']).UserPosition.position_id == Position.id)
-                .where(__import__('app.models.iam', fromlist=['UserPosition']).UserPosition.user_id == self.member_id)
+                select(UserPosition.position_id).where(UserPosition.user_id == self.member_id)
             ).all())
         self.assertEqual(position_ids, set())
 
