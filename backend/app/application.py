@@ -16,6 +16,7 @@ from app.api import (
     financial_actions,
     iam,
     iam_users,
+    legacy_position_notifications,
     my_actions,
     position_access,
     quotation_actions,
@@ -118,6 +119,14 @@ def create_app() -> FastAPI:
         dependencies=[Depends(require_permission('config:manage'))],
     )
     app.include_router(auth.router, prefix='/api/auth', tags=['Authentication'])
+    # The legacy Organigrama screen still submits users.title. Register this
+    # compatibility bridge first so PATCH /api/users/bulk updates canonical
+    # UserPosition assignments and sends Cargo/permission notifications.
+    app.include_router(
+        legacy_position_notifications.router,
+        prefix='/api/users',
+        tags=['Users (canonical Cargo bridge)'],
+    )
     app.include_router(
         users.router,
         prefix='/api/users',
