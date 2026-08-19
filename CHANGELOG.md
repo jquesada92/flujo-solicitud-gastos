@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-08-18 — Configuración técnica system-only y Gestión de Áreas delegable
+
+### Added
+- permiso atómico `areas:manage`.
+- Rol neutral `area-manager / Gestor de áreas`.
+- `UserOut.is_system_account` para UX basada en identidad persistida.
+- Alembic `20260818_0006_area_management_permission.py`.
+- Feature 009 y `docs/CONFIGURATION_ACCESS.md`.
+- `test_frontend_configuration_access.py`.
+
+### Changed
+- `config:manage` pasa a ser una capacidad **system-only**: usuarios ordinarios no la reciben efectivamente por permiso directo, Rol, Grupo o Cargo.
+- producción del System Admin queda `requests:read + areas:manage + config:manage`.
+- `/api/areas` usa `areas:manage` para mutaciones y consulta de inactivos.
+- menú de Configuración usa `is_system_account` para Usuarios/Organigrama/Accesos/Reglas/Auditoría y `areas:manage` para Áreas.
+- `iam-admin.jsx` solo inyecta **Accesos** en menú marcado como System Admin.
+- Constitución actualizada a **2.8.0**.
+
+### Security
+- asignaciones legacy de `config:manage` a usuarios ordinarios dejan de producir permiso efectivo.
+- nombres de Grupos/Cargos como Administración o Junta Directiva no participan en autorización.
+- `0006` no asigna automáticamente `Gestor de áreas` a ningún nombre organizacional.
+
+### Migrations
+- Cadena actual: `0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006`.
+- `0006` crea/activa `areas:manage`, crea el Rol neutral y actualiza la descripción de `config:manage` como administración técnica.
+
+### Testing
+- usuario ordinario con `areas:manage` puede administrar Áreas y sigue bloqueado de IAM técnico.
+- usuario ordinario con `config:manage` legacy sigue bloqueado.
+- login/`/auth/me` distinguen `is_system_account`.
+- contratos frontend protegen separación de menú y Accesos system-only.
+
+---
+
 ## 2026-08-18 — Cierre/factura por solicitante, Admin o delegación
 
 ### Added
@@ -38,7 +73,7 @@
 - El delegado debe estar activo, ser distinto del solicitante y no ser `system_accounts`.
 
 ### Migrations
-- Cadena actual: `0000 → 0001 → 0002 → 0003 → 0004 → 0005`.
+- Cadena hasta Feature 008: `0000 → 0001 → 0002 → 0003 → 0004 → 0005`.
 - `0005` crea `expense_closure_delegations` y marca `requests:close` como inactivo/legacy sin borrar asignaciones históricas.
 
 ### Testing
@@ -157,5 +192,7 @@
 ## Compatibility / Technical debt
 
 Permanecen temporalmente sin autoridad runtime: `UserRole`, `can_*`, `AccessProfile`, `BOARD_CODES`, `users.title`, `/api/users` legacy, `requests:close` inactivo, `main.jsx`, `domain-normalization.js` y bridges Vite.
+
+La UI IAM puede todavía mostrar referencias legacy a `config:manage`; runtime las ignora para usuarios ordinarios hasta retirar esa deuda visual.
 
 Pendientes separados: fórmula completa de mayoría APPROVED/REJECTED, empate MULTI_QUOTE, edición estructural de opciones y outbox/retry persistente.
