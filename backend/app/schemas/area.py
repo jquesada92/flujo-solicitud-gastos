@@ -9,9 +9,16 @@ class CleanName(BaseModel):
     @classmethod
     def clean_and_validate_name(cls, value):
         cleaned = re.sub(r'\s+', ' ', str(value or '').strip())
-        if not re.fullmatch(r'[^\W\d_]+(?: [^\W\d_]+)*', cleaned, flags=re.UNICODE):
-            raise ValueError('Solo se permiten letras y espacios; las tildes y la ñ están permitidas')
-        return cleaned
+        parts = [part.strip() for part in cleaned.split('/')]
+        valid_part = r'[^\W\d_]+(?: [^\W\d_]+)*'
+        if not parts or any(
+            not part or not re.fullmatch(valid_part, part, flags=re.UNICODE)
+            for part in parts
+        ):
+            raise ValueError(
+                'Solo se permiten letras, espacios y / como separador; las tildes y la ñ están permitidas'
+            )
+        return ' / '.join(parts)
 
 
 class CategoryCreate(CleanName):
