@@ -1,7 +1,7 @@
 from decimal import Decimal
 from datetime import datetime
 from typing import Literal
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 class QuotationOptionCreate(BaseModel):
     supplier: str = Field(min_length=2, max_length=200)
@@ -38,10 +38,29 @@ class QuotationVoteOut(BaseModel):
 
 
 class ExpenseCreate(BaseModel):
+    """Canonical request contract.
+
+    The public API uses expense_area/expense_category. Legacy names are accepted
+    temporarily as validation aliases so older deployed clients do not fail while
+    the frontend transition completes. Internal persistence still receives the
+    legacy ORM attribute names through model_dump until the database model is
+    renamed in a dedicated migration.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
     title: str = Field(min_length=3, max_length=200)
     description: str = Field(min_length=3)
-    expense_type: str = Field(min_length=2, max_length=80)
-    expense_subcategory: str | None = Field(default=None, max_length=80)
+    expense_area: str = Field(
+        min_length=2,
+        max_length=80,
+        validation_alias=AliasChoices('expense_area', 'expense_type'),
+    )
+    expense_category: str | None = Field(
+        default=None,
+        max_length=80,
+        validation_alias=AliasChoices('expense_category', 'expense_subcategory'),
+    )
     urgency: Literal['LOW', 'NORMAL', 'HIGH', 'CRITICAL'] = 'NORMAL'
     request_type: Literal['SIMPLE', 'MULTI_QUOTE'] = 'SIMPLE'
     amount: Decimal | None = Field(default=None, gt=0)
@@ -50,6 +69,25 @@ class ExpenseCreate(BaseModel):
     quotation_options: list[QuotationOptionCreate] = Field(default_factory=list, max_length=10)
     quotation_pending: bool = Field(default=False, exclude=True)
     revised_from_request_id: str | None = Field(default=None, max_length=36)
+
+    @property
+    def expense_type(self) -> str:
+        """Temporary internal compatibility alias."""
+        return self.expense_area
+
+    @property
+    def expense_subcategory(self) -> str | None:
+        """Temporary internal compatibility alias."""
+        return self.expense_category
+
+    def model_dump(self, *args, **kwargs):
+        """Map canonical API fields to the current ORM constructor names."""
+        values = super().model_dump(*args, **kwargs)
+        if 'expense_area' in values:
+            values['expense_type'] = values.pop('expense_area')
+        if 'expense_category' in values:
+            values['expense_subcategory'] = values.pop('expense_category')
+        return values
 
     @model_validator(mode='after')
     def require_support(self):
@@ -80,6 +118,8 @@ class AttachmentOut(BaseModel):
 
 
 class InvoiceOut(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     attachment_id: int
     original_name: str
     content_type: str
@@ -89,8 +129,11 @@ class InvoiceOut(BaseModel):
     display_id: str
     flow_id: str
     title: str
-    expense_type: str
-    expense_subcategory: str | None = None
+    expense_area: str = Field(validation_alias=AliasChoices('expense_area', 'expense_type'))
+    expense_category: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices('expense_category', 'expense_subcategory'),
+    )
     urgency: str = 'NORMAL'
     supplier: str
     amount: Decimal
@@ -99,6 +142,14 @@ class InvoiceOut(BaseModel):
     expense_status: str
     closed_at: datetime | None = None
     closed_by: str | None = None
+
+    @property
+    def expense_type(self) -> str:
+        return self.expense_area
+
+    @property
+    def expense_subcategory(self) -> str | None:
+        return self.expense_category
 
 
 class ApprovalOut(BaseModel):
@@ -125,6 +176,8 @@ class ApprovalOut(BaseModel):
 
 
 class ExpenseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
     id: int
     request_id: str
     flow_id: str
@@ -133,8 +186,11 @@ class ExpenseOut(BaseModel):
     request_type: str = 'SIMPLE'
     title: str
     description: str
-    expense_type: str
-    expense_subcategory: str | None = None
+    expense_area: str = Field(validation_alias=AliasChoices('expense_area', 'expense_type'))
+    expense_category: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices('expense_category', 'expense_subcategory'),
+    )
     urgency: str = 'NORMAL'
     amount: Decimal | None = None
     supplier: str | None = None
@@ -162,5 +218,10 @@ class ExpenseOut(BaseModel):
     can_close: bool = False
     can_delegate_close: bool = False
 
-    class Config:
-        from_attributes = True
+    @property
+    def expense_type(self) -> str:
+        return self.expense_area
+
+    @property
+    def expense_subcategory(self) -> str | None:
+        return self.expense_category
