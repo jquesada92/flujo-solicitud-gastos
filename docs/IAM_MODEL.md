@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Permitir que cada organización configure acceso sin hardcodear nombres, cargos o correos y distinguir **permisos IAM**, **capacidades por recurso**, **delegaciones** y **tareas contextuales**.
+Permitir que cada organización configure acceso sin hardcodear nombres, cargos o correos y distinguir **permisos IAM**, **capacidades system-only**, **capacidades por recurso**, **delegaciones** y **tareas contextuales**.
 
 ## Modelo
 
@@ -34,18 +34,19 @@ system_accounts
 
 La delegación de cierre se persiste aparte en `expense_closure_delegations` porque pertenece a una solicitud concreta, no a la organización global.
 
-## Permisos IAM operativos
+## Permisos IAM vigentes
 
 ```text
-requests:read
-requests:create
-requests:approve
-config:manage
+requests:read     baseline de consulta
+requests:create   crear nuevas solicitudes
+requests:approve  aprobar/votar/enviar a revisión
+areas:manage      administrar Áreas/Categorías
+config:manage     administración técnica system-only
 ```
 
 `requests:close` permanece físicamente como registro **legacy inactivo** después de Alembic `0005`. No autoriza runtime ni debe configurarse para conseguir cierre/factura.
 
-Para usuario activo:
+Para usuario activo ordinario:
 
 ```text
 effective_permissions =
@@ -54,9 +55,59 @@ effective_permissions =
   ∪ direct-role permissions
   ∪ group-role permissions
   ∪ position-role permissions
+  - {config:manage}
 ```
 
-`requests:read` es baseline. Para permisos mutables IAM, ausencia de ALLOW implica DENY.
+`requests:read` es baseline. `config:manage` es system-only: una asignación histórica/directa/heredada a un usuario ordinario no lo hace efectivo.
+
+## Configuración técnica vs Áreas
+
+### `config:manage`
+
+Reservado a cuentas persistidas en `system_accounts`.
+
+Gobierna la frontera técnica:
+
+```text
+Usuarios
+Organigrama
+Accesos / IAM
+Reglas
+Auditoría técnica
+```
+
+No debe usarse como permiso empresarial general.
+
+### `areas:manage`
+
+Permiso organizacional configurable. Puede llegar por:
+
+```text
+Permiso directo
+Rol directo
+Grupo → Rol
+Cargo → Rol
+```
+
+Gobierna:
+
+```text
+Áreas
+Categorías asociadas
+activación/desactivación
+relaciones Área ↔ Categoría
+```
+
+Alembic `0006` crea el Rol neutral `Gestor de áreas` con `areas:manage`, pero **no lo asigna por nombre** a ningún Grupo/Cargo.
+
+Una configuración de cliente puede ser, por ejemplo:
+
+```text
+Grupo Administración → Gestor de áreas
+Grupo Junta Directiva → Gestor de áreas
+```
+
+Los nombres son datos persistidos, no condiciones runtime.
 
 ## Grupo y Cargo
 
@@ -180,7 +231,7 @@ No concede `can_correct` al aprobador.
 
 ## `TECHNICAL_ADMIN`
 
-Identidad persistida en `system_accounts`.
+Identidad persistida en `system_accounts` y expuesta para UX como `is_system_account`.
 
 ### Producción
 
@@ -188,6 +239,7 @@ IAM máximo:
 
 ```text
 config:manage
+areas:manage
 requests:read
 ```
 
@@ -207,7 +259,9 @@ No administra delegaciones ordinarias en nombre del solicitante.
 
 ## Consola autoritativa
 
-**Configuración → Accesos** administra IAM canónico. La delegación de cierre/factura se administra desde la solicitud.
+**Configuración → Accesos** administra IAM canónico y solo está disponible al System Admin.
+
+Un usuario ordinario con `areas:manage` ve **Configuración → Áreas** pero no Usuarios/Organigrama/Accesos.
 
 `AccessProfile`, `users.title`, `can_*`, `BOARD_CODES` y `requests:close` legacy son compatibilidad/deuda y no autoridad runtime.
 
@@ -216,14 +270,18 @@ No administra delegaciones ordinarias en nombre del solicitante.
 ```text
 0004 → position_roles + importación legacy de Cargo/Perfil a IAM
 0005 → expense_closure_delegations + requests:close inactivo/legacy
+0006 → areas:manage + Rol Gestor de áreas + config:manage system-only documentado
 ```
 
-Cadena completa actual termina en `20260818_0005`.
+Cadena completa actual termina en `20260818_0006`.
 
 ## Pruebas mínimas
 
 - permiso directo / Rol directo / Grupo→Rol / Cargo→Rol;
 - Cargo inactivo y fuentes efectivas;
+- `areas:manage` para usuario ordinario sin acceso IAM técnico;
+- `config:manage` legacy ignorado para usuario ordinario;
+- `is_system_account` explícito en sesión;
 - política técnica producción/no-producción;
 - `can_cancel` requester/Admin;
 - `can_correct` requester/Admin;
