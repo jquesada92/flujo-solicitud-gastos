@@ -17,6 +17,7 @@ financial_actions.py     → factura / cierre
 my_actions.py            → acciones contextuales
 tracking.py              → dashboard + seguimiento
 position_access.py       → Cargo → Rol
+areas.py                 → configuración Área/Categoría
 ```
 
 ## Capas
@@ -39,7 +40,7 @@ SQLAlchemy es síncrono; rutas con I/O bloqueante usan `def` para threadpool de 
 
 `require_permission(code)` usa `iam_service.has_permission()`.
 
-Fuentes:
+Fuentes configurables:
 
 ```text
 baseline requests:read
@@ -49,16 +50,44 @@ Grupo → Rol → Permiso
 Cargo → Rol → Permiso
 ```
 
-Permisos operativos: `requests:read`, `requests:create`, `requests:approve`, `config:manage`.
+Permisos operativos:
+
+```text
+requests:read
+requests:create
+requests:approve
+areas:manage
+config:manage  # system-only
+```
 
 `requests:close` queda como registro legacy inactivo desde migración `0005`; no autoriza endpoints financieros.
+
+### Frontera system-only
+
+`iam_service.SYSTEM_ONLY_PERMISSION_CODES` contiene `config:manage`.
+
+Para usuarios ordinarios:
+
+```text
+effective = unrestricted_permissions - {config:manage} + baseline
+```
+
+Por tanto una relación legacy/directa/Grupo/Cargo con `config:manage` no eleva a un usuario ordinario.
+
+`users_with_permission('config:manage')` también ignora esas relaciones y resuelve únicamente `system_accounts` cuando la política del ambiente lo permite.
+
+### Gestión de Áreas
+
+`areas:manage` sí es configurable por IAM y protege mutaciones de `/api/areas`.
+
+La lectura activa necesaria para clasificar/consultar solicitudes permanece autenticada; `include_inactive=true` y mutaciones requieren `areas:manage`.
 
 ### Cuenta técnica
 
 Producción:
 
 ```text
-IAM máximo = requests:read + config:manage
+IAM máximo = requests:read + areas:manage + config:manage
 ```
 
 No participa en aprobación/votación. Excepciones administrativas por recurso:
@@ -68,6 +97,8 @@ cancelar
 corregir / reenviar
 gestionar cierre/factura
 ```
+
+`UserOut.is_system_account` se calcula desde `system_accounts` y se expone a login/`/auth/me` para UX; no sustituye validación backend.
 
 ## Capacidades por recurso
 
@@ -120,12 +151,6 @@ models/closure.py
 ExpenseClosureDelegation
 ```
 
-Servicio:
-
-```text
-services/closure_service.py
-```
-
 API:
 
 ```text
@@ -135,8 +160,6 @@ DELETE /api/expenses/{request_id}/closure-delegation
 ```
 
 Solo solicitante crea/cambia/revoca. `can_delegate_close` se expone por solicitud.
-
-Una delegación activa por solicitud se garantiza con índice parcial; cambiar delegado revoca y hace `flush()` antes de insertar la nueva fila.
 
 ## Seguimiento universal
 
@@ -161,17 +184,10 @@ can_delegate_close
 `pending_action_service.py`:
 
 ```text
-APPROVAL_DECISION
-= requests:approve + Approval.PENDING + PENDING_APPROVAL
-
-QUOTATION_VOTE
-= requests:approve + invitación vigente + QUOTATION_VOTING + sin voto
-
-CORRECT_REQUEST
-= NEEDS_REVISION + requested_by == current_user.email
-
-CLOSE_REQUEST
-= APPROVED + (requester OR active_closure_delegate)
+APPROVAL_DECISION = requests:approve + Approval.PENDING + PENDING_APPROVAL
+QUOTATION_VOTE    = requests:approve + invitación vigente + QUOTATION_VOTING + sin voto
+CORRECT_REQUEST   = NEEDS_REVISION + requested_by == current_user.email
+CLOSE_REQUEST     = APPROVED + (requester OR active_closure_delegate)
 ```
 
 El Administrador del sistema conserva facultad de cierre desde Solicitudes, pero no recibe todas las solicitudes como tareas personales.
@@ -198,8 +214,6 @@ otros PENDING/WAITING → EXPIRED
 requester → CORRECT_REQUEST
 ```
 
-Persistencia conserva actor/timestamp/comentario.
-
 ## Invariant SIMPLE/MULTI_QUOTE
 
 `revision_actions.py` reconoce MULTI_QUOTE por `request_type`, `QUOTATION_VOTING` o 2+ opciones. Cambio real devuelve 409. Corrección MULTI_QUOTE genera nueva ronda y excluye `expense.requested_by`, no al actor administrativo.
@@ -215,7 +229,9 @@ frontend/src/closure-delegation.jsx
 frontend/src/iam-admin.jsx
 ```
 
-Mientras `ExpenseTable` viva en `main.jsx`, `vite.config.js` consume capacidades backend mediante bridges:
+Mientras partes de `main.jsx` sigan legacy, `vite.config.js` aplica bridges que consumen backend authoritative.
+
+Acciones por solicitud:
 
 ```text
 x.can_cancel
@@ -224,13 +240,29 @@ x.can_close
 x.can_delegate_close
 ```
 
-La autorización siempre queda en backend. El `canClose={true}` físicamente presente en source legacy no es autoridad del bundle transformado y debe retirarse cuando se modularice `ExpenseTable`.
+Configuración:
 
-Los bridges temporales no deben depender de indentación o saltos de línea exactos del monolito. Para la inserción de **Delegar cierre/factura**, Vite usa un ancla regex tolerante a LF/CRLF y whitespace variable, pero exige exactamente una coincidencia de `row-actions → x.can_correct`; cero o múltiples coincidencias abortan el build de forma explícita para evitar transformar código ambiguo.
+```text
+isSystemAdmin = user.is_system_account === true
+canManageAreas = isSystemAdmin OR permission_codes contains areas:manage
+
+Usuarios/Organigrama/Accesos/Reglas/Audit → isSystemAdmin
+Áreas                                  → canManageAreas
+```
+
+`iam-admin.jsx` solo inyecta Accesos dentro de un menú marcado `data-system-admin=true`.
+
+Los bridges temporales no deben depender de indentación o saltos de línea exactos. La inserción de delegación usa regex tolerante a LF/CRLF y exige exactamente una coincidencia.
 
 ## Response models
 
-`UserOut.permission_codes` expone permisos IAM efectivos y aliases UX legacy temporales.
+`UserOut` expone:
+
+```text
+permission_codes
+is_system_account
+can_* aliases legacy temporales
+```
 
 `ExpenseOut` expone:
 
@@ -241,7 +273,7 @@ can_close
 can_delegate_close
 ```
 
-No forman parte de `permission_codes`.
+Las capacidades por recurso no forman parte de `permission_codes`.
 
 ## API de Cargos
 
@@ -266,9 +298,12 @@ Topología:
 → 20260817_0003 MULTI_QUOTE request_type repair
 → 20260818_0004 position role inheritance
 → 20260818_0005 closure delegation
+→ 20260818_0006 area management permission
 ```
 
-`0005` crea `expense_closure_delegations`, índice de una delegación activa y marca `requests:close` inactivo/legacy.
+`0005` crea delegaciones y retira `requests:close` como autoridad.
+
+`0006` crea `areas:manage`, el Rol neutral `Gestor de áreas` y actualiza la descripción de `config:manage`; no asigna permisos por nombres organizacionales.
 
 Entry point:
 
@@ -303,16 +338,19 @@ test_multi_quote_revision.py
 test_closure_delegation.py
 test_frontend_dashboard_contract.py
 test_frontend_closure_contract.py
+test_frontend_configuration_access.py
 test_migrations.py
 test_container_portability.py
 ```
 
-Feature 008 exige probar requester/Admin/delegado, tercero con `requests:close` legacy negado, revocación, una delegación activa, `CLOSE_REQUEST` requester/delegado y que el bridge Vite de delegación tolere diferencias de formato sin perder el fail-fast de unicidad.
+Feature 009 exige probar `areas:manage` ordinario, `config:manage` system-only, `is_system_account`, separación visual del menú y topología `0006`.
 
 Mientras GitHub Actions no tenga cuota, backend tests + `npm run build` + Docker build/smoke son gates locales obligatorios.
 
 ## Deuda legacy explícita
 
 Persisten temporalmente `api/expenses.py`, `api/users.py`, `UserRole`, `can_*`, `AccessProfile`, `BOARD_CODES`, `main.jsx`, `domain-normalization.js`, bridges Vite y `requests:close` inactivo. Ninguno es autoridad nueva.
+
+La pantalla IAM todavía puede mostrar registros legacy/configuración que runtime filtra; `config:manage` es system-only aunque una relación histórica lo referencie.
 
 Deuda funcional separada: fórmula completa quorum/mayoría APPROVED/REJECTED, empate de cotizaciones, edición estructural MULTI_QUOTE y outbox/retry persistente.
