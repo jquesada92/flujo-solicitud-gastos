@@ -101,9 +101,15 @@ Visor de configuración
 └─ config:read
 ```
 
-La migración realiza un **bootstrap único** para el despliegue PH actual: asigna ese Rol a los usuarios ordinarios activos que en ese momento reciben `requests:approve` a través del grafo IAM canónico. No compara nombres de Cargo, Grupo ni Rol.
+La migración realiza un **bootstrap estructural único** para el despliegue PH actual. En vez de copiar acceso a personas concretas:
 
-Después de la migración, `requests:approve` y `config:read` son capacidades completamente independientes. Dar permiso de aprobación a un usuario nuevo **no** le concede automáticamente visibilidad de Configuración; esa decisión se administra desde IAM mediante relaciones persistidas.
+- los Cargos que actualmente heredan `requests:approve` reciben el Rol `Visor de configuración` mediante `position_roles`;
+- los Grupos que actualmente heredan `requests:approve` reciben el mismo Rol mediante `group_roles`;
+- únicamente cuando la aprobación fue asignada directamente al usuario se usa una asignación directa del Rol como fallback.
+
+Así, cuando cambia la persona que ocupa un Cargo de la estructura vigente, `config:read` sigue al Cargo y no al nombre de la persona. El bootstrap no compara nombres de Cargo, Grupo, Rol ni usuario.
+
+Después de la migración, `requests:approve` y `config:read` son capacidades independientes. Crear un Cargo/Grupo aprobador nuevo **no** concede automáticamente visibilidad de Configuración; el Administrador decide esa relación desde IAM.
 
 ## API
 
@@ -143,6 +149,14 @@ DELETE /api/areas/{id}/categories/{category_id}
 
 Para compatibilidad temporal con el shell React legacy, `can_configure=true` significa que el usuario puede **ver** Configuración cuando tiene `config:read` o `config:manage`. Este flag no autoriza mutaciones; el backend siempre vuelve a comprobar los permisos canónicos.
 
+El bridge de Vite separa explícitamente:
+
+```text
+canReadConfiguration → config:read o System Admin
+canConfigure         → System Admin / config:manage
+canManageAreas       → areas:manage o System Admin
+```
+
 `config-readonly.js` detecta:
 
 ```text
@@ -173,8 +187,9 @@ Responsabilidades:
 - crear/upsert `config:read`;
 - crear `configuration-viewer / Visor de configuración`;
 - asociar `config:read` al Rol;
-- hacer un bootstrap único desde el conjunto de usuarios que actualmente reciben `requests:approve` por IAM;
-- excluir cuentas técnicas;
+- hacer bootstrap estructural sobre Cargos/Grupos que actualmente heredan `requests:approve`;
+- usar asignación directa solamente como fallback para aprobadores directos;
+- excluir cuentas técnicas de ese fallback;
 - no comparar nombres organizacionales en runtime ni en el bootstrap.
 
 Cadena:
