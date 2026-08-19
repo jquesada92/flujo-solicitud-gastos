@@ -9,12 +9,13 @@ to the protected system administrator. This revision introduces config:read as a
 normal inheritable IAM capability and a neutral reusable viewer role.
 
 For compatibility with the current PH deployment, the migration performs a
-one-time assignment of that viewer role to active ordinary users who currently
-receive requests:approve through the canonical IAM graph. This selects the
-existing approval constituency from persisted relationships rather than Cargo,
-Group, or Role names. It is a migration-time bootstrap only: future assignments
-of configuration visibility are normal IAM data and are not inferred from
-requests:approve at runtime.
+one-time structural bootstrap from the existing requests:approve inheritance:
+positions and groups that currently confer approval receive the viewer role, so
+configuration visibility follows the organizational assignment when occupants
+change. Direct user approval assignments receive the viewer role directly as a
+fallback. No Cargo, Group, or Role name is compared. This is a migration-time
+bootstrap only: future configuration-read assignments are normal IAM data and
+are not inferred from requests:approve at runtime.
 """
 
 from alembic import op
@@ -89,16 +90,54 @@ def upgrade() -> None:
         ON CONFLICT (role_id, permission_id) DO NOTHING
     '''), {'permission_code': PERMISSION_CODE, 'role_code': ROLE_CODE})
 
+    # Prefer organizational inheritance. Existing Cargos that currently confer
+    # approval receive the neutral viewer Role, so future occupants inherit
+    # config:read without any runtime dependency on an organizational name.
+    bind.execute(sa.text('''
+        INSERT INTO position_roles (position_id, role_id)
+        SELECT DISTINCT pr.position_id, viewer.id
+        FROM position_roles pr
+        JOIN positions pos ON pos.id = pr.position_id
+        JOIN roles assigned_role ON assigned_role.id = pr.role_id
+        JOIN role_permissions rp ON rp.role_id = assigned_role.id
+        JOIN permissions p ON p.id = rp.permission_id
+        CROSS JOIN roles viewer
+        WHERE p.code = 'requests:approve'
+          AND p.active = TRUE
+          AND pos.active = TRUE
+          AND assigned_role.active = TRUE
+          AND viewer.code = :role_code
+        ON CONFLICT (position_id, role_id) DO NOTHING
+    '''), {'role_code': ROLE_CODE})
+
+    # The same structural bootstrap applies when approval is inherited through a
+    # persisted Group instead of a Cargo.
+    bind.execute(sa.text('''
+        INSERT INTO group_roles (group_id, role_id)
+        SELECT DISTINCT gr.group_id, viewer.id
+        FROM group_roles gr
+        JOIN user_groups ug ON ug.id = gr.group_id
+        JOIN roles assigned_role ON assigned_role.id = gr.role_id
+        JOIN role_permissions rp ON rp.role_id = assigned_role.id
+        JOIN permissions p ON p.id = rp.permission_id
+        CROSS JOIN roles viewer
+        WHERE p.code = 'requests:approve'
+          AND p.active = TRUE
+          AND ug.active = TRUE
+          AND assigned_role.active = TRUE
+          AND viewer.code = :role_code
+        ON CONFLICT (group_id, role_id) DO NOTHING
+    '''), {'role_code': ROLE_CODE})
+
     system_filter = (
         'AND NOT EXISTS (SELECT 1 FROM system_accounts sa WHERE sa.user_id = u.id)'
         if 'system_accounts' in tables else ''
     )
 
-    # One-time bootstrap from the *current* canonical approval constituency.
-    # No organizational name is used here; after this migration, administrators
-    # assign/remove the viewer role through IAM like any other persisted role.
+    # Direct approval assignments have no organizational container to inherit
+    # from, so preserve the current actor's visibility with one direct Role.
     bind.execute(sa.text(f'''
-        WITH approver_users AS (
+        WITH direct_approver_users AS (
             SELECT up.user_id
             FROM user_permissions up
             JOIN permissions p ON p.id = up.permission_id
@@ -114,39 +153,11 @@ def upgrade() -> None:
             WHERE p.code = 'requests:approve'
               AND p.active = TRUE
               AND assigned_role.active = TRUE
-
-            UNION
-
-            SELECT gm.user_id
-            FROM group_members gm
-            JOIN user_groups ug ON ug.id = gm.group_id
-            JOIN group_roles gr ON gr.group_id = ug.id
-            JOIN roles assigned_role ON assigned_role.id = gr.role_id
-            JOIN role_permissions rp ON rp.role_id = assigned_role.id
-            JOIN permissions p ON p.id = rp.permission_id
-            WHERE p.code = 'requests:approve'
-              AND p.active = TRUE
-              AND ug.active = TRUE
-              AND assigned_role.active = TRUE
-
-            UNION
-
-            SELECT upos.user_id
-            FROM user_positions upos
-            JOIN positions pos ON pos.id = upos.position_id
-            JOIN position_roles pr ON pr.position_id = pos.id
-            JOIN roles assigned_role ON assigned_role.id = pr.role_id
-            JOIN role_permissions rp ON rp.role_id = assigned_role.id
-            JOIN permissions p ON p.id = rp.permission_id
-            WHERE p.code = 'requests:approve'
-              AND p.active = TRUE
-              AND pos.active = TRUE
-              AND assigned_role.active = TRUE
         )
         INSERT INTO user_role_assignments (user_id, role_id)
-        SELECT au.user_id, viewer.id
-        FROM approver_users au
-        JOIN users u ON u.id = au.user_id
+        SELECT dau.user_id, viewer.id
+        FROM direct_approver_users dau
+        JOIN users u ON u.id = dau.user_id
         CROSS JOIN roles viewer
         WHERE u.active = TRUE
           AND viewer.code = :role_code
@@ -158,6 +169,16 @@ def upgrade() -> None:
 def downgrade() -> None:
     bind = op.get_bind()
     tables = set(sa.inspect(bind).get_table_names())
+    if {'position_roles', 'roles'} <= tables:
+        bind.execute(sa.text('''
+            DELETE FROM position_roles
+            WHERE role_id IN (SELECT id FROM roles WHERE code = :role_code)
+        '''), {'role_code': ROLE_CODE})
+    if {'group_roles', 'roles'} <= tables:
+        bind.execute(sa.text('''
+            DELETE FROM group_roles
+            WHERE role_id IN (SELECT id FROM roles WHERE code = :role_code)
+        '''), {'role_code': ROLE_CODE})
     if {'user_role_assignments', 'roles'} <= tables:
         bind.execute(sa.text('''
             DELETE FROM user_role_assignments
