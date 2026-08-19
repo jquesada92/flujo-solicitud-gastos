@@ -78,7 +78,12 @@ def create_expense(
             db.rollback()
             raise HTTPException(
                 status_code=422,
-                detail='No existe otro usuario activo con permiso de aprobación para participar en la votación',
+                detail=(
+                    'No hay aprobadores IAM elegibles para esta votación. '
+                    'Debe existir al menos otro usuario activo, distinto del solicitante, '
+                    'con permiso efectivo requests:approve. Las cuentas técnicas de '
+                    'producción no participan en votaciones financieras.'
+                ),
             )
         invitations: list[tuple[User, QuotationVotingInvitation]] = []
         for voter in voters:

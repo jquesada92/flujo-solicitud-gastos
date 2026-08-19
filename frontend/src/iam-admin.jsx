@@ -255,26 +255,90 @@ function UsersPanel({ users, groups, roles, permissions, positions, reload, setE
           {selected.is_system_account && <div className="iam-notice">Esta cuenta está separada del flujo financiero. Sus permisos efectivos se limitan a configuración y consulta.</div>}
           {!selected.is_system_account && <>
             <div className="iam-section"><h3>Grupos</h3><CheckList items={groups.filter((item) => item.active)} selected={selected.group_ids} onToggle={(value, checked) => updateAssignment("group_ids", value, checked)} render={(item) => <><strong>{item.name}</strong><small>{item.description || "Grupo de usuarios"}</small></>} /></div>
-            <div className="iam-section"><h3>Roles directos</h3><p className="iam-muted">Úsalos solo cuando el acceso no corresponda a un grupo.</p><CheckList items={roles.filter((item) => item.active && !item.system_managed)} selected={selected.role_ids} onToggle={(value, checked) => updateAssignment("role_ids", value, checked)} render={(item) => <><strong>{item.name}</strong><small>{item.permission_codes.join(" · ")}</small></>} /></div>
-            <div className="iam-section"><h3>Permisos individuales</h3><p className="iam-muted">Excepciones ALLOW adicionales. La ausencia de permiso significa DENY.</p><CheckList items={permissions.filter((item) => item.active)} selected={selected.direct_permission_codes} getValue={(item) => item.code} onToggle={(value, checked) => updateAssignment("direct_permission_codes", value, checked)} render={(item) => <PermissionLabel permission={item} />} /></div>
-            <div className="iam-section"><h3>Cargos</h3><p className="iam-muted">Los cargos son descriptivos y no otorgan permisos.</p><CheckList items={positions.filter((item) => item.active)} selected={selected.position_ids} onToggle={(value, checked) => updateAssignment("position_ids", value, checked)} render={(item) => <><strong>{item.name}</strong><small>{item.description || "Cargo organizacional"}</small></>} /></div>
+            <div className="iam-section"><h3>Roles directos</h3><p className="iam-muted">Úsalos solo cuando el acceso no corresponda a un grupo o cargo.</p><CheckList items={roles.filter((item) => item.active && !item.system_managed)} selected={selected.role_ids} onToggle={(value, checked) => updateAssignment("role_ids", value, checked)} render={(item) => <><strong>{item.name}</strong><small>{item.permission_codes.join(" · ")}</small></>} /></div>
+            <div className="iam-section"><h3>Permisos individuales</h3><p className="iam-muted">Excepciones ALLOW adicionales. La ausencia de permiso significa DENY salvo capacidades base.</p><CheckList items={permissions.filter((item) => item.active)} selected={selected.direct_permission_codes} getValue={(item) => item.code} onToggle={(value, checked) => updateAssignment("direct_permission_codes", value, checked)} render={(item) => <PermissionLabel permission={item} />} /></div>
+            <div className="iam-section"><h3>Cargos</h3><p className="iam-muted">Los cargos pueden heredar roles. Un usuario recibe automáticamente los permisos de los roles asociados a sus cargos.</p><CheckList items={positions.filter((item) => item.active)} selected={selected.position_ids} onToggle={(value, checked) => updateAssignment("position_ids", value, checked)} render={(item) => <><strong>{item.name}</strong><small>{item.role_ids?.length ? `${item.role_ids.length} rol(es) heredado(s)` : item.description || "Cargo organizacional"}</small></>} /></div>
           </>}
-          <div className="iam-section"><h3>Permisos efectivos</h3>{selected.effective_permission_codes.length ? selected.effective_permission_codes.map((code) => <div className="iam-permission-row" key={code}><strong>{permissions.find((item) => item.code === code)?.name || code}</strong><code>{code}</code></div>) : <p className="iam-empty">Este usuario no tiene permisos efectivos.</p>}</div>
+          <div className="iam-section"><h3>Permisos efectivos</h3>{selected.effective_permission_codes.length ? selected.effective_permission_codes.map((code) => <div className="iam-permission-row" key={code}><strong>{permissions.find((item) => item.code === code)?.name || code}</strong><code>{code}</code><small>{(selected.permission_sources?.[code] || []).join(" · ")}</small></div>) : <p className="iam-empty">Este usuario no tiene permisos efectivos.</p>}</div>
         </>}
       </section>
     </div>
   );
 }
 
-function PositionsPanel({ positions, reload, setError }) {
-  const [name, setName] = useState(""); const [description, setDescription] = useState("");
-  const create = async (event) => { event.preventDefault(); try { await iamApi("/api/iam/positions", { method: "POST", body: JSON.stringify({ name, description, active: true }) }); setName(""); setDescription(""); await reload(); } catch (error) { setError(error.message); } };
-  const patch = async (position, payload) => { try { await iamApi(`/api/iam/positions/${position.id}`, { method: "PATCH", body: JSON.stringify(payload) }); await reload(); } catch (error) { setError(error.message); } };
-  return <div className="iam-grid"><section className="iam-card"><h2>Crear cargo</h2><form className="iam-form" onSubmit={create}><label>Nombre<input value={name} onChange={(e) => setName(e.target.value)} required /></label><label>Descripción<textarea value={description} onChange={(e) => setDescription(e.target.value)} /></label><button className="iam-button primary">Crear cargo</button></form></section><section className="iam-card"><h2>Cargos configurados</h2><p className="iam-muted">Un cargo describe la estructura de la organización. No concede permisos.</p><div className="iam-list">{positions.map((position) => <div className="iam-list-item" key={position.id}><span className="iam-list-main"><strong>{position.name}</strong><small>{position.description || position.code}</small></span><div className="iam-actions"><button className="iam-button" onClick={() => { const value = window.prompt("Nuevo nombre", position.name); if (value?.trim()) patch(position, { name: value.trim() }); }}>Renombrar</button><button className="iam-button" onClick={() => patch(position, { active: !position.active })}>{position.active ? "Inactivar" : "Activar"}</button></div></div>)}</div></section></div>;
+function PositionsPanel({ positions, roles, reload, setError }) {
+  const [selectedId, setSelectedId] = useState(null);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const selected = positions.find((item) => item.id === selectedId) || null;
+
+  const create = async (event) => {
+    event.preventDefault();
+    try {
+      await iamApi("/api/iam/positions", { method: "POST", body: JSON.stringify({ name, description, active: true }) });
+      setName("");
+      setDescription("");
+      await reload();
+    } catch (error) { setError(error.message); }
+  };
+
+  const patch = async (position, payload) => {
+    try {
+      await iamApi(`/api/iam/positions/${position.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+      await reload();
+    } catch (error) { setError(error.message); }
+  };
+
+  const toggleRole = async (roleId, checked) => {
+    try {
+      await iamApi(`/api/iam/positions/${selected.id}/roles/${roleId}`, { method: checked ? "PUT" : "DELETE" });
+      await reload();
+    } catch (error) { setError(error.message); }
+  };
+
+  return (
+    <div className="iam-grid">
+      <section className="iam-card">
+        <h2>Crear cargo</h2>
+        <form className="iam-form" onSubmit={create}>
+          <label>Nombre<input value={name} onChange={(e) => setName(e.target.value)} required /></label>
+          <label>Descripción<textarea value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+          <button className="iam-button primary">Crear cargo</button>
+        </form>
+        <div className="iam-section iam-list">
+          {positions.map((position) => (
+            <button key={position.id} className={`iam-list-item ${selectedId === position.id ? "selected" : ""}`} onClick={() => setSelectedId(position.id)}>
+              <span className="iam-list-main"><strong>{position.name}</strong><small>{position.role_ids?.length || 0} rol(es) · {position.description || position.code}</small></span>
+              <span>{position.active ? "Activo" : "Inactivo"}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="iam-card">
+        {!selected ? <p className="iam-empty">Selecciona un cargo para administrar los roles que heredarán sus usuarios.</p> : <>
+          <div className="iam-toolbar">
+            <div><h2>{selected.name}</h2><p className="iam-muted">{selected.description || "Cargo organizacional"}</p></div>
+            <button className="iam-button" onClick={() => patch(selected, { active: !selected.active })}>{selected.active ? "Inactivar" : "Activar"}</button>
+          </div>
+          <button className="iam-button" onClick={() => { const value = window.prompt("Nuevo nombre", selected.name); if (value?.trim()) patch(selected, { name: value.trim() }); }}>Renombrar</button>
+          <div className="iam-section">
+            <h3>Roles heredados por el cargo</h3>
+            <p className="iam-muted">Todos los usuarios asignados a este cargo heredarán automáticamente los permisos de estos roles. Los nombres de cargo no están hardcodeados en el sistema.</p>
+            <CheckList
+              items={roles.filter((item) => item.active && !item.system_managed)}
+              selected={selected.role_ids || []}
+              onToggle={toggleRole}
+              render={(role) => <><strong>{role.name}</strong><small>{role.permission_codes.join(" · ") || "Sin permisos"}</small></>}
+            />
+          </div>
+        </>}
+      </section>
+    </div>
+  );
 }
 
 function PermissionsPanel({ permissions }) {
-  return <section className="iam-card"><h2>Permisos del producto</h2><p className="iam-muted">Estas son capacidades atómicas implementadas por el producto. Las organizaciones configuran cómo se combinan mediante roles y grupos.</p><div className="iam-list">{permissions.map((permission) => <div className="iam-list-item" key={permission.code}><span className="iam-list-main"><strong>{permission.name}</strong><small>{permission.code}</small><small>{permission.description}</small></span><span>{permission.active ? "Activo" : "Inactivo"}</span></div>)}</div></section>;
+  return <section className="iam-card"><h2>Permisos del producto</h2><p className="iam-muted">Estas son capacidades atómicas implementadas por el producto. La organización configura cómo se combinan mediante roles y cómo esos roles se asignan a usuarios, grupos o cargos.</p><div className="iam-list">{permissions.map((permission) => <div className="iam-list-item" key={permission.code}><span className="iam-list-main"><strong>{permission.name}</strong><small>{permission.code}</small><small>{permission.description}</small></span><span>{permission.active ? "Activo" : "Inactivo"}</span></div>)}</div></section>;
 }
 
 function IamConsole({ onClose }) {
@@ -295,7 +359,7 @@ function IamConsole({ onClose }) {
 
   useEffect(() => { reload().catch((e) => setError(e.message)).finally(() => setLoading(false)); }, []);
   if (loading) return <div className="iam-overlay"><div className="iam-loading">Cargando configuración de accesos…</div></div>;
-  return <div className="iam-overlay"><main className="iam-shell"><header className="iam-header"><div><p className="iam-eyebrow">CONFIGURACIÓN · ACCESOS</p><h1>Usuarios, grupos, roles y permisos</h1><p className="iam-muted">La estructura se configura como datos de la organización. Los cargos no autorizan acciones; los permisos efectivos sí.</p></div><div className="iam-actions"><button className="iam-button" onClick={() => reload().catch((e) => setError(e.message))}>Actualizar</button><button className="iam-button primary" onClick={onClose}>Volver</button></div></header>{error && <div className="iam-notice error">{error}</div>}<nav className="iam-tabs">{[["users","Usuarios"],["groups","Grupos"],["roles","Roles"],["permissions","Permisos"],["positions","Cargos"]].map(([value,label]) => <button className={tab === value ? "active" : ""} key={value} onClick={() => setTab(value)}>{label}</button>)}</nav>{tab === "users" && <UsersPanel {...data} reload={reload} setError={setError} />}{tab === "groups" && <GroupsPanel {...data} reload={reload} setError={setError} />}{tab === "roles" && <RolesPanel {...data} reload={reload} setError={setError} />}{tab === "permissions" && <PermissionsPanel permissions={data.permissions} />}{tab === "positions" && <PositionsPanel positions={data.positions} reload={reload} setError={setError} />}</main></div>;
+  return <div className="iam-overlay"><main className="iam-shell"><header className="iam-header"><div><p className="iam-eyebrow">CONFIGURACIÓN · ACCESOS</p><h1>Usuarios, grupos, cargos, roles y permisos</h1><p className="iam-muted">Los permisos efectivos pueden heredarse por grupo o por cargo, además de roles/permisos directos. La estructura y sus nombres son datos configurables.</p></div><div className="iam-actions"><button className="iam-button" onClick={() => reload().catch((e) => setError(e.message))}>Actualizar</button><button className="iam-button primary" onClick={onClose}>Volver</button></div></header>{error && <div className="iam-notice error">{error}</div>}<nav className="iam-tabs">{[["users","Usuarios"],["groups","Grupos"],["roles","Roles"],["permissions","Permisos"],["positions","Cargos"]].map(([value,label]) => <button className={tab === value ? "active" : ""} key={value} onClick={() => setTab(value)}>{label}</button>)}</nav>{tab === "users" && <UsersPanel {...data} reload={reload} setError={setError} />}{tab === "groups" && <GroupsPanel {...data} reload={reload} setError={setError} />}{tab === "roles" && <RolesPanel {...data} reload={reload} setError={setError} />}{tab === "permissions" && <PermissionsPanel permissions={data.permissions} />}{tab === "positions" && <PositionsPanel positions={data.positions} roles={data.roles} reload={reload} setError={setError} />}</main></div>;
 }
 
 let mounted = false;

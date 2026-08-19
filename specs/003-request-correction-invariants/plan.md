@@ -1,44 +1,50 @@
 # Plan técnico — Correcciones de solicitudes
 
-**Constitución:** 2.3.3
+**Constitución:** 2.6.0
 
 ## Arquitectura
-
-La corrección se implementa mediante una ruta backend canónica y un formulario frontend modular:
 
 ```text
 frontend/src/expense-form.jsx
         ↓ PUT /api/expenses/{request_id}/resubmit
 revision_actions.py
         ↓
+can_correct_expense(request, user)
+        ↓
 Expense + QuotationOption + votes/invitations
 ```
 
-La pestaña SIMPLE/MULTI_QUOTE de creación no es fuente de verdad para una corrección.
+La pestaña SIMPLE/MULTI_QUOTE de creación no es fuente de verdad para una corrección y `requests:create` tampoco es autoridad para editar una solicitud existente.
 
 ## Backend canónico
 
 `app/api/revision_actions.py` es responsable de:
 
-1. requerir `requests:create`;
-2. validar Área + Categoría;
-3. localizar y bloquear la solicitud;
-4. impedir corrección de una solicitud cerrada;
-5. derivar el tipo canónico desde `request_type` + evidencia durable de cotizaciones;
-6. rechazar un payload que intente cambiar ese tipo canónico;
-7. reparar defensivamente un `request_type` legacy inconsistente;
+1. autenticar mediante `current_user`;
+2. localizar la solicitud y validar `can_correct_expense()`;
+3. autorizar únicamente solicitante original o Administrador del sistema (`system_accounts`);
+4. validar Área + Categoría;
+5. impedir corrección de `CLOSED`/`CANCELLED`;
+6. derivar el tipo canónico desde `request_type` + evidencia durable;
+7. rechazar cambios del tipo canónico;
 8. invalidar aprobaciones abiertas del flujo anterior;
-9. generar un `flow_id` nuevo;
-10. actualizar los campos comunes;
+9. generar `flow_id` nuevo;
+10. actualizar campos comunes;
 11. reiniciar el flujo según el tipo canónico.
 
-La inferencia defensiva considera MULTI_QUOTE cuando:
+Un tercero con `requests:create`, `requests:approve` o `config:manage` recibe 403 y debe usar **Enviar a revisión** si tiene una aprobación asignada.
+
+### Capacidad por recurso
 
 ```text
-request_type == MULTI_QUOTE
-OR status == QUOTATION_VOTING
-OR quotation_options.length >= 2
+can_correct = status corregible
+              AND (
+                current_user.email == requested_by
+                OR current_user ∈ system_accounts
+              )
 ```
+
+`tracking.py` expone `can_correct` por solicitud para que la tabla no infiera edición desde permisos globales.
 
 ### SIMPLE
 
@@ -52,94 +58,80 @@ OR quotation_options.length >= 2
 - permanece `MULTI_QUOTE`;
 - conserva la cantidad actual de `QuotationOption`;
 - actualiza cada opción por orden existente;
-- conserva attachments vinculados a IDs de opciones existentes;
+- conserva attachments vinculados;
 - limpia `QuotationVote` vigente;
 - reemplaza `QuotationVotingInvitation`;
-- conserva eventos históricos de voto;
+- conserva eventos históricos;
 - limpia ganador/proveedor/monto seleccionado;
 - vuelve a `QUOTATION_VOTING`;
-- crea nuevas invitaciones desde `users_with_permission('requests:approve')`.
+- crea nuevas invitaciones desde `users_with_permission('requests:approve')`;
+- siempre excluye `expense.requested_by`, no el correo del actor que ejecutó la corrección.
+
+## Handoff desde revisión
+
+Feature 007 define:
+
+```text
+Aprobador → Enviar a revisión + comentario
+          → NEEDS_REVISION
+          → solicitante recibe CORRECT_REQUEST
+          → solicitante/Admin pueden Corregir / reenviar
+```
+
+`CORRECT_REQUEST` se calcula por propiedad de la solicitud, no por `requests:create`.
 
 ## Reparación de datos
 
-Alembic `20260817_0003_backfill_multi_quote_request_type.py` cambia a `MULTI_QUOTE` filas históricas que todavía tienen el default `SIMPLE` pero presentan evidencia inequívoca de flujo múltiple. No elimina opciones, attachments, votos históricos ni eventos.
+Alembic `20260817_0003_backfill_multi_quote_request_type.py` repara filas históricas con evidencia MULTI_QUOTE y flag SIMPLE. No elimina evidencia.
 
-Cadena:
+Cadena global vigente:
 
 ```text
-0000 → 0001 → 0002 → 0003
+0000 → 0001 → 0002 → 0003 → 0004
 ```
 
 ## Frontend canónico
 
-`frontend/src/expense-form.jsx` es ahora la implementación mantenible del formulario de solicitudes.
-
-La función:
-
-```text
-resolveRequestType(draft)
-```
-
-retorna `MULTI_QUOTE` si el draft tiene `request_type=MULTI_QUOTE`, estado `QUOTATION_VOTING` o dos/más `quotation_options`.
-
-El componente calcula:
+`frontend/src/expense-form.jsx` calcula:
 
 ```text
 effectiveRequestType = draft ? resolveRequestType(draft) : requestType
 ```
 
-Ese valor gobierna todo el formulario durante una corrección:
+Durante corrección gobierna layout, validaciones, payload y uploads.
 
-- qué layout se renderiza;
-- qué validaciones se ejecutan;
-- qué `request_type` viaja al backend;
-- si se usan campos SIMPLE o `quotation_options`;
-- qué soportes se cargan después del resubmit.
+Mientras `ExpenseTable` siga en `main.jsx`, `vite.config.js` mantiene un bridge temporal para:
 
-Para un `draft` MULTI_QUOTE el componente no renderiza el formulario sencillo como estructura principal; restaura directamente el editor de opciones de cotización.
+- usar `x.can_correct` al mostrar **Corregir / reenviar**;
+- permitir montar `ExpenseForm` cuando existe `revision`, aunque el Administrador del sistema productivo no tenga `requests:create`;
+- conservar la extracción estructural del `ExpenseForm` modular.
 
-Los soportes existentes se representan con `existing_attachment`; el navegador no intenta prellenar `<input type=file>`.
-
-Durante corrección se oculta el selector de tipo y se muestra un indicador de solo lectura. También se conserva la cantidad de opciones para evitar cambios destructivos de evidencia.
-
-## Integración temporal con main.jsx
-
-`main.jsx` todavía contiene la función legacy por deuda de modularización histórica. `vite.config.js` aplica una extracción estructural mínima:
-
-1. importa `ExpenseForm` desde `./expense-form.jsx`;
-2. elimina del bundle la definición legacy comprendida entre `function ExpenseForm` y `function ClosurePanel`;
-3. no modifica el punto de montaje JSX ni depende de indentación, saltos de línea o cadenas exactas del `<ExpenseForm>`.
-
-El componente modular ya rehidrata su estado cuando cambian `draft.request_id` o `draft.flow_id`, por lo que no requiere que Vite inyecte una `key` por reemplazo textual.
-
-El build falla si no puede aislar la frontera completa de la definición legacy. CI inspecciona además el `dist/` generado para confirmar que contiene las marcas inequívocas del formulario modular.
-
-## Motivo de conservar cantidad de opciones
-
-Eliminar o reordenar opciones con evidencia asociada requiere semántica explícita de versionado/eliminación de documentos. Esta feature evita borrado destructivo o pérdida de trazabilidad. Por ahora se permiten correcciones de contenido, no de estructura de la ronda.
+La autorización nunca depende de ese bridge: `resubmit` vuelve a validar en backend.
 
 ## Testing
 
-`tests/test_multi_quote_revision.py` usa `FastAPI TestClient` para verificar invariantes backend.
+`test_multi_quote_revision.py` verifica:
 
-`tests/test_frontend_revision_contract.py` exige que:
+- solicitante/Admin pueden corregir;
+- tercero aprobador no puede corregir;
+- propiedad de la solicitud no depende de `requests:create` global;
+- tipo SIMPLE/MULTI_QUOTE se conserva;
+- evidencia se conserva;
+- votos/invitaciones se reinician;
+- solicitante original queda fuera de la nueva ronda.
 
-- exista `frontend/src/expense-form.jsx`;
-- `effectiveRequestType` gobierne render y payload;
-- `QUOTATION_VOTING` y dos/más opciones infieran MULTI_QUOTE;
-- se restauren opciones y soportes existentes;
-- `vite.config.js` retire el ExpenseForm legacy del bundle e importe el modular;
-- no exista nuevamente un parche textual del punto de montaje.
+`test_frontend_revision_contract.py` protege el editor modular y `test_frontend_dashboard_contract.py` protege el bridge `can_correct` mientras la tabla siga legacy.
 
-El job frontend ejecuta `npm run build` e inspecciona el bundle resultante; una extracción inválida, JSX inválido o ausencia del formulario modular falla CI.
+## Validación manual
 
-La prueba manual de regresión debe comenzar explícitamente con **Solicitud sencilla** seleccionada, pulsar **Corregir / reenviar** sobre una MULTI_QUOTE y verificar que el formulario visible contiene **Opciones para votación** y no los campos de solicitud sencilla.
+Además de la regresión de tipo:
+
+1. aprobador ajeno no debe ver **Corregir / reenviar**;
+2. solicitante debe verlo para su solicitud corregible;
+3. Administrador del sistema debe poder verlo/ejecutarlo;
+4. una solicitud enviada a revisión debe entregar la tarea al solicitante;
+5. una MULTI_QUOTE corregida por Admin debe excluir al solicitante original de la nueva votación.
 
 ## Retiro futuro
 
-Cuando `main.jsx` sea modularizado completamente:
-
-1. importar `ExpenseForm` directamente desde el source normal;
-2. retirar `modularExpenseFormPlugin` de `vite.config.js`;
-3. mantener tests frontend del componente;
-4. mantener el invariant backend de `request_type` independientemente de la UI.
+Cuando `ExpenseTable` y el shell estén modularizados, retirar los transforms de compatibilidad de Vite y consumir `can_correct` directamente desde componentes normales.

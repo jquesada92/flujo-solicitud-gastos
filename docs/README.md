@@ -2,40 +2,182 @@
 
 ## Gobierno y especificaciones
 
-- [Constitución del proyecto](../.specify/memory/constitution.md) — versión vigente 2.3.3.
-- [Política de sincronización documental](DOCUMENTATION_POLICY.md) — los defectos de estado UI que pueden cambiar semántica de negocio se tratan como cambios funcionales.
+- [Constitución](../.specify/memory/constitution.md) — versión vigente **2.8.0**.
+- [Política documental](DOCUMENTATION_POLICY.md).
 - [Feature 001 — normalización de dominio](../specs/001-domain-normalization/spec.md)
-- [Feature 001 — plan técnico](../specs/001-domain-normalization/plan.md)
-- [Feature 001 — criterios](../specs/001-domain-normalization/checklists/acceptance.md)
 - [Feature 002 — IAM configurable + FastAPI](../specs/002-configurable-iam-fastapi-hardening/spec.md)
-- [Feature 002 — plan técnico](../specs/002-configurable-iam-fastapi-hardening/plan.md)
-- [Feature 002 — criterios](../specs/002-configurable-iam-fastapi-hardening/checklists/acceptance.md)
-- [Feature 003 — correcciones de solicitudes](../specs/003-request-correction-invariants/spec.md)
-- [Feature 003 — plan técnico](../specs/003-request-correction-invariants/plan.md)
-- [Feature 003 — criterios](../specs/003-request-correction-invariants/checklists/acceptance.md)
+- [Feature 003 — invariants de corrección](../specs/003-request-correction-invariants/spec.md)
 - [Feature 004 — correo por ambiente](../specs/004-email-delivery-by-environment/spec.md)
-- [Feature 004 — plan técnico](../specs/004-email-delivery-by-environment/plan.md)
-- [Feature 004 — criterios](../specs/004-email-delivery-by-environment/checklists/acceptance.md)
+- [Feature 005 — dashboard/seguimiento](../specs/005-universal-dashboard-tracking/spec.md)
+- [Feature 006 — Cargo/Grupo → Rol → Permiso](../specs/006-position-group-role-inheritance/spec.md)
+- [Feature 007 — Enviar a revisión + propiedad de corrección](../specs/007-revision-handoff-correction-ownership/spec.md)
+- [Feature 008 — cierre/factura por propiedad o delegación](../specs/008-request-closure-delegation/spec.md)
+- [Feature 009 — configuración técnica vs gestión de Áreas](../specs/009-technical-vs-area-configuration/spec.md)
+- [Feature 010 — notificaciones de Cargo y permisos efectivos](../specs/010-user-access-notifications/spec.md)
 
-## Dominio funcional y seguridad
+Cada feature mantiene `spec.md`, `plan.md` y `checklists/acceptance.md`.
 
-- [Modelo IAM configurable](IAM_MODEL.md) — incluye política `TECHNICAL_ADMIN` por ambiente.
-- [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md) — incluye separación `is_production_environment` / endurecimiento de runtime, rutas canónicas y Alembic `0003`.
-- [Modelo Área + Categoría](CLASSIFICATION_MODEL.md)
-- [Correcciones y reenvío](REQUEST_CORRECTIONS.md) — invariantes SIMPLE/MULTI_QUOTE, aislamiento del estado de pestañas, compatibilidad legacy y reinicio de rondas.
-- [Configuración de correo](EMAIL_CONFIGURATION.md) — Google SMTP en local/desarrollo y Brevo en producción.
-- [Terminología funcional](TERMINOLOGY.md)
-- [Historial funcional y técnico](HISTORY.md)
+## Documentos funcionales/técnicos
+
+- [Modelo IAM](IAM_MODEL.md)
+- [Acceso a Configuración](CONFIGURATION_ACCESS.md)
+- [Arquitectura FastAPI](FASTAPI_ARCHITECTURE.md)
+- [Área + Categoría](CLASSIFICATION_MODEL.md)
+- [Correcciones, reenvío y handoff](REQUEST_CORRECTIONS.md)
+- [Seguimiento y acciones pendientes](REQUEST_TRACKING.md)
+- [Cierre, factura y delegación](CLOSURE_DELEGATION.md)
+- [Correo por ambiente](EMAIL_CONFIGURATION.md)
+- [Terminología](TERMINOLOGY.md)
+- [Historial](HISTORY.md)
 - [Changelog](../CHANGELOG.md)
-
-## Fuentes operativas
-
 - [README principal](../README.md)
-- [Prompt maestro de reconstrucción](../PROMPT_RECONSTRUCCION.md)
-- `backend/.env.example` — plantilla de variables local sin secretos reales.
-- `render.yaml` — declara explícitamente `ENVIRONMENT=production` para el servicio productivo.
+- [Prompt maestro](../PROMPT_RECONSTRUCCION.md)
 
-Contrato operativo backend:
+## IAM vigente
+
+```text
+Usuario → Grupo ─────────→ Rol → Permiso
+       ↘ Cargo/Posición ─→ Rol → Permiso
+       ↘ Rol directo ─────────→ Permiso
+       ↘ Permiso directo
+       ↘ baseline requests:read
+       ↘ capacidades/delegaciones por recurso
+```
+
+Permisos vigentes:
+
+```text
+requests:read
+requests:create
+requests:approve
+areas:manage
+config:manage  # system-only
+```
+
+`requests:close` es un registro legacy inactivo desde migración `0005`; no autoriza runtime.
+
+## Configuración
+
+Frontera vigente:
+
+```text
+System Admin
+→ Usuarios
+→ Organigrama
+→ Accesos
+→ Áreas
+→ Reglas/Auditoría técnica
+
+Usuario ordinario con areas:manage
+→ Áreas solamente
+```
+
+`config:manage` solo es efectivo para `system_accounts`. `areas:manage` es configurable por Rol/Grupo/Cargo/usuario.
+
+Alembic `0006` crea el Rol neutral **Gestor de áreas**. La organización decide a qué Grupos/Cargos asociarlo; no existe autorización por nombres como Administración o Junta Directiva.
+
+Ver [CONFIGURATION_ACCESS.md](CONFIGURATION_ACCESS.md).
+
+## Notificaciones IAM al usuario
+
+Al crear un usuario activo, el correo con contraseña temporal incluye Cargo(s) y permisos efectivos.
+
+Cuando cambia realmente su Cargo, se envía **Actualización de cargo y permisos** con el nuevo Cargo y los permisos recalculados. Guardar el mismo Cargo no duplica el correo. Estas notificaciones usan `effective_permission_codes()` y no flags legacy.
+
+Ver [EMAIL_CONFIGURATION.md](EMAIL_CONFIGURATION.md).
+
+## Capacidades por recurso
+
+```text
+can_cancel
+→ estado cancelable + (solicitante OR system_accounts)
+
+can_correct
+→ estado corregible + (solicitante OR system_accounts)
+
+can_close
+→ APPROVED/CLOSED + (solicitante OR system_accounts OR delegado activo)
+
+can_delegate_close
+→ solicitante original
+```
+
+## Enviar a revisión
+
+```text
+Aprobador
+→ Enviar a revisión + comentario
+→ NEEDS_REVISION inmediato
+→ otros PENDING/WAITING EXPIRED
+→ solicitante recibe CORRECT_REQUEST
+
+Solicitante/Admin
+→ Corregir / reenviar
+```
+
+## Dashboard
+
+Todo usuario activo recibe baseline `requests:read`. KPIs superiores son informativos.
+
+Tareas:
+
+```text
+APPROVAL_DECISION
+QUOTATION_VOTE
+CORRECT_REQUEST
+CLOSE_REQUEST
+```
+
+`CORRECT_REQUEST` pertenece al solicitante. `CLOSE_REQUEST` pertenece al solicitante o delegado activo de una `APPROVED`; el Admin del sistema conserva capacidad administrativa desde Solicitudes sin recibir todas como tareas.
+
+## Cierre/factura/delegación
+
+Solo pueden gestionar cierre/factura:
+
+```text
+solicitante original
+Administrador del sistema
+delegado activo por esa solicitud
+```
+
+Solo el solicitante crea/cambia/revoca la delegación. Una sola delegación activa por solicitud y el historial se conserva.
+
+Ver [CLOSURE_DELEGATION.md](CLOSURE_DELEGATION.md).
+
+## Cuenta técnica
+
+```text
+ENVIRONMENT=production
+→ IAM: config:manage + areas:manage + requests:read
+→ no approval/vote
+→ puede cancelar/corregir/cerrar como excepciones por recurso
+
+ENVIRONMENT!=production
+→ todos los permisos IAM activos para testing E2E
+```
+
+## Corrección
+
+```text
+SIMPLE      → SIMPLE
+MULTI_QUOTE → MULTI_QUOTE
+```
+
+MULTI_QUOTE corregida reinicia ronda y excluye siempre al solicitante original.
+
+## Alembic
+
+```text
+0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006
+```
+
+- `0003`: reparación `request_type` MULTI_QUOTE.
+- `0004`: `position_roles` + import legacy a IAM.
+- `0005`: `expense_closure_delegations` + retiro operativo de `requests:close`.
+- `0006`: `areas:manage` + Rol Gestor de áreas + separación de configuración técnica.
+- Feature 010 no requiere migración.
+
+Contrato de arranque:
 
 ```text
 alembic upgrade head
@@ -43,102 +185,35 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
-Cadena Alembic actual:
+## Correo
 
 ```text
-0000 → 0001 → 0002 → 0003
+Producción: Brevo / Render
+Local: Google SMTP / Docker
 ```
 
-`0003` repara filas históricas MULTI_QUOTE que conservaron un `request_type=SIMPLE` incorrecto.
+La invitación de usuario y la notificación de cambio de Cargo son obligatorias para la operación IAM; ver `EMAIL_CONFIGURATION.md` para semántica de fallo.
 
-## Política de correo por ambiente
+## GitHub Actions sin cuota
+
+Mientras la cuota esté agotada, gates locales obligatorios:
 
 ```text
-Producción
-Frontend: Vercel
-Backend:  Render
-Correo:   Brevo HTTPS API
-
-Local / development
-Frontend: localhost
-Backend:  FastAPI/Docker local
-Correo:   Google SMTP
+python -m unittest discover -s tests -v
+npm ci
+npm run build
+docker compose build --no-cache
+docker compose up -d
 ```
 
-Configuración local recomendada:
+No considerar verde un run que no pudo ejecutarse por cuota.
 
-```env
-EMAIL_MODE=smtp
-EMAIL_FROM=<CUENTA_GOOGLE>
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=465
-SMTP_SECURITY=ssl
-SMTP_USER=<CUENTA_GOOGLE>
-SMTP_PASSWORD=<APP_PASSWORD_GOOGLE>
-```
+## Deuda explícita
 
-Diagnóstico local sin crear una solicitud:
+Permanecen temporalmente sin ser autoridad: `UserRole`, `can_*`, `AccessProfile`, `BOARD_CODES`, `/api/users` legacy, `requests:close` inactivo, `main.jsx`, `domain-normalization.js` y bridges Vite.
 
-```bash
-docker compose exec backend python -m scripts.test_email --to destino@example.com
-```
-
-Las credenciales SMTP/Brevo pertenecen exclusivamente al backend y nunca al frontend/Vercel.
-
-## Política ambiental de la cuenta técnica
-
-```text
-ENVIRONMENT=production
-→ TECHNICAL_ADMIN: config:manage + requests:read
-
-ENVIRONMENT!=production
-→ TECHNICAL_ADMIN: todos los permisos activos para testing
-```
-
-Esto permite usar el Administrador del sistema para probar crear/aprobar/votar/cerrar en local/dev/test/staging/preview, manteniendo segregación financiera en producción.
-
-`RENDER=true` no sustituye a `ENVIRONMENT=production` para esta política; solo `ENVIRONMENT` decide la autorización funcional productiva.
-
-## Invariant de correcciones
-
-```text
-SIMPLE      → corrección → SIMPLE
-MULTI_QUOTE → corrección → MULTI_QUOTE
-```
-
-La pestaña SIMPLE/MULTI_QUOTE seleccionada antes del clic no puede influir en la corrección. El editor se remonta/rehidrata desde la solicitud seleccionada y el backend vuelve a validar el tipo canónico.
-
-Una corrección MULTI_QUOTE conserva evidencia y opciones existentes, crea un `flow_id` nuevo y reinicia el estado vigente de votación.
-
-## Modelo vigente
-
-```text
-Usuario → Grupo → Rol → Permiso
-       ↘ Rol directo
-       ↘ Permiso directo
-       ↘ Cargo (descriptivo)
-```
-
-Para usuarios operativos, autorización depende de permisos efectivos. Cargos, grupos y roles no autorizan por su nombre. La cuenta técnica aplica además la política ambiental descrita arriba.
-
-Clasificación de solicitudes:
-
-```text
-Área + Categoría
-```
-
-## Términos canónicos
-
-- Usuario, no Persona como nombre del módulo.
-- Grupo para conjuntos de usuarios.
-- Rol para conjuntos de permisos.
-- Permiso para capacidades de autorización.
-- Cargo/Posición para metadato organizacional.
-- Cuenta técnica / Administrador del sistema para la identidad técnica gobernada por ambiente.
-- Área para unidad/contexto organizacional del gasto.
-- Categoría para naturaleza del gasto.
-- Corrección / Corregir y reenviar para editar una solicitud sin cambiar su tipo SIMPLE/MULTI_QUOTE.
+Deuda funcional separada: fórmula completa de mayoría APPROVED/REJECTED, empate MULTI_QUOTE, edición estructural y outbox/retry.
 
 ## Regla de mantenimiento
 
-Todo cambio funcional/técnico debe revisar y actualizar en el mismo PR los documentos afectados. La matriz está definida en `DOCUMENTATION_POLICY.md` y en la Constitución.
+Todo cambio funcional/técnico sincroniza Constitución, specs, checklists, planes, README, prompt maestro, docs, HISTORY, CHANGELOG y PR cuando aplique.

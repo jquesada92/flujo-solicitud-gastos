@@ -105,6 +105,15 @@ class UserPosition(Base):
     position_id: Mapped[int] = mapped_column(ForeignKey('positions.id', ondelete='CASCADE'), nullable=False, index=True)
 
 
+class PositionRole(Base):
+    __tablename__ = 'position_roles'
+    __table_args__ = (UniqueConstraint('position_id', 'role_id', name='uq_position_role'),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    position_id: Mapped[int] = mapped_column(ForeignKey('positions.id', ondelete='CASCADE'), nullable=False, index=True)
+    role_id: Mapped[int] = mapped_column(ForeignKey('roles.id', ondelete='CASCADE'), nullable=False, index=True)
+
+
 class SystemAccount(Base):
     __tablename__ = 'system_accounts'
 

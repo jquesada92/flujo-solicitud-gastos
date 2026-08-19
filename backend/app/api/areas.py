@@ -145,14 +145,19 @@ def list_areas(
     user: User = Depends(current_user),
 ):
     _ensure_category_catalog(db)
-    include_all = include_inactive and has_permission(db, user.id, 'config:manage')
+    can_inspect_configuration = (
+        has_permission(db, user.id, 'areas:manage')
+        or has_permission(db, user.id, 'config:read')
+        or has_permission(db, user.id, 'config:manage')
+    )
+    include_all = include_inactive and can_inspect_configuration
     stmt = select(ExpenseArea).order_by(ExpenseArea.name)
     if not include_all:
         stmt = stmt.where(ExpenseArea.active.is_(True))
     return [_area_out(db, item, include_all) for item in db.scalars(stmt).all()]
 
 
-@router.post('', response_model=AreaOut, status_code=201, dependencies=[Depends(require_permission('config:manage'))])
+@router.post('', response_model=AreaOut, status_code=201, dependencies=[Depends(require_permission('areas:manage'))])
 def create_area(payload: AreaCreate, db: Session = Depends(get_db)):
     item = ExpenseArea(code=_unique_area_code(db, payload.name), name=payload.name)
     db.add(item)
@@ -161,7 +166,7 @@ def create_area(payload: AreaCreate, db: Session = Depends(get_db)):
     return _area_out(db, item)
 
 
-@router.patch('/{area_id}', response_model=AreaOut, dependencies=[Depends(require_permission('config:manage'))])
+@router.patch('/{area_id}', response_model=AreaOut, dependencies=[Depends(require_permission('areas:manage'))])
 def update_area(area_id: int, payload: AreaUpdate, db: Session = Depends(get_db)):
     item = _area(db, area_id)
     for key, value in payload.model_dump(exclude_unset=True).items():
@@ -178,14 +183,19 @@ def list_categories(
     user: User = Depends(current_user),
 ):
     _ensure_category_catalog(db)
-    include_all = include_inactive and has_permission(db, user.id, 'config:manage')
+    can_inspect_configuration = (
+        has_permission(db, user.id, 'areas:manage')
+        or has_permission(db, user.id, 'config:read')
+        or has_permission(db, user.id, 'config:manage')
+    )
+    include_all = include_inactive and can_inspect_configuration
     stmt = select(ExpenseCategoryCatalog).order_by(ExpenseCategoryCatalog.name)
     if not include_all:
         stmt = stmt.where(ExpenseCategoryCatalog.active.is_(True))
     return [_category_out(db, item) for item in db.scalars(stmt).all()]
 
 
-@router.post('/categories', response_model=CategoryOut, status_code=201, dependencies=[Depends(require_permission('config:manage'))])
+@router.post('/categories', response_model=CategoryOut, status_code=201, dependencies=[Depends(require_permission('areas:manage'))])
 def create_category(payload: CategoryCreate, db: Session = Depends(get_db)):
     _ensure_category_catalog(db)
     duplicate = db.scalar(select(ExpenseCategoryCatalog).where(
@@ -200,7 +210,7 @@ def create_category(payload: CategoryCreate, db: Session = Depends(get_db)):
     return _category_out(db, item)
 
 
-@router.post('/{area_id}/categories', response_model=CategoryOut, status_code=201, dependencies=[Depends(require_permission('config:manage'))])
+@router.post('/{area_id}/categories', response_model=CategoryOut, status_code=201, dependencies=[Depends(require_permission('areas:manage'))])
 def create_or_link_category(area_id: int, payload: CategoryCreate, db: Session = Depends(get_db)):
     _ensure_category_catalog(db)
     area = _area(db, area_id)
@@ -221,7 +231,7 @@ def create_or_link_category(area_id: int, payload: CategoryCreate, db: Session =
     return _category_out(db, category)
 
 
-@router.post('/{area_id}/categories/{category_id}', response_model=AreaOut, dependencies=[Depends(require_permission('config:manage'))])
+@router.post('/{area_id}/categories/{category_id}', response_model=AreaOut, dependencies=[Depends(require_permission('areas:manage'))])
 def link_existing_category(area_id: int, category_id: int, db: Session = Depends(get_db)):
     area = _area(db, area_id)
     category = _category(db, category_id)
@@ -230,7 +240,7 @@ def link_existing_category(area_id: int, category_id: int, db: Session = Depends
     return _area_out(db, area, include_inactive=True)
 
 
-@router.delete('/{area_id}/categories/{category_id}', response_model=AreaOut, dependencies=[Depends(require_permission('config:manage'))])
+@router.delete('/{area_id}/categories/{category_id}', response_model=AreaOut, dependencies=[Depends(require_permission('areas:manage'))])
 def unlink_category(area_id: int, category_id: int, db: Session = Depends(get_db)):
     area = _area(db, area_id)
     category = _category(db, category_id)
@@ -251,7 +261,7 @@ def unlink_category(area_id: int, category_id: int, db: Session = Depends(get_db
     return _area_out(db, area, include_inactive=True)
 
 
-@router.patch('/categories/{category_id}', response_model=CategoryOut, dependencies=[Depends(require_permission('config:manage'))])
+@router.patch('/categories/{category_id}', response_model=CategoryOut, dependencies=[Depends(require_permission('areas:manage'))])
 def update_category(category_id: int, payload: CategoryUpdate, db: Session = Depends(get_db)):
     item = _category(db, category_id)
     changes = payload.model_dump(exclude_unset=True)

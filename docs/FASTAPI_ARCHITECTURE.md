@@ -1,172 +1,311 @@
 # Arquitectura FastAPI
 
-## Referencia
-
-La arquitectura sigue los patrones recomendados por la documentación oficial de FastAPI para aplicaciones grandes, dependencias, lifespan, seguridad y testing.
-
 ## Application factory
 
-`app/application.py` crea la aplicación y registra middleware, routers, health endpoint y lifespan mínimo. `app/main.py` existe únicamente como alias de compatibilidad.
+`app/application.py` crea aplicación, middleware, lifespan mínimo, health endpoint y routers. `app/main.py` es alias de compatibilidad.
 
-Las rutas canónicas se registran antes del router legacy. Entre ellas:
+Rutas canónicas antes de handlers legacy:
 
 ```text
-request_actions.py   → creación
-revision_actions.py  → corregir / reenviar
-quotation_actions.py → votación
-document_actions.py  → documentos
-financial_actions.py → factura / cierre
+request_actions.py       → creación
+revision_actions.py      → corregir / reenviar
+cancellation_actions.py  → cancelación
+closure_delegation.py    → delegación cierre/factura
+quotation_actions.py     → votación
+document_actions.py      → documentos
+financial_actions.py     → factura / cierre
+my_actions.py            → acciones contextuales
+tracking.py              → dashboard + seguimiento
+position_access.py       → Cargo → Rol
+areas.py                 → configuración Área/Categoría
 ```
 
-Esto permite reemplazar gradualmente handlers legacy sin depender del orden accidental de rutas en `expenses.py`.
-
-## Separación de responsabilidades
+## Capas
 
 ```text
-api/       HTTP, parámetros, dependencias, códigos de respuesta
+api/       HTTP/dependencias/status codes
 schemas/   contratos Pydantic
-services/  reglas reutilizables y lógica de negocio
+services/  reglas de negocio reutilizable
 models/    persistencia SQLAlchemy
-core/      configuración, DB, seguridad, rate limiting
+core/      Settings, DB, seguridad, rate limiting
 ```
 
-## Dependencia de DB
+SQLAlchemy es síncrono; rutas con I/O bloqueante usan `def` para threadpool de FastAPI.
 
-`get_db()` usa `yield`/context manager para entregar una sesión por request y cerrarla siempre.
+## Settings y ambiente
 
-El backend actual usa SQLAlchemy síncrono. Las rutas canónicas que ejecutan SQLAlchemy o filesystem bloqueante se declaran con `def` para que FastAPI las ejecute en threadpool.
+`is_production_environment` depende solo de `ENVIRONMENT=production` y gobierna segregación funcional. `is_production` puede incluir runtime alojado para hardening. `RENDER=true` no sustituye `ENVIRONMENT=production`.
 
-## Settings
+## IAM
 
-`core/config.py` utiliza `pydantic-settings` y centraliza variables de entorno.
+`require_permission(code)` usa `iam_service.has_permission()`.
 
-Se distinguen dos propiedades:
-
-### `is_production_environment`
+Fuentes configurables:
 
 ```text
-ENVIRONMENT=production → True
-cualquier otro valor   → False
+baseline requests:read
+permiso directo
+rol directo
+Grupo → Rol → Permiso
+Cargo → Rol → Permiso
 ```
 
-Gobierna **comportamiento funcional sensible al ambiente**, actualmente la segregación de la cuenta `TECHNICAL_ADMIN`.
-
-### `is_production`
-
-Es verdadero cuando el ambiente es productivo o el runtime está alojado bajo condiciones que requieren endurecimiento, por ejemplo Render.
-
-Gobierna validaciones como:
-
-- secretos fuertes;
-- CORS HTTPS explícito;
-- credenciales requeridas.
-
-Esta separación es deliberada: un preview alojado puede requerir secretos fuertes sin perder la capacidad de probar todo el flujo con la cuenta técnica.
-
-## IAM y dependencias FastAPI
-
-`require_permission(code)` consulta `iam_service.has_permission()`.
-
-Para usuarios operativos, los permisos provienen de asignaciones persistidas de usuario/rol/grupo.
-
-Para una cuenta registrada en `system_accounts`:
+Permisos operativos:
 
 ```text
-ENVIRONMENT=production
-→ permisos activos ∩ {requests:read, config:manage}
-
-ENVIRONMENT!=production
-→ todos los permisos activos del producto
+requests:read
+requests:create
+requests:approve
+areas:manage
+config:manage  # system-only
 ```
 
-No existe bypass por `UserRole.ADMIN`, email, cargo o ID.
+`requests:close` queda como registro legacy inactivo desde migración `0005`; no autoriza endpoints financieros.
 
-`users_with_permission()` aplica la misma política a poblaciones de workflow. Por tanto:
+### Frontera system-only
 
-- producción: cuenta técnica excluida de permisos financieros;
-- no producción: puede participar en aprobación/votación para pruebas.
+`iam_service.SYSTEM_ONLY_PERMISSION_CODES` contiene `config:manage`.
 
-## Vista del usuario autenticado
+Para usuarios ordinarios:
 
-`apply_effective_permissions_to_user()` calcula capacidades antes de serializar el usuario actual.
+```text
+effective = unrestricted_permissions - {config:manage} + baseline
+```
 
-Contrato canónico:
+Por tanto una relación legacy/directa/Grupo/Cargo con `config:manage` no eleva a un usuario ordinario.
+
+`users_with_permission('config:manage')` también ignora esas relaciones y resuelve únicamente `system_accounts` cuando la política del ambiente lo permite.
+
+### Gestión de Áreas
+
+`areas:manage` sí es configurable por IAM y protege mutaciones de `/api/areas`.
+
+La lectura activa necesaria para clasificar/consultar solicitudes permanece autenticada; `include_inactive=true` y mutaciones requieren `areas:manage`.
+
+### Cuenta técnica
+
+Producción:
+
+```text
+IAM máximo = requests:read + areas:manage + config:manage
+```
+
+No participa en aprobación/votación. Excepciones administrativas por recurso:
+
+```text
+cancelar
+corregir / reenviar
+gestionar cierre/factura
+```
+
+`UserOut.is_system_account` se calcula desde `system_accounts` y se expone a login/`/auth/me` para UX; no sustituye validación backend.
+
+## Capacidades por recurso
+
+### Cancelación
+
+`POST /api/expenses/{request_id}/cancel` valida estado + `(requester OR system_accounts)`. `tracking.py` expone `can_cancel`.
+
+### Corrección
+
+`PUT /api/expenses/{request_id}/resubmit` usa `current_user → can_correct_expense()`.
+
+```text
+can_correct = estado corregible AND (requester OR system_accounts)
+```
+
+No depende de `requests:create`.
+
+### Cierre/factura
+
+`financial_actions.py` implementa:
+
+```text
+POST /api/expenses/{request_id}/close
+PUT  /api/expenses/{request_id}/invoice
+```
+
+Ambos autentican con `current_user` y llaman:
+
+```text
+can_manage_closure(db, expense, user)
+```
+
+Regla:
+
+```text
+status ∈ {APPROVED, CLOSED}
+AND (requester OR system_accounts OR active_closure_delegate)
+```
+
+No se usa `require_permission('requests:close')`.
+
+`tracking.py` expone `ExpenseOut.can_close`.
+
+### Delegación de cierre/factura
+
+Modelo:
+
+```text
+models/closure.py
+ExpenseClosureDelegation
+```
+
+API:
+
+```text
+GET    /api/expenses/{request_id}/closure-delegation
+PUT    /api/expenses/{request_id}/closure-delegation
+DELETE /api/expenses/{request_id}/closure-delegation
+```
+
+Solo solicitante crea/cambia/revoca. `can_delegate_close` se expone por solicitud.
+
+## Seguimiento universal
+
+`tracking.py` registra:
+
+```text
+GET /api/expenses
+GET /api/expenses/dashboard
+```
+
+Ambos requieren baseline `requests:read`. El listado no filtra por requester y expone:
+
+```text
+can_cancel
+can_correct
+can_close
+can_delegate_close
+```
+
+## Resolver de acciones personales
+
+`pending_action_service.py`:
+
+```text
+APPROVAL_DECISION = requests:approve + Approval.PENDING + PENDING_APPROVAL
+QUOTATION_VOTE    = requests:approve + invitación vigente + QUOTATION_VOTING + sin voto
+CORRECT_REQUEST   = NEEDS_REVISION + requested_by == current_user.email
+CLOSE_REQUEST     = APPROVED + (requester OR active_closure_delegate)
+```
+
+El Administrador del sistema conserva facultad de cierre desde Solicitudes, pero no recibe todas las solicitudes como tareas personales.
+
+## API contextual
+
+`my_actions.py`:
+
+```text
+GET  /api/expenses/{request_id}/my-actions
+POST /api/expenses/{request_id}/approval-decision
+```
+
+`my-actions` revalida antes de mostrar. Aprobación autenticada no expone tokens bearer de correo.
+
+## Enviar a revisión
+
+`approval_engine.apply_decision()` trata `REVISION_REQUESTED` antes de mayoría. Comentario >= 3.
+
+```text
+Approval → REVISION_REQUESTED
+Expense  → NEEDS_REVISION
+otros PENDING/WAITING → EXPIRED
+requester → CORRECT_REQUEST
+```
+
+## Invariant SIMPLE/MULTI_QUOTE
+
+`revision_actions.py` reconoce MULTI_QUOTE por `request_type`, `QUOTATION_VOTING` o 2+ opciones. Cambio real devuelve 409. Corrección MULTI_QUOTE genera nueva ronda y excluye `expense.requested_by`, no al actor administrativo.
+
+## Frontend modular / bridges legacy
+
+Componentes:
+
+```text
+frontend/src/expense-form.jsx
+frontend/src/home-dashboard.jsx
+frontend/src/closure-delegation.jsx
+frontend/src/iam-admin.jsx
+```
+
+Mientras partes de `main.jsx` sigan legacy, `vite.config.js` aplica bridges que consumen backend authoritative.
+
+Acciones por solicitud:
+
+```text
+x.can_cancel
+x.can_correct
+x.can_close
+x.can_delegate_close
+```
+
+Configuración:
+
+```text
+isSystemAdmin = user.is_system_account === true
+canManageAreas = isSystemAdmin OR permission_codes contains areas:manage
+
+Usuarios/Organigrama/Accesos/Reglas/Audit → isSystemAdmin
+Áreas                                  → canManageAreas
+```
+
+`iam-admin.jsx` solo inyecta Accesos dentro de un menú marcado `data-system-admin=true`.
+
+Los bridges temporales no deben depender de indentación o saltos de línea exactos. La inserción de delegación usa regex tolerante a LF/CRLF y exige exactamente una coincidencia. La protección de `injectAccessMenu()` aplica la misma regla: regex estructural tolerante a whitespace/LF/CRLF, exactamente una coincidencia y fail-fast ante cero o múltiples guards. No debe volver a una sustitución multilinea literal mediante `replaceRequired()`.
+
+## Response models
+
+`UserOut` expone:
 
 ```text
 permission_codes
+is_system_account
+can_* aliases legacy temporales
 ```
 
-Aliases temporales:
+`ExpenseOut` expone:
 
 ```text
-can_request
-can_approve
-can_view
-can_configure
+can_cancel
+can_correct
 can_close
+can_delegate_close
 ```
 
-El login aplica esta decoración inmediatamente. `current_user()` la recalcula en cada request autenticado.
+Las capacidades por recurso no forman parte de `permission_codes`.
 
-Esto permite que cambios IAM y el cambio de ambiente se reflejen sin confiar en columnas legacy persistidas.
-
-## Invariant de correcciones
-
-`revision_actions.py` protege una regla de negocio que no puede depender del estado React ni de la pestaña SIMPLE/MULTI_QUOTE seleccionada en el formulario de creación.
-
-El tipo canónico se resuelve defensivamente como MULTI_QUOTE cuando existe cualquiera de estas señales durables:
+## API de Cargos
 
 ```text
-request_type == MULTI_QUOTE
-OR status == QUOTATION_VOTING
-OR quotation_options.length >= 2
+GET    /api/iam/positions
+PUT    /api/iam/positions/{position_id}/roles/{role_id}
+DELETE /api/iam/positions/{position_id}/roles/{role_id}
 ```
 
-El endpoint compara el payload contra ese tipo canónico. Un intento real de convertirlo devuelve `409`.
+El nombre del Cargo nunca autoriza.
 
-Para MULTI_QUOTE la ruta canónica:
+## Lifespan y migraciones
 
-- repara `request_type` legacy inconsistente;
-- conserva los IDs de opciones y sus attachments;
-- permite actualizar contenido de las opciones manteniendo su cantidad actual;
-- cambia `flow_id`;
-- limpia `QuotationVote` vigente;
-- reemplaza `QuotationVotingInvitation`;
-- conserva eventos históricos;
-- resuelve nuevos participantes con `requests:approve`;
-- vuelve a `QUOTATION_VOTING`.
+Lifespan no ejecuta DDL/backfills/seeds.
 
-Este invariant permanece aunque el frontend se reescriba.
-
-## Lifespan
-
-El lifespan solo valida/carga recursos de ciclo de vida. No ejecuta:
-
-- `Base.metadata.create_all()`;
-- `ALTER TABLE`;
-- backfills;
-- seeds organizacionales;
-- migraciones destructivas.
-
-## Alembic
-
-Topología lineal:
+Topología:
 
 ```text
 20260817_0000 application baseline
-        ↓
-20260817_0001 configurable IAM
-        ↓
-20260817_0002 protected system accounts
-        ↓
-20260817_0003 backfill MULTI_QUOTE request_type
+→ 20260817_0001 configurable IAM
+→ 20260817_0002 system accounts
+→ 20260817_0003 MULTI_QUOTE request_type repair
+→ 20260818_0004 position role inheritance
+→ 20260818_0005 closure delegation
+→ 20260818_0006 area management permission
 ```
 
-`0003` es una reparación de datos histórica: cambia a `MULTI_QUOTE` filas con evidencia durable de múltiples cotizaciones que aún conservaban el default `SIMPLE`.
+`0005` crea delegaciones y retira `requests:close` como autoridad.
 
-`tests/test_migrations.py` exige `0003` como único head.
+`0006` crea `areas:manage`, el Rol neutral `Gestor de áreas` y actualiza la descripción de `config:manage`; no asigna permisos por nombres organizacionales.
 
-El entrypoint Docker ejecuta:
+Entry point:
 
 ```text
 alembic upgrade head
@@ -174,76 +313,44 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
-`scripts` es importable y el bootstrap se ejecuta como módulo desde `/app`.
+## Portabilidad Docker
 
-## Portabilidad Docker Windows → Linux
+- `*.sh text eol=lf`.
+- Docker normaliza CRLF defensivamente.
+- Compose espera healthcheck backend antes de Nginx.
+- bootstrap como módulo.
 
-- `.gitattributes` fuerza `*.sh text eol=lf`.
-- `backend/Dockerfile` elimina `\r` defensivamente.
-- Docker Compose espera `/api/health` antes de iniciar Nginx.
-- CI valida `start.sh` real e `import scripts.bootstrap_admin` dentro de la imagen.
+## Passwords/sesiones
 
-## Password hashing
-
-`pwdlib.PasswordHash.recommended()` genera Argon2.
-
-`verify_password_and_upgrade()` permite autenticar PBKDF2 legacy y reemplazarlo por Argon2 después de login exitoso.
-
-## Response models
-
-Autenticación usa `LoginResponse`/`TokenResponse`. `UserOut` incluye `permission_codes` y `can_close` para la transición hacia autorización visual por capacidades.
-
-Al crear endpoints nuevos se debe declarar `response_model` salvo streaming/file o razón documentada.
+Argon2 para hashes nuevos; PBKDF2 legacy se actualiza tras login; JWT con expiración absoluta, timeout por inactividad y `session_version`.
 
 ## Testing
 
-`tests/test_iam_api.py` usa `FastAPI TestClient` con SQLite aislada y cubre ambas políticas ambientales:
+Cobertura relevante:
 
 ```text
-no-prod → full technical-admin access
-prod    → config/read only
+test_iam_api.py
+test_position_role_inheritance.py
+test_universal_tracking.py
+test_request_cancellation.py
+test_pending_actions.py
+test_multi_quote_revision.py
+test_closure_delegation.py
+test_frontend_dashboard_contract.py
+test_frontend_closure_contract.py
+test_frontend_configuration_access.py
+test_migrations.py
+test_container_portability.py
 ```
 
-También verifica población de aprobadores, 403 de cierre productivo y el contrato del login.
+Feature 009 exige probar `areas:manage` ordinario, `config:manage` system-only, `is_system_account`, separación visual del menú, robustez del bridge de inyección de Accesos y topología `0006`.
 
-`tests/test_multi_quote_revision.py` verifica el invariant de correcciones con una solicitud MULTI_QUOTE real y con un registro legacy cuyo `request_type` quedó erróneamente en SIMPLE: preserva/repara tipo, conserva evidencia, reinicia ronda y rechaza conversión real a SIMPLE.
+Mientras GitHub Actions no tenga cuota, backend tests + `npm run build` + Docker build/smoke son gates locales obligatorios.
 
-`tests/test_migrations.py` verifica topología Alembic hasta `0003`.
+## Deuda legacy explícita
 
-`tests/test_container_portability.py` verifica defensas de portabilidad local.
+Persisten temporalmente `api/expenses.py`, `api/users.py`, `UserRole`, `can_*`, `AccessProfile`, `BOARD_CODES`, `main.jsx`, `domain-normalization.js`, bridges Vite y `requests:close` inactivo. Ninguno es autoridad nueva.
 
-## Producción vs preview
+La pantalla IAM todavía puede mostrar registros legacy/configuración que runtime filtra; `config:manage` es system-only aunque una relación histórica lo referencie.
 
-`render.yaml` de producción declara explícitamente:
-
-```env
-ENVIRONMENT=production
-```
-
-Un servicio de preview/test debe usar otro valor si se desea acceso funcional completo con la cuenta técnica.
-
-## Router/frontend legacy
-
-`api/expenses.py`, `api/users.py` y `frontend/src/main.jsx` contienen partes del MVP anterior. Las rutas canónicas se registran antes que equivalentes legacy.
-
-El frontend monolítico todavía contiene bypasses visuales como:
-
-```text
-user.role === "ADMIN"
-canClose={true}
-```
-
-El backend no confía en esos valores, pero la deuda debe retirarse migrando la visibilidad de acciones a `permission_codes`.
-
-### Transform temporal de correcciones
-
-Mientras `ExpenseForm` siga dentro del monolito, `frontend/vite.config.js` aplica un plugin `legacy-revision-safety` antes del plugin React.
-
-El plugin ahora protege explícitamente el aislamiento de estado:
-
-- deriva el `requestType` inicial desde el draft/evidencia durable;
-- al entrar en corrección, `ExpenseForm` recibe una `key` basada en la solicitud/flujo y se remonta;
-- el estado de la pestaña de creación anterior no sobrevive al cambio de modo;
-- restaura cotizaciones y metadata de attachments.
-
-El transform utiliza reemplazos obligatorios y hace fallar `vite build` si los fragmentos legacy dejan de coincidir. Esto evita una degradación silenciosa, pero no sustituye la modularización. Al extraer `ExpenseForm` a un componente propio, el plugin debe eliminarse y la hidratación debe cubrirse con tests frontend normales.
+Deuda funcional separada: fórmula completa quorum/mayoría APPROVED/REJECTED, empate de cotizaciones, edición estructural MULTI_QUOTE y outbox/retry persistente.

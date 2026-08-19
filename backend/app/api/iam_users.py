@@ -21,7 +21,7 @@ from app.models.iam import (
     UserRoleAssignment,
 )
 from app.schemas.iam_user import IamUserCreate, IamUserOut, IamUserUpdate
-from app.services.email_service import send_user_invitation
+from app.services.email_service import send_user_access_updated, send_user_invitation
 from app.services.iam_service import (
     effective_permission_codes,
     is_system_account,
@@ -37,6 +37,32 @@ def _full_name(user: User) -> str:
         for item in (user.first_name, user.middle_name, user.last_name, user.second_last_name)
         if item and item.strip()
     ) or user.name
+
+
+def _access_email_summary(db: Session, user: User) -> tuple[list[str], list[tuple[str, str]]]:
+    """Return canonical Cargo names and effective IAM permissions for user emails."""
+    position_names = list(db.scalars(
+        select(Position.name)
+        .join(UserPosition, UserPosition.position_id == Position.id)
+        .where(UserPosition.user_id == user.id, Position.active.is_(True))
+        .order_by(Position.name)
+    ).all())
+    effective_codes = effective_permission_codes(db, user.id)
+    if not effective_codes:
+        return position_names, []
+    permissions_by_code = {
+        item.code: item.name
+        for item in db.scalars(
+            select(Permission)
+            .where(Permission.code.in_(effective_codes), Permission.active.is_(True))
+            .order_by(Permission.name, Permission.code)
+        ).all()
+    }
+    permissions = [
+        (permissions_by_code.get(code, code), code)
+        for code in sorted(effective_codes, key=lambda value: (permissions_by_code.get(value, value), value))
+    ]
+    return position_names, permissions
 
 
 def _out(db: Session, user: User) -> IamUserOut:
@@ -232,7 +258,8 @@ def create_user(payload: IamUserCreate, db: Session = Depends(get_db)):
         db.flush()
         _sync_legacy_display_fields(db, user)
         if user.active:
-            send_user_invitation(user, temporary_password)
+            positions, permissions = _access_email_summary(db, user)
+            send_user_invitation(user, temporary_password, positions, permissions)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -254,6 +281,10 @@ def update_user(user_id: int, payload: IamUserUpdate, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail='Usuario no encontrado')
     if db.scalar(select(SystemAccount.id).where(SystemAccount.user_id == user.id)):
         raise HTTPException(status_code=409, detail='La cuenta técnica se administra mediante el bootstrap de despliegue')
+
+    original_position_ids = set(db.scalars(
+        select(UserPosition.position_id).where(UserPosition.user_id == user.id)
+    ).all())
 
     changes = payload.model_dump(
         exclude_unset=True,
@@ -281,16 +312,35 @@ def update_user(user_id: int, payload: IamUserUpdate, db: Session = Depends(get_
     if {'email', 'identity_document'} & set(changes):
         user.analytics_id = analytics_identifier(user.identity_document, user.email)
 
-    _replace_assignments(
-        db,
-        user,
-        group_ids=payload.group_ids,
-        role_ids=payload.role_ids,
-        permission_codes=payload.direct_permission_codes,
-        position_ids=payload.position_ids,
+    position_changed = (
+        payload.position_ids is not None
+        and set(payload.position_ids) != original_position_ids
     )
-    db.flush()
-    _sync_legacy_display_fields(db, user)
-    db.commit()
+    try:
+        _replace_assignments(
+            db,
+            user,
+            group_ids=payload.group_ids,
+            role_ids=payload.role_ids,
+            permission_codes=payload.direct_permission_codes,
+            position_ids=payload.position_ids,
+        )
+        db.flush()
+        _sync_legacy_display_fields(db, user)
+        if position_changed and user.active:
+            positions, permissions = _access_email_summary(db, user)
+            send_user_access_updated(user, positions, permissions)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        if position_changed:
+            raise HTTPException(
+                status_code=502,
+                detail='No se pudo actualizar el cargo y enviar la notificación al usuario',
+            ) from exc
+        raise
     db.refresh(user)
     return _out(db, user)

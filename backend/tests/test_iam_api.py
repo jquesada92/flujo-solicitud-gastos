@@ -35,6 +35,7 @@ ALL_PRODUCT_PERMISSIONS = {
     'requests:create',
     'requests:approve',
     'requests:close',
+    'areas:manage',
     'config:manage',
 }
 
@@ -132,7 +133,7 @@ class IamApiTests(unittest.TestCase):
         for sources in response.json()['sources'].values():
             self.assertIn('Acceso de prueba de cuenta técnica (no producción)', sources)
 
-    def test_login_returns_full_non_production_capability_view(self):
+    def test_login_returns_system_account_identity_and_full_non_production_capability_view(self):
         response = self.client.post(
             '/api/auth/login',
             json={'email': 'admin@example.com', 'password': 'Test-password-123!'},
@@ -140,18 +141,24 @@ class IamApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         user = response.json()['user']
         self.assertEqual(set(user['permission_codes']), ALL_PRODUCT_PERMISSIONS)
+        self.assertTrue(user['is_system_account'])
         self.assertTrue(user['can_request'])
         self.assertTrue(user['can_approve'])
         self.assertTrue(user['can_view'])
         self.assertTrue(user['can_configure'])
         self.assertTrue(user['can_close'])
 
+    def test_normal_user_me_is_not_system_account(self):
+        response = self.client.get('/api/auth/me', headers=self.auth(self.user_token))
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(response.json()['is_system_account'])
+
     def test_system_account_can_join_approval_population_outside_production(self):
         with self.Session() as db:
             users = users_with_permission(db, 'requests:approve')
         self.assertIn(self.admin_id, {user.id for user in users})
 
-    def test_system_account_is_restricted_in_production_even_if_financial_permission_is_assigned(self):
+    def test_system_account_is_restricted_in_production_but_can_manage_areas(self):
         with self.Session() as db:
             close_permission = db.scalar(select(Permission).where(Permission.code == 'requests:close'))
             db.add(UserPermission(user_id=self.admin_id, permission_id=close_permission.id))
@@ -162,16 +169,9 @@ class IamApiTests(unittest.TestCase):
             effective = self.client.get('/api/iam/me/permissions', headers=self.auth(self.admin_token))
             self.assertEqual(
                 set(effective.json()['permission_codes']),
-                {'config:manage', 'requests:read'},
+                {'areas:manage', 'config:manage', 'requests:read'},
             )
             self.assertNotIn('requests:close', effective.json()['permission_codes'])
-
-            close = self.client.post(
-                '/api/expenses/REQ-DOES-NOT-MATTER/close',
-                headers=self.auth(self.admin_token),
-                files={'invoice': ('invoice.pdf', b'%PDF-1.7\n', 'application/pdf')},
-            )
-            self.assertEqual(close.status_code, 403)
 
             with self.Session() as db:
                 approvers = users_with_permission(db, 'requests:approve')
@@ -180,6 +180,38 @@ class IamApiTests(unittest.TestCase):
     def test_user_without_config_cannot_administer_iam(self):
         response = self.client.get('/api/iam/roles', headers=self.auth(self.user_token))
         self.assertEqual(response.status_code, 403)
+
+    def test_stale_config_manage_assignment_is_ignored_for_non_system_user(self):
+        with self.Session() as db:
+            permission = db.scalar(select(Permission).where(Permission.code == 'config:manage'))
+            db.add(UserPermission(user_id=self.normal_user_id, permission_id=permission.id))
+            db.commit()
+
+        response = self.client.get('/api/iam/roles', headers=self.auth(self.user_token))
+        self.assertEqual(response.status_code, 403)
+        effective = self.client.get(
+            f'/api/iam/users/{self.normal_user_id}/effective-permissions',
+            headers=self.auth(self.admin_token),
+        )
+        self.assertNotIn('config:manage', effective.json()['permission_codes'])
+
+    def test_area_manage_can_be_assigned_to_ordinary_user(self):
+        grant = self.client.put(
+            f'/api/iam/users/{self.normal_user_id}/permissions/areas:manage',
+            headers=self.auth(self.admin_token),
+        )
+        self.assertEqual(grant.status_code, 200, grant.text)
+
+        create_area = self.client.post(
+            '/api/areas',
+            headers=self.auth(self.user_token),
+            json={'name': 'Operaciones'},
+        )
+        self.assertEqual(create_area.status_code, 201, create_area.text)
+        self.assertEqual(create_area.json()['name'], 'Operaciones')
+
+        iam_denied = self.client.get('/api/iam/roles', headers=self.auth(self.user_token))
+        self.assertEqual(iam_denied.status_code, 403)
 
     def test_group_role_assignment_changes_effective_permissions_immediately(self):
         role = self.client.post(

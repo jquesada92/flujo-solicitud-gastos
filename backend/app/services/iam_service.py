@@ -9,11 +9,14 @@ from app.models.iam import (
     GroupMember,
     GroupRole,
     Permission,
+    Position,
+    PositionRole,
     Role,
     RolePermission,
     SystemAccount,
     UserGroup,
     UserPermission,
+    UserPosition,
     UserRoleAssignment,
 )
 
@@ -22,10 +25,13 @@ CORE_PERMISSION_CODES = (
     'requests:read',
     'requests:create',
     'requests:approve',
-    'requests:close',
+    'requests:close',  # inactive legacy after 0005
+    'areas:manage',
     'config:manage',
 )
-PRODUCTION_SYSTEM_ACCOUNT_PERMISSIONS = {'requests:read', 'config:manage'}
+BASELINE_PERMISSION_CODES = {'requests:read'}
+SYSTEM_ONLY_PERMISSION_CODES = {'config:manage'}
+PRODUCTION_SYSTEM_ACCOUNT_PERMISSIONS = {'requests:read', 'areas:manage', 'config:manage'}
 
 
 def is_system_account(db: Session, user_id: int) -> bool:
@@ -38,14 +44,19 @@ def _active_permission_codes(db: Session) -> set[str]:
     ).all())
 
 
-def _system_account_policy_codes(db: Session) -> set[str]:
-    """Return the environment policy for technical system accounts.
+def _user_is_active(db: Session, user_id: int) -> bool:
+    return bool(db.scalar(select(User.active).where(User.id == user_id)))
 
-    Outside production, a technical account receives every active product
-    permission so one account can exercise end-to-end flows in local/dev/test/
-    preview environments. In production, segregation of duties is mandatory and
-    the account is restricted to configuration and read-only access.
-    """
+
+def _baseline_permission_codes(db: Session, user_id: int) -> set[str]:
+    """Capabilities every active authenticated user receives by product policy."""
+    if not _user_is_active(db, user_id):
+        return set()
+    return BASELINE_PERMISSION_CODES & _active_permission_codes(db)
+
+
+def _system_account_policy_codes(db: Session) -> set[str]:
+    """Return the environment policy for technical system accounts."""
     active = _active_permission_codes(db)
     if get_settings().is_production_environment:
         return active & PRODUCTION_SYSTEM_ACCOUNT_PERMISSIONS
@@ -89,13 +100,37 @@ def _unrestricted_permission_codes(db: Session, user_id: int) -> set[str]:
         )
     ).all())
 
-    return direct_permissions | direct_role_permissions | group_role_permissions
+    position_role_permissions = set(db.scalars(
+        select(Permission.code)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .join(Role, Role.id == RolePermission.role_id)
+        .join(PositionRole, PositionRole.role_id == Role.id)
+        .join(Position, Position.id == PositionRole.position_id)
+        .join(UserPosition, UserPosition.position_id == Position.id)
+        .where(
+            UserPosition.user_id == user_id,
+            Position.active.is_(True),
+            Role.active.is_(True),
+            Permission.active.is_(True),
+        )
+    ).all())
+
+    return (
+        direct_permissions
+        | direct_role_permissions
+        | group_role_permissions
+        | position_role_permissions
+    )
 
 
 def effective_permission_codes(db: Session, user_id: int) -> set[str]:
+    baseline = _baseline_permission_codes(db, user_id)
     if is_system_account(db, user_id):
-        return _system_account_policy_codes(db)
-    return _unrestricted_permission_codes(db, user_id)
+        return _system_account_policy_codes(db) | baseline
+    # Technical configuration is never inherited by ordinary users, even if a
+    # stale legacy assignment still points at config:manage.
+    inherited = _unrestricted_permission_codes(db, user_id) - SYSTEM_ONLY_PERMISSION_CODES
+    return inherited | baseline
 
 
 def has_permission(db: Session, user_id: int, permission_code: str) -> bool:
@@ -109,12 +144,35 @@ def users_with_permission(
     exclude_user_id: int | None = None,
     exclude_email: str | None = None,
 ) -> list[User]:
-    """Resolve an active user population from IAM in one SQL query.
+    """Resolve active users who effectively own one permission."""
+    active_codes = _active_permission_codes(db)
+    if permission_code not in active_codes:
+        return []
 
-    Technical accounts follow the same environment policy as direct endpoint
-    authorization: all active permissions outside production, and only
-    config/read in production.
-    """
+    if permission_code in BASELINE_PERMISSION_CODES:
+        stmt = select(User).where(User.active.is_(True))
+        if exclude_user_id is not None:
+            stmt = stmt.where(User.id != exclude_user_id)
+        if exclude_email:
+            stmt = stmt.where(User.email.ilike(exclude_email).is_(False))
+        return list(db.scalars(stmt.order_by(User.id)).all())
+
+    # System-only permissions deliberately ignore stale direct/group/role/cargo
+    # assignments. Only protected persisted system accounts can own them.
+    if permission_code in SYSTEM_ONLY_PERMISSION_CODES:
+        if permission_code not in _system_account_policy_codes(db):
+            return []
+        stmt = (
+            select(User)
+            .join(SystemAccount, SystemAccount.user_id == User.id)
+            .where(User.active.is_(True))
+        )
+        if exclude_user_id is not None:
+            stmt = stmt.where(User.id != exclude_user_id)
+        if exclude_email:
+            stmt = stmt.where(User.email.ilike(exclude_email).is_(False))
+        return list(db.scalars(stmt.order_by(User.id)).all())
+
     direct = (
         select(UserPermission.user_id.label('user_id'))
         .join(Permission, Permission.id == UserPermission.permission_id)
@@ -145,9 +203,23 @@ def users_with_permission(
             UserGroup.active.is_(True),
         )
     )
+    position_role = (
+        select(UserPosition.user_id.label('user_id'))
+        .join(Position, Position.id == UserPosition.position_id)
+        .join(PositionRole, PositionRole.position_id == Position.id)
+        .join(Role, Role.id == PositionRole.role_id)
+        .join(RolePermission, RolePermission.role_id == Role.id)
+        .join(Permission, Permission.id == RolePermission.permission_id)
+        .where(
+            Permission.code == permission_code,
+            Permission.active.is_(True),
+            Role.active.is_(True),
+            Position.active.is_(True),
+        )
+    )
 
     policy_codes = _system_account_policy_codes(db)
-    permitted_queries = [direct, direct_role, group_role]
+    permitted_queries = [direct, direct_role, group_role, position_role]
     if permission_code in policy_codes:
         permitted_queries.append(select(SystemAccount.user_id.label('user_id')))
 
@@ -166,6 +238,9 @@ def users_with_permission(
 def permission_sources(db: Session, user_id: int) -> dict[str, list[str]]:
     effective = effective_permission_codes(db, user_id)
     sources: dict[str, set[str]] = defaultdict(set)
+
+    if 'requests:read' in effective and _user_is_active(db, user_id):
+        sources['requests:read'].add('Acceso base del producto para usuarios activos')
 
     for code in db.scalars(
         select(Permission.code)
@@ -207,6 +282,24 @@ def permission_sources(db: Session, user_id: int) -> dict[str, list[str]]:
     for code, group_name, role_name in group_rows:
         if code in effective:
             sources[code].add(f'Grupo {group_name} → {role_name}')
+
+    position_rows = db.execute(
+        select(Permission.code, Position.name, Role.name)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .join(Role, Role.id == RolePermission.role_id)
+        .join(PositionRole, PositionRole.role_id == Role.id)
+        .join(Position, Position.id == PositionRole.position_id)
+        .join(UserPosition, UserPosition.position_id == Position.id)
+        .where(
+            UserPosition.user_id == user_id,
+            Position.active.is_(True),
+            Role.active.is_(True),
+            Permission.active.is_(True),
+        )
+    ).all()
+    for code, position_name, role_name in position_rows:
+        if code in effective:
+            sources[code].add(f'Cargo {position_name} → {role_name}')
 
     if is_system_account(db, user_id):
         policy_source = (

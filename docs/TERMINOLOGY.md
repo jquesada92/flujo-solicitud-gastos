@@ -4,171 +4,208 @@ Este documento define los términos canónicos visibles y técnicos del producto
 
 ## Usuario
 
-Cuenta que interactúa con el sistema.
-
-Uso correcto:
-
-- Usuarios
-- Crear usuario
-- Editar usuario
-- Usuario activo/inactivo
-- Permisos del usuario
-
-No usar **Persona/Personas** como nombre del módulo de cuentas.
+Cuenta que interactúa con el sistema. No usar **Persona/Personas** como nombre del módulo de cuentas.
 
 ## Grupo
 
-Conjunto configurable de usuarios que comparten una responsabilidad o contexto organizacional.
-
-Ejemplos posibles del cliente:
-
-- Junta Directiva
-- Finanzas
-- Procurement
-- Operaciones
-
-Los ejemplos son datos configurables. Ningún nombre de Grupo autoriza por sí mismo.
+Conjunto configurable de usuarios que puede heredar Roles. Nombres como Junta Directiva, Finanzas o Procurement son datos del cliente; no autorizan por sí mismos.
 
 ## Rol
 
-Conjunto configurable y reutilizable de Permisos.
-
-Ejemplos posibles:
-
-- Aprobador
-- Gestión de solicitudes
-- Consulta
-
-El backend no debe tomar decisiones por el nombre del Rol. Solo importan sus Permisos efectivos.
+Conjunto configurable y reutilizable de Permisos. Puede asociarse a Usuarios, Grupos o Cargos/Posiciones. El nombre del Rol no autoriza; importan sus Permisos.
 
 ## Permiso
 
-Capacidad atómica implementada por el producto.
+Capacidad IAM atómica implementada por el producto.
 
-Permisos actuales:
+Permisos vigentes:
 
-- `requests:read` — Consultar solicitudes/documentos autorizados.
-- `requests:create` — Crear/corregir solicitudes y cargar soportes.
-- `requests:approve` — Votar/aprobar/rechazar/solicitar corrección según el flujo.
-- `requests:close` — Cargar/reemplazar factura y cerrar.
-- `config:manage` — Administrar configuración e IAM.
+- `requests:read` — Consultar dashboard/solicitudes/evidencia; baseline para usuarios activos.
+- `requests:create` — Crear nuevas solicitudes y cargar soportes asociados.
+- `requests:approve` — Votar/aprobar/rechazar/enviar a revisión según asignación.
+- `areas:manage` — Administrar Áreas, Categorías y sus relaciones; configurable para usuarios ordinarios.
+- `config:manage` — Administración técnica **system-only**, reservada a `system_accounts`.
 
-Los permisos son la autoridad de acceso.
+`requests:close` permanece como **registro legacy inactivo** para trazabilidad. No autoriza cierre, factura ni delegación.
 
 ## Permiso efectivo
 
-Permiso que un Usuario posee después de combinar:
+Unión de baseline, permisos directos, Roles directos, Roles heredados por Grupos/Cargos y política técnica aplicable, menos capacidades system-only no aplicables al actor.
 
-- permisos directos;
-- permisos de roles directos;
-- permisos de roles heredados por grupos;
-- políticas especiales aplicables a cuentas técnicas según el ambiente.
+Para un usuario ordinario, una asignación de `config:manage` no se convierte en permiso efectivo. Las capacidades por recurso y delegaciones tampoco se convierten en permisos IAM.
+
+## Administración técnica
+
+Conjunto de funciones reservadas a la cuenta protegida del sistema:
+
+```text
+Usuarios
+Organigrama
+Accesos / IAM
+Reglas
+Auditoría técnica
+```
+
+Su permiso canónico es `config:manage`, pero la identidad final se verifica mediante `system_accounts`/política IAM, no por cargo o `UserRole.ADMIN`.
+
+## Gestión de Áreas
+
+Configuración organizacional del catálogo Área + Categoría.
+
+Permiso:
+
+```text
+areas:manage
+```
+
+Puede heredarse por Rol/Grupo/Cargo o asignarse directamente. Un usuario con esta capacidad ve **Configuración → Áreas** sin recibir administración técnica.
+
+## Gestor de áreas
+
+Rol neutral sembrado por migración `0006`:
+
+```text
+Gestor de áreas → areas:manage
+```
+
+La organización decide a qué Grupos/Cargos/Usuarios asociarlo. No significa automáticamente Administración, Junta Directiva ni ningún nombre concreto.
 
 ## Cargo / Posición
 
-Metadato descriptivo de la estructura organizacional.
-
-Ejemplos:
-
-- Presidente
-- Tesorero
-- Gerente
-- Director
-- Analista
-
-**Un Cargo no concede permisos.** Cambiar el Cargo de un Usuario no debe cambiar su autorización salvo que también se modifiquen sus Grupos/Roles/Permisos.
+Elemento configurable de estructura organizacional que puede heredar Roles. El nombre del Cargo nunca autoriza directamente.
 
 ## Cuenta técnica / Administrador del sistema
 
-Cuenta de sistema creada mediante bootstrap para administrar la plataforma.
+Cuenta protegida persistida en `system_accounts`.
 
-Su política depende del ambiente:
+Producción: IAM máximo `config:manage + areas:manage + requests:read` y exclusión de aprobación/votación. Conserva excepciones administrativas por recurso para cancelar, corregir y gestionar cierre/factura. No administra delegaciones ordinarias en nombre del solicitante.
 
-- `ENVIRONMENT=production`: `config:manage` + `requests:read`; no participa en el flujo financiero.
-- cualquier otro `ENVIRONMENT`: todos los permisos atómicos activos para pruebas end-to-end.
-
-La condición se basa en `SystemAccount + ENVIRONMENT`, no en nombre, email, Cargo o `UserRole.ADMIN`.
+El frontend recibe `is_system_account` para UX; ese booleano no reemplaza la autorización backend.
 
 ## Área
 
-Unidad, departamento o función organizacional asociada al gasto.
-
-Ejemplos:
-
-- Administración
-- Operaciones
-- IT
-- Mantenimiento
-- Marketing
+Unidad/departamento/función organizacional asociada al gasto.
 
 ## Categoría
 
-Naturaleza del bien o servicio adquirido.
+Naturaleza del bien o servicio adquirido. Área y Categoría son independientes.
 
-Ejemplos:
+## SIMPLE / Solicitud sencilla
 
-- Equipos
-- Servicios / Consultoría
-- Insumos
-- Software / Licencias
-- Mobiliario
-- Capacitación
+Solicitud con una única opción/proveedor y evidencia.
 
-Área y Categoría son catálogos independientes relacionados de forma configurable.
+## MULTI_QUOTE / Múltiples cotizaciones
 
-## Solicitud sencilla / SIMPLE
+Solicitud con varias opciones que pasa por selección/votación antes de continuar el flujo.
 
-Solicitud que utiliza una única opción de compra/proveedor y su evidencia correspondiente.
+## Enviar a revisión
 
-## Múltiples cotizaciones / MULTI_QUOTE
+Acción del aprobador/revisor que detecta un problema y devuelve la solicitud al solicitante con comentario obligatorio.
 
-Solicitud que contiene varias opciones de cotización y pasa por una ronda de selección/votación antes de continuar con el flujo definido.
+```text
+REVISION_REQUESTED
+→ NEEDS_REVISION inmediato
+→ otros PENDING/WAITING EXPIRED
+→ solicitante recibe CORRECT_REQUEST
+```
 
-## Selector de tipo de nueva solicitud
-
-Control de UI que permite elegir **Solicitud sencilla** o **Múltiples cotizaciones** mientras se está creando una solicitud nueva.
-
-Ese selector representa intención de **creación**. No es autoridad sobre una solicitud existente y su estado no debe heredarse al entrar en una corrección.
+No significa editar la solicitud ni concede `can_correct`.
 
 ## Corrección / Corregir y reenviar
 
-Acción que modifica datos de una solicitud existente y reinicia el flujo que corresponda **sin cambiar su tipo de solicitud**.
+Edición de una solicitud existente sin cambiar su tipo. Solo solicitante original o Administrador del sistema protegido.
 
 ```text
-SIMPLE      → corrección → SIMPLE
-MULTI_QUOTE → corrección → MULTI_QUOTE
+SIMPLE      → SIMPLE
+MULTI_QUOTE → MULTI_QUOTE
 ```
 
-Al entrar en corrección, el editor deriva el tipo desde la solicitud seleccionada y descarta el estado previo del selector de nueva solicitud. Una conversión entre SIMPLE y MULTI_QUOTE no debe llamarse corrección; requeriría una acción funcional explícita diferente.
+## `can_correct`
+
+Capacidad por solicitud:
+
+```text
+estado corregible AND (solicitante original OR system_accounts)
+```
+
+No es permiso IAM.
+
+## Cancelación / Cancelar solicitud
+
+Finaliza una solicitud abierta. Solo solicitante original o Administrador del sistema.
+
+## `can_cancel`
+
+Capacidad por solicitud para mostrar/autorizar cancelación. No es permiso IAM.
+
+## Cierre de solicitud
+
+Transición de `APPROVED` a `CLOSED` que exige factura final. La autoridad es por recurso, no por permiso global.
+
+## Factura de cierre
+
+Documento final asociado al cierre. Puede reemplazarse en `CLOSED` por un actor autorizado, conservando la versión anterior y un `InvoiceChangeEvent` con motivo.
+
+## Delegación de cierre/factura
+
+Asignación explícita por **una solicitud** que el solicitante original otorga a otro usuario activo para registrar/corregir la factura y cerrar.
+
+Reglas:
+
+- solo el solicitante crea/cambia/revoca;
+- una delegación activa por solicitud;
+- delegado distinto del solicitante y no cuenta de sistema;
+- cambiar/revocar conserva historial (`revoked_at`, actor);
+- no concede acceso de cierre a otras solicitudes;
+- el solicitante mantiene su autoridad.
+
+## `can_close`
+
+Capacidad por solicitud:
+
+```text
+status ∈ {APPROVED, CLOSED}
+AND (solicitante original OR system_accounts OR delegado activo)
+```
+
+No es `UserOut.can_close` legacy ni un permiso IAM.
+
+## `can_delegate_close`
+
+Capacidad por solicitud que indica si el usuario actual puede administrar su delegación de cierre/factura. Solo el solicitante original.
+
+## Acción pendiente
+
+Tarea contextual concreta; no es permiso IAM.
+
+Códigos actuales:
+
+```text
+APPROVAL_DECISION
+QUOTATION_VOTE
+CORRECT_REQUEST
+CLOSE_REQUEST
+```
+
+`CLOSE_REQUEST` significa solicitud `APPROVED` cuya responsabilidad corresponde al solicitante o delegado activo.
 
 ## Tipo canónico de solicitud
 
-Tipo de flujo derivado de la persistencia y evidencia durable. Durante la compatibilidad legacy, una solicitud se considera MULTI_QUOTE si está marcada como tal, está en `QUOTATION_VOTING` o posee dos o más `quotation_options`.
+Tipo derivado de persistencia/evidencia durable. En compatibilidad legacy, MULTI_QUOTE si está marcado como tal, está en `QUOTATION_VOTING` o tiene 2+ opciones.
 
 ## Términos legacy
 
-Los siguientes términos pueden aparecer temporalmente en código de compatibilidad, pero no representan la arquitectura objetivo:
+Pueden aparecer físicamente, pero no son arquitectura objetivo:
 
 - `UserRole.ADMIN`, `REQUESTER`, `APPROVER`, `VIEWER`;
-- `can_request`, `can_approve`, `can_view`, `can_configure`;
-- `title` usado como cargo/perfil;
-- `AccessProfile` como mezcla de cargo/permisos;
+- `can_request`, `can_approve`, `can_view`, `can_configure`, `can_close` de sesión;
+- `requests:close` como permiso histórico inactivo;
+- `title` como mezcla histórica;
+- `AccessProfile`;
+- `BOARD_CODES`;
 - Persona/Personas;
-- Subárea para representar Categoría.
-
-No introducir nuevas dependencias funcionales sobre estos conceptos.
+- Subárea para Categoría.
 
 ## Regla de consistencia
 
-Nuevos componentes, APIs, specs y documentación deben usar:
-
-- **Usuario** para cuentas;
-- **Grupo** para agrupación de usuarios;
-- **Rol** para conjuntos de permisos;
-- **Permiso** para autorización;
-- **Cargo/Posición** para metadato organizacional;
-- **Área** para contexto organizacional del gasto;
-- **Categoría** para naturaleza del gasto;
-- **Solicitud sencilla / SIMPLE** y **Múltiples cotizaciones / MULTI_QUOTE** para los tipos de solicitud;
-- **Selector de tipo de nueva solicitud** solo para la elección durante creación;
-- **Corrección / Corregir y reenviar** para editar sin cambiar el tipo de solicitud.
+Usar siempre Usuario, Grupo, Rol, Permiso, Cargo/Posición, Área, Categoría, Gestión de Áreas, Administración técnica, SIMPLE/MULTI_QUOTE, Enviar a revisión, Corregir/reenviar, Cancelar solicitud y Delegación de cierre/factura según las definiciones anteriores.

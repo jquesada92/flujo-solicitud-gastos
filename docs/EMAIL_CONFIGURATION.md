@@ -113,6 +113,50 @@ Email accepted by the configured transport.
 
 el servidor SMTP/API aceptó la entrega. Después se valida el workflow real.
 
+## Correos de acceso de usuario
+
+### Invitación inicial
+
+Cuando se crea un usuario activo desde IAM, el mismo correo que contiene la contraseña temporal incluye:
+
+```text
+Cargo(s)
+Permisos efectivos
+Usuario
+Contraseña temporal
+Enlace de acceso
+```
+
+Los permisos no se toman de `can_*` ni `UserRole`; se calculan con el IAM canónico después de aplicar Grupo/Rol/Cargo/permisos directos.
+
+Ejemplo:
+
+```text
+Cargo(s):
+- Tesorero
+
+Permisos efectivos:
+- Consultar solicitudes (requests:read)
+- Aprobar solicitudes (requests:approve)
+```
+
+### Cambio de Cargo
+
+Cuando cambia realmente `position_ids` de un usuario activo, se envía **Actualización de cargo y permisos** con los Cargos resultantes y los permisos efectivos recalculados.
+
+Guardar exactamente el mismo conjunto de Cargos no genera un correo duplicado.
+
+El correo de cambio de Cargo **no contiene contraseña temporal**.
+
+### Semántica de fallo
+
+Invitación inicial y cambio de Cargo son notificaciones obligatorias de administración de acceso. Si falla el transporte:
+
+- creación de usuario: no se confirma la creación;
+- cambio de Cargo: se revierte la transacción y el endpoint devuelve 502.
+
+Esto es deliberadamente distinto de algunos correos de workflow. Una futura outbox persistente podrá desacoplar entrega y transacción sin perder garantía de notificación.
+
 ## Probar solicitudes después del SMTP
 
 ### Solicitud SIMPLE
@@ -153,4 +197,4 @@ Vite directo   → localhost:5173
 
 Si `EMAIL_MODE=console`, no habrá correo real: el mensaje aparecerá únicamente en los logs.
 
-La aplicación conserva actualmente el estado del workflow aunque falle el proveedor de correo. Por eso un correo ausente no implica necesariamente que no se haya creado la aprobación o invitación. Esta separación debe mantenerse hasta implementar una outbox/reintentos persistidos.
+Los correos de aprobación/votación pueden conservar actualmente el estado del workflow aunque falle el proveedor. En cambio, invitación inicial y cambio de Cargo son obligatorios y se tratan como parte de la operación IAM. La convergencia futura recomendada es una outbox/reintentos persistidos.

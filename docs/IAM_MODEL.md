@@ -2,239 +2,327 @@
 
 ## Objetivo
 
-Permitir que cada organización configure su estructura de acceso desde la interfaz gráfica sin hardcodear nombres, cargos o correos en el backend.
-
-## Conceptos
-
-### Usuario
-
-Cuenta autenticable del sistema.
-
-### Grupo
-
-Conjunto de usuarios con una responsabilidad común. Ejemplos como `Junta Directiva`, `Finance` o `Procurement` son datos del cliente, no conceptos del código.
-
-### Rol
-
-Conjunto reutilizable de permisos.
-
-### Permiso
-
-Capacidad atómica implementada por el producto. El permiso autoriza; el nombre de rol/grupo/cargo no.
-
-### Cargo / Posición
-
-Metadato descriptivo de estructura organizacional. Puede representar Presidente, Gerente, Analista, Director, etc. **No concede permisos.**
-
-### Cuenta de sistema
-
-Identidad técnica registrada en `system_accounts`. Su política puede diferir por ambiente sin depender de email, cargo ni `UserRole` legacy.
+Permitir que cada organización configure acceso sin hardcodear nombres, cargos o correos y distinguir **permisos IAM**, **capacidades system-only**, **capacidades por recurso**, **delegaciones** y **tareas contextuales**.
 
 ## Modelo
 
 ```text
-permissions
-   ↑
-role_permissions ← roles ← group_roles ← user_groups ← group_members ← users
-                         ↖ user_role_assignments ← users
-permissions ← user_permissions ← users
-positions ← user_positions ← users
-system_accounts ← users
+Usuario → Grupo ─────────→ Rol → Permiso
+       ↘ Cargo/Posición ─→ Rol → Permiso
+       ↘ Rol directo ─────────→ Permiso
+       ↘ Permiso directo
+       ↘ baseline requests:read
+       ↘ capacidades/delegaciones por recurso
 ```
 
-## Permisos iniciales
-
-- `requests:read`
-- `requests:create`
-- `requests:approve`
-- `requests:close`
-- `config:manage`
-
-## Fórmula para usuarios operativos
+Persistencia IAM:
 
 ```text
-effective_permissions(user) =
-    direct permissions
-  ∪ permissions from direct roles
-  ∪ permissions from group roles
+permissions
+roles
+role_permissions
+user_groups
+group_members
+group_roles
+user_role_assignments
+user_permissions
+positions
+user_positions
+position_roles
+system_accounts
 ```
 
-No hay DENY explícito en esta versión. La ausencia de ALLOW produce DENY.
+La delegación de cierre se persiste aparte en `expense_closure_delegations` porque pertenece a una solicitud concreta, no a la organización global.
 
-## Política de `TECHNICAL_ADMIN`
+## Permisos IAM vigentes
 
-La cuenta técnica no usa la fórmula normal como autoridad final. `iam_service.py` aplica una política ambiental explícita sobre el catálogo de permisos activos.
+```text
+requests:read     baseline de consulta
+requests:create   crear nuevas solicitudes
+requests:approve  aprobar/votar/enviar a revisión
+areas:manage      administrar Áreas/Categorías
+config:manage     administración técnica system-only
+```
+
+`requests:close` permanece físicamente como registro **legacy inactivo** después de Alembic `0005`. No autoriza runtime ni debe configurarse para conseguir cierre/factura.
+
+Para usuario activo ordinario:
+
+```text
+effective_permissions =
+    {requests:read}
+  ∪ direct permissions
+  ∪ direct-role permissions
+  ∪ group-role permissions
+  ∪ position-role permissions
+  - {config:manage}
+```
+
+`requests:read` es baseline. `config:manage` es system-only: una asignación histórica/directa/heredada a un usuario ordinario no lo hace efectivo.
+
+## Configuración técnica vs Áreas
+
+### `config:manage`
+
+Reservado a cuentas persistidas en `system_accounts`.
+
+Gobierna la frontera técnica:
+
+```text
+Usuarios
+Organigrama
+Accesos / IAM
+Reglas
+Auditoría técnica
+```
+
+No debe usarse como permiso empresarial general.
+
+### `areas:manage`
+
+Permiso organizacional configurable. Puede llegar por:
+
+```text
+Permiso directo
+Rol directo
+Grupo → Rol
+Cargo → Rol
+```
+
+Gobierna:
+
+```text
+Áreas
+Categorías asociadas
+activación/desactivación
+relaciones Área ↔ Categoría
+```
+
+Alembic `0006` crea el Rol neutral `Gestor de áreas` con `areas:manage`, pero **no lo asigna por nombre** a ningún Grupo/Cargo.
+
+Una configuración de cliente puede ser, por ejemplo:
+
+```text
+Grupo Administración → Gestor de áreas
+Grupo Junta Directiva → Gestor de áreas
+```
+
+Los nombres son datos persistidos, no condiciones runtime.
+
+## Grupo y Cargo
+
+Cargo/Posición puede heredar Roles, pero su nombre no autoriza.
+
+```text
+Cargo Tesorero → Rol Aprobador → requests:approve
+```
+
+Grupo y Cargo son fuentes independientes y acumulativas. Prohibido autorizar con comparaciones de nombres.
+
+## Notificaciones de Cargo y permisos efectivos
+
+La comunicación al usuario también debe usar el IAM canónico.
+
+### Creación de usuario
+
+Después de aplicar las asignaciones iniciales, la invitación con contraseña temporal incluye:
+
+```text
+Cargo(s) activos
+Permisos efectivos
+```
+
+Los permisos se obtienen de `effective_permission_codes()` y se presentan con nombre legible + código.
+
+### Cambio de Cargo
+
+Cuando cambia realmente el conjunto `position_ids` de un usuario activo:
+
+1. se aplican los nuevos `UserPosition`;
+2. se recalculan permisos efectivos;
+3. se envía **Actualización de cargo y permisos**;
+4. si falla la entrega, la transacción se revierte y la API devuelve 502.
+
+Guardar el mismo conjunto de Cargos no genera notificación duplicada.
+
+Estas notificaciones no usan `UserRole`, `title` ni `can_*` como fuente de verdad.
+
+## Fuentes visibles
+
+`permission_sources()` puede explicar:
+
+```text
+Acceso base del producto
+Asignación directa
+Rol directo: Comprador
+Grupo Junta Directiva → Aprobador
+Cargo Tesorero → Aprobador
+```
+
+Una delegación de cierre no aparece como permiso efectivo porque **no es un permiso IAM**; se presenta en el contexto de la solicitud.
+
+## Capacidades por recurso
+
+### Cancelación
+
+```text
+can_cancel = estado cancelable AND (requester OR system_accounts)
+```
+
+### Corrección
+
+```text
+can_correct = estado corregible AND (requester OR system_accounts)
+```
+
+### Cierre/factura
+
+```text
+can_close =
+  status ∈ {APPROVED, CLOSED}
+  AND (requester OR system_accounts OR active_closure_delegate)
+```
+
+### Administración de delegación
+
+```text
+can_delegate_close = requester original
+```
+
+Solo el solicitante crea/cambia/revoca la delegación. El Administrador del sistema ya posee la excepción administrativa y no necesita una delegación.
+
+Por tanto:
+
+- `requests:create` no permite corregir/cancelar/cerrar solicitudes ajenas;
+- `requests:approve` no permite editar ni cerrar solicitudes ajenas;
+- `config:manage` no permite sustituir al solicitante;
+- `requests:close` legacy no concede nada en runtime;
+- Grupo/Rol/Cargo no amplían estas reglas por recurso;
+- frontend consume `can_cancel`, `can_correct`, `can_close`, `can_delegate_close`; backend siempre revalida.
+
+## Tareas contextuales
+
+```text
+APPROVAL_DECISION
+QUOTATION_VOTE
+CORRECT_REQUEST
+CLOSE_REQUEST
+```
+
+No son permisos IAM.
+
+### `APPROVAL_DECISION`
+
+```text
+requests:approve + Approval.PENDING asignado + PENDING_APPROVAL
+```
+
+### `QUOTATION_VOTE`
+
+```text
+requests:approve + invitación vigente + QUOTATION_VOTING + sin voto
+```
+
+### `CORRECT_REQUEST`
+
+```text
+NEEDS_REVISION + requested_by == current_user.email
+```
+
+### `CLOSE_REQUEST`
+
+```text
+APPROVED + (requester original OR active_closure_delegate)
+```
+
+El Administrador del sistema conserva facultad administrativa desde la lista, pero no recibe todas las solicitudes aprobadas como tareas personales.
+
+## Enviar a revisión
+
+Es una decisión dentro de una aprobación asignada, no un permiso nuevo:
+
+```text
+requests:approve
++ Approval.PENDING
++ comentario >= 3
+```
+
+Una `REVISION_REQUESTED` válida interrumpe inmediatamente:
+
+```text
+request → NEEDS_REVISION
+otros PENDING/WAITING → EXPIRED
+requester → CORRECT_REQUEST
+```
+
+No concede `can_correct` al aprobador.
+
+## `TECHNICAL_ADMIN`
+
+Identidad persistida en `system_accounts` y expuesta para UX como `is_system_account`.
 
 ### Producción
 
-Cuando:
-
-```env
-ENVIRONMENT=production
-```
-
-la cuenta técnica obtiene únicamente:
+IAM máximo:
 
 ```text
 config:manage
+areas:manage
 requests:read
 ```
 
-La política filtra cualquier asignación accidental de:
+No participa en aprobación/votación. Excepciones administrativas por recurso:
 
 ```text
-requests:create
-requests:approve
-requests:close
+can_cancel
+can_correct
+can_close
 ```
 
-y la excluye de poblaciones financieras para esos permisos.
+No administra delegaciones ordinarias en nombre del solicitante.
 
 ### No producción
 
-Para cualquier `ENVIRONMENT` distinto de `production`, incluidos `local`, `development`, `dev`, `test`, `staging` y `preview`:
+`ENVIRONMENT != production` obtiene todos los permisos IAM activos para pruebas E2E además de capacidades administrativas por recurso.
+
+## Consola autoritativa
+
+**Configuración → Accesos** administra IAM canónico y solo está disponible al System Admin.
+
+Un usuario ordinario con `areas:manage` ve **Configuración → Áreas** pero no Usuarios/Organigrama/Accesos.
+
+`AccessProfile`, `users.title`, `can_*`, `BOARD_CODES` y `requests:close` legacy son compatibilidad/deuda y no autoridad runtime.
+
+## Migraciones
 
 ```text
-TECHNICAL_ADMIN effective permissions = todos los permisos activos
+0004 → position_roles + importación legacy de Cargo/Perfil a IAM
+0005 → expense_closure_delegations + requests:close inactivo/legacy
+0006 → areas:manage + Rol Gestor de áreas + config:manage system-only documentado
 ```
 
-La cuenta puede probar end-to-end:
+Cadena completa actual termina en `20260818_0006`.
 
-- creación/corrección;
-- consulta;
-- aprobación;
-- votación de cotizaciones;
-- carga/reemplazo de factura;
-- cierre;
-- configuración.
+Feature 010 no requiere migración; reutiliza `UserPosition`, `Position` y el resolver IAM vigente.
 
-También puede aparecer en `users_with_permission('requests:approve')` fuera de producción.
+## Pruebas mínimas
 
-Esta elevación no se persiste como permisos financieros en el rol system-managed. Cambiar el runtime a `ENVIRONMENT=production` restablece la segregación sin migración de datos.
-
-## Ambiente vs hosting
-
-`Settings` mantiene dos conceptos separados:
-
-```text
-is_production_environment
-→ solo ENVIRONMENT=production
-→ gobierna autorización de cuenta técnica
-
-is_production
-→ production o runtime alojado como Render
-→ gobierna validaciones estrictas de secretos/CORS
-```
-
-Por tanto un preview alojado puede exigir secretos fuertes y, a la vez, permitir pruebas funcionales completas si `ENVIRONMENT` no es `production`.
-
-## Contrato de permisos del usuario actual
-
-El backend expone:
-
-```text
-permission_codes
-```
-
-como lista canónica de permisos efectivos.
-
-Compatibilidad temporal:
-
-```text
-can_request   = requests:create
-can_approve   = requests:approve
-can_view      = requests:read
-can_configure = config:manage
-can_close     = requests:close
-```
-
-`apply_effective_permissions_to_user()` deriva estos valores. No se usan como fuente de autorización.
-
-## Administración gráfica
-
-`Configuración → Accesos` expone:
-
-- Usuarios;
-- Grupos;
-- Roles;
-- Permisos;
-- Cargos;
-- asignaciones;
-- permisos efectivos y su origen.
-
-Los permisos del producto son lectura/configuración de capacidades disponibles. La organización configura roles y asignaciones.
-
-Para cuentas técnicas, `permission_sources()` identifica si el acceso proviene de:
-
-```text
-Política de cuenta técnica (producción)
-```
-
-o:
-
-```text
-Acceso de prueba de cuenta técnica (no producción)
-```
-
-## APIs
-
-Base `/api/iam`:
-
-```text
-GET  /me/permissions
-GET  /permissions
-GET  /roles
-POST /roles
-PATCH /roles/{id}
-GET  /groups
-POST /groups
-PATCH /groups/{id}
-PUT/DELETE /groups/{group_id}/roles/{role_id}
-PUT/DELETE /groups/{group_id}/members/{user_id}
-PUT/DELETE /users/{user_id}/roles/{role_id}
-PUT/DELETE /users/{user_id}/permissions/{code}
-GET /users/{user_id}/effective-permissions
-GET/POST/PATCH /positions...
-```
-
-Base `/api/iam/users` ofrece administración neutral de usuarios y sus asignaciones.
-
-## Participación en workflows
-
-Aprobadores/votantes se descubren por `requests:approve` usando `users_with_permission()`.
-
-No se consulta:
-
-- `UserRole.APPROVER`;
-- `can_approve` persistido;
-- cargo Presidente/Tesorero/etc.;
-- grupo con nombre particular.
-
-Comportamiento de cuenta técnica:
-
-- producción: excluida de poblaciones financieras;
-- no producción: puede participar para pruebas si el flujo no la excluye por otra razón, por ejemplo ser el solicitante.
-
-Las invitaciones de una votación representan el snapshot de participantes de esa ronda.
-
-## Compatibilidad legacy
-
-Los campos `role`, `title` y `can_*` aún existen en `users` por compatibilidad. En requests autenticados, `current_user()` deriva los `can_*` desde IAM.
-
-`UserOut.permission_codes` y `UserOut.can_close` permiten migrar el frontend hacia capacidades reales.
-
-El frontend monolítico todavía contiene bypasses visuales legacy como `user.role === "ADMIN"` y un `canClose={true}`. No son autoridad y deben retirarse en la modularización del frontend.
-
-## Evolución futura
-
-Posibles extensiones:
-
-- scopes por organización;
-- scopes por Área/recurso;
-- DENY explícito con precedencia;
-- SSO/OIDC;
-- SCIM;
-- grupos jerárquicos;
-- permisos temporales;
-- aprobaciones de cambios IAM;
-- auditoría IAM completa append-only.
+- permiso directo / Rol directo / Grupo→Rol / Cargo→Rol;
+- Cargo inactivo y fuentes efectivas;
+- `areas:manage` para usuario ordinario sin acceso IAM técnico;
+- `config:manage` legacy ignorado para usuario ordinario;
+- `is_system_account` explícito en sesión;
+- invitación incluye Cargo(s) y permisos efectivos;
+- cambio real de Cargo recalcula/notifica permisos;
+- guardar mismo Cargo no duplica correo;
+- fallo del correo de Cargo revierte la actualización;
+- política técnica producción/no-producción;
+- `can_cancel` requester/Admin;
+- `can_correct` requester/Admin;
+- `CORRECT_REQUEST` solo solicitante;
+- `can_close` requester/Admin/delegado;
+- `requests:close` legacy no autoriza tercero;
+- solo solicitante administra delegación;
+- revocación elimina autoridad;
+- `CLOSE_REQUEST` requester/delegado;
+- una sola delegación activa por solicitud.

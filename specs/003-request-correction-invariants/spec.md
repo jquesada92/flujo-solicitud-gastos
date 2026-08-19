@@ -1,65 +1,105 @@
 # Especificación funcional — Correcciones de solicitudes
 
 **Feature:** 003-request-correction-invariants  
-**Estado:** Implementación en PR #6  
-**Fecha:** 2026-08-17  
-**Constitución:** 2.3.3
+**Estado:** Implementada y extendida por Feature 007  
+**Fecha:** 2026-08-18  
+**Constitución:** 2.6.0
 
 ## Objetivo
 
-Garantizar que **Corregir / reenviar** modifique los datos de una solicitud sin cambiar accidentalmente la naturaleza de su flujo y sin depender del estado previo de las pestañas de creación.
+Garantizar que **Corregir / reenviar** modifique los datos de una solicitud sin cambiar accidentalmente la naturaleza de su flujo, sin depender del estado previo de las pestañas de creación y sin permitir que un tercero edite una solicitud ajena.
 
-## Problema detectado
-
-El formulario legacy mantenía `requestType` como estado React compartido entre creación y corrección. La pestaña por defecto al entrar a Solicitudes es `SIMPLE`. En pruebas manuales se confirmó que una solicitud en `QUOTATION_VOTING` podía seguir renderizando el formulario sencillo al pulsar **Corregir / reenviar**.
-
-La protección mediante reemplazos granulares en `vite.config.js` no era una frontera suficientemente mantenible: el source real de `ExpenseForm` seguía siendo el legacy y podían existir discrepancias entre lo esperado por la regla funcional y el formulario visible.
+Feature 003 conserva los invariants SIMPLE/MULTI_QUOTE. Feature 007 define la autoridad de corrección y el handoff **Enviar a revisión → solicitante corrige**.
 
 ## Historias de usuario
 
-### US-001 — Corregir una solicitud MULTI_QUOTE
+### US-001 — Corregir una solicitud propia
 
-Como usuario con permiso `requests:create`, cuando corrijo una solicitud de múltiples cotizaciones quiero volver a ver las opciones existentes y editarlas sin que la solicitud se convierta en sencilla.
+Como solicitante original, cuando debo corregir una solicitud quiero volver a editarla y reenviarla conservando el tipo y la evidencia existente.
 
-### US-002 — Preservar el tipo de solicitud
+### US-002 — Administración excepcional
 
-Como responsable del proceso quiero que una corrección conserve el tipo real del flujo para que un valor por defecto del frontend o un dato legacy inconsistente no pueda cambiar las reglas de negocio.
+Como Administrador del sistema protegido, necesito poder corregir/reenviar una solicitud abierta como acción administrativa del ciclo de vida, sin adquirir permisos financieros en producción.
 
-### US-003 — Aislar el editor del estado previo
+### US-003 — Preservar el tipo
 
-Como usuario quiero que el resultado de pulsar **Corregir / reenviar** sea exactamente el mismo independientemente de si antes estaba seleccionada la pestaña **Solicitud sencilla** o **Múltiples cotizaciones**.
+Como responsable del proceso quiero que una corrección conserve el tipo real del flujo para que un valor por defecto del frontend o un dato legacy inconsistente no cambie las reglas de negocio.
 
-### US-004 — Reiniciar la votación corregida
+### US-004 — Aislar el editor del estado previo
 
-Como aprobador quiero que una solicitud MULTI_QUOTE corregida inicie una ronda nueva, con un `flow_id` nuevo, sin reutilizar votos ni invitaciones de la ronda anterior.
+Como usuario autorizado a corregir quiero que el editor sea el mismo independientemente de si antes estaba seleccionada la pestaña **Solicitud sencilla** o **Múltiples cotizaciones**.
 
-### US-005 — Conservar evidencia existente
+### US-005 — Reiniciar la ronda MULTI_QUOTE
+
+Como aprobador quiero que una MULTI_QUOTE corregida inicie una ronda nueva, con `flow_id` nuevo, sin reutilizar votos ni invitaciones de la ronda anterior.
+
+### US-006 — Conservar evidencia
 
 Como auditor quiero que los soportes/cotizaciones ya cargados permanezcan asociados a sus opciones cuando una corrección solo modifica proveedor, monto, URL u observaciones.
+
+## Autoridad para corregir
+
+**Corregir / reenviar es una capacidad por recurso.** Solo pueden ejecutarla:
+
+1. el solicitante original; o
+2. el Administrador del sistema identificado mediante `system_accounts`.
+
+No autorizan corrección de solicitudes ajenas:
+
+- `requests:create`;
+- `requests:approve`;
+- `config:manage`;
+- Grupo;
+- Rol;
+- Cargo/Posición;
+- `UserRole` o `can_*` legacy.
+
+Un aprobador que detecte un problema debe usar **Enviar a revisión** con comentario obligatorio. Esa transición y el handoff al solicitante pertenecen a Feature 007.
+
+El backend expone `can_correct` por solicitud para UX y vuelve a autorizar siempre en `PUT /api/expenses/{request_id}/resubmit`.
 
 ## Reglas funcionales
 
 1. `SIMPLE` corregida MUST permanecer `SIMPLE`.
 2. `MULTI_QUOTE` corregida MUST permanecer `MULTI_QUOTE`.
 3. El estado de las pestañas de creación MUST descartarse al entrar en modo corrección.
-4. El editor de corrección MUST decidir su layout completo desde el tipo canónico de la solicitud seleccionada.
-5. Si el tipo canónico es `MULTI_QUOTE`, el formulario sencillo MUST NOT renderizar monto/proveedor/soporte único como estructura principal; MUST renderizar las opciones de cotización.
-6. Cambiar de una solicitud en corrección a otra MUST volver a derivar el tipo desde la nueva solicitud.
-7. `PUT /api/expenses/{request_id}/resubmit` MUST rechazar con `409` un intento real de cambiar el tipo canónico de la solicitud.
-8. Si una fila legacy tiene `request_type=SIMPLE` pero posee evidencia durable de flujo múltiple —dos o más `quotation_options` o estado `QUOTATION_VOTING`— MUST tratarse y repararse como `MULTI_QUOTE`.
-9. Una corrección MULTI_QUOTE MUST restaurar en la UI las cotizaciones existentes.
-10. Una corrección MULTI_QUOTE MUST conservar los soportes existentes de cada opción.
-11. Una corrección MULTI_QUOTE MUST generar un `flow_id` nuevo.
-12. Los votos actuales (`quotation_votes`) de la ronda anterior MUST invalidarse/eliminarse como estado vigente.
-13. Las invitaciones actuales MUST reemplazarse por nuevas invitaciones para la nueva ronda.
-14. El historial append-only de eventos de rondas anteriores no debe reescribirse.
-15. La población nueva se resuelve mediante el permiso efectivo `requests:approve`.
-16. La corrección conserva por ahora la cantidad de opciones existente. Puede editar proveedor, monto, URL y observaciones de cada opción.
-17. Cambiar deliberadamente `SIMPLE ↔ MULTI_QUOTE` será, si se requiere, una operación funcional explícita distinta; no forma parte de `Corregir / reenviar`.
+4. El editor MUST decidir su layout completo desde el tipo canónico de la solicitud seleccionada.
+5. Si el tipo canónico es `MULTI_QUOTE`, el formulario SIMPLE MUST NOT renderizarse como estructura principal.
+6. Cambiar a otra solicitud en corrección MUST volver a derivar el tipo desde esa solicitud.
+7. `PUT /api/expenses/{request_id}/resubmit` MUST devolver 403 a un actor que no sea solicitante ni Administrador del sistema.
+8. `PUT /api/expenses/{request_id}/resubmit` MUST rechazar con 409 un cambio real del tipo canónico.
+9. Si una fila legacy tiene `request_type=SIMPLE` pero evidencia durable de flujo múltiple, MUST tratarse/repararse como `MULTI_QUOTE`.
+10. Una corrección MULTI_QUOTE MUST restaurar cotizaciones y soportes existentes.
+11. Una corrección MULTI_QUOTE MUST generar `flow_id` nuevo.
+12. Votos e invitaciones vigentes de la ronda anterior MUST dejar de ser estado activo.
+13. Las invitaciones nuevas MUST resolverse desde `requests:approve` y MUST excluir al **solicitante original**, incluso si el Administrador del sistema ejecutó la corrección.
+14. Los eventos históricos append-only MUST conservarse.
+15. Por ahora la corrección MULTI_QUOTE conserva la cantidad de opciones y permite editar su contenido.
+16. Cambiar deliberadamente `SIMPLE ↔ MULTI_QUOTE` requiere una operación funcional distinta.
+
+## Estados corregibles
+
+Por los actores autorizados:
+
+```text
+QUOTATION_VOTING
+SUBMITTED
+PENDING_APPROVAL
+NEEDS_REVISION
+APPROVED
+REJECTED
+```
+
+No corregibles:
+
+```text
+CLOSED
+CANCELLED
+```
 
 ## Resolución del tipo canónico
 
-Para compatibilidad con datos históricos, el sistema reconoce `MULTI_QUOTE` cuando se cumple cualquiera de estas condiciones durables:
+Para compatibilidad histórica:
 
 ```text
 request_type == MULTI_QUOTE
@@ -67,13 +107,11 @@ OR status == QUOTATION_VOTING
 OR quotation_options >= 2
 ```
 
-Alembic repara las filas persistidas inconsistentes y el endpoint canónico mantiene la misma inferencia defensiva durante la transición.
+Alembic `20260817_0003_backfill_multi_quote_request_type.py` repara las filas persistidas inconsistentes y el endpoint conserva la inferencia defensiva.
 
 ## Evidencia/archivos
 
-Los navegadores no permiten prellenar un `<input type="file">`. Por ello, el frontend representa un soporte ya existente mediante metadata (`existing_attachment`) y no obliga al usuario a volver a cargarlo para validar la corrección.
-
-La evidencia existente se preserva. Cargar un archivo nuevo sigue siendo una acción explícita posterior al resubmit mediante el endpoint de documentos correspondiente.
+Los navegadores no permiten prellenar `<input type="file">`. El frontend representa un soporte ya existente mediante metadata (`existing_attachment`) y no obliga a volver a cargarlo para validar la corrección.
 
 ## Frontend modular
 
@@ -83,26 +121,25 @@ El formulario canónico vive en:
 frontend/src/expense-form.jsx
 ```
 
-`resolveRequestType(draft)` deriva el tipo canónico del draft y `effectiveRequestType` gobierna de forma única:
+`resolveRequestType(draft)` y `effectiveRequestType` gobiernan layout, validación, payload y uploads.
 
-- layout/renderizado;
-- validaciones;
-- payload `request_type`;
-- campos SIMPLE;
-- opciones MULTI_QUOTE;
-- carga posterior de soportes.
+Mientras `ExpenseTable` permanezca en `main.jsx`, la visibilidad de **Corregir / reenviar** se adapta temporalmente en build a `x.can_correct`. La autoridad real es el backend.
 
-Durante una corrección no existe selector editable de tipo; se muestra el tipo como dato de solo lectura.
+## Migraciones
 
-Mientras `main.jsx` siga conteniendo la definición legacy, `vite.config.js` realiza una única extracción de transición: importa el componente modular y elimina del bundle la función legacy completa. Ya no modifica granularmente condiciones internas del formulario.
+Feature 003 usa `0003` para reparar `request_type`. Feature 007 no agrega columnas/tablas nuevas.
 
-## Migración de datos
+La cadena global de la rama es actualmente:
 
-`20260817_0003_backfill_multi_quote_request_type.py` corrige filas históricas cuyo `request_type` no refleja la evidencia de múltiples cotizaciones. Es una migración de reparación de datos, no una transformación destructiva de evidencia.
+```text
+0000 → 0001 → 0002 → 0003 → 0004
+```
+
+`0004` corresponde a Feature 006 y es independiente de la autorización de corrección.
 
 ## Fuera de alcance
 
 - cambiar la cantidad de cotizaciones durante una corrección;
-- reglas nuevas de quorum/empate;
 - convertir una solicitud entre SIMPLE y MULTI_QUOTE;
-- revisión inmutable completa mediante una entidad `RequestRevision` separada.
+- una entidad `RequestRevision` inmutable separada;
+- cambiar la fórmula de mayoría de aprobación salvo la interrupción específica `REVISION_REQUESTED` definida en Feature 007.
