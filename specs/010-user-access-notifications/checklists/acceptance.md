@@ -30,11 +30,11 @@
 
 - [x] Constitución revisada; permanece 2.8.0.
 - [x] spec/plan/checklist Feature 010.
-- [ ] EMAIL_CONFIGURATION actualizado.
-- [ ] IAM_MODEL actualizado.
+- [x] EMAIL_CONFIGURATION actualizado.
+- [x] IAM_MODEL actualizado.
+- [x] docs/README actualizado.
+- [x] HISTORY actualizado.
+- [x] CHANGELOG actualizado.
 - [ ] README principal actualizado.
 - [ ] PROMPT_RECONSTRUCCION actualizado.
-- [ ] docs/README actualizado.
-- [ ] HISTORY actualizado.
-- [ ] CHANGELOG actualizado.
 - [ ] PR #9 actualizado.
