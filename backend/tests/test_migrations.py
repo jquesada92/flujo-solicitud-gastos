@@ -89,7 +89,9 @@ class MigrationTopologyTests(unittest.TestCase):
         self.assertIn("'requests:approve'", migration)
         self.assertIn('user_role_assignments', migration)
         self.assertIn('position_roles', migration)
-        self.assertIn('migration-time bootstrap only', migration)
+        self.assertIn('group_roles', migration)
+        self.assertIn('structural bootstrap', migration)
+        self.assertIn('bootstrap only', migration)
         for organizational_name in ('PRESIDENTE', 'VICEPRESIDENTE', 'TESORERO', 'VOCERO'):
             self.assertNotIn(organizational_name, migration)
 
