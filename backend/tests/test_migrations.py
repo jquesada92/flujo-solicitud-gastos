@@ -12,8 +12,9 @@ class MigrationTopologyTests(unittest.TestCase):
         config.set_main_option('script_location', str(backend_dir / 'alembic'))
         script = ScriptDirectory.from_config(config)
 
-        self.assertEqual(script.get_heads(), ['20260819_0007'])
+        self.assertEqual(script.get_heads(), ['20260819_0008'])
         revisions = {revision.revision: revision.down_revision for revision in script.walk_revisions()}
+        self.assertEqual(revisions['20260819_0008'], '20260819_0007')
         self.assertEqual(revisions['20260819_0007'], '20260818_0006')
         self.assertEqual(revisions['20260818_0006'], '20260818_0005')
         self.assertEqual(revisions['20260818_0005'], '20260818_0004')
@@ -94,6 +95,23 @@ class MigrationTopologyTests(unittest.TestCase):
         self.assertIn('bootstrap only', migration)
         for organizational_name in ('PRESIDENTE', 'VICEPRESIDENTE', 'TESORERO', 'VOCERO'):
             self.assertNotIn(organizational_name, migration)
+
+    def test_expense_area_category_migration_renames_without_rewriting_data(self):
+        backend_dir = Path(__file__).resolve().parents[1]
+        migration = (
+            backend_dir
+            / 'alembic'
+            / 'versions'
+            / '20260819_0008_expense_area_category_columns.py'
+        ).read_text(encoding='utf-8')
+
+        self.assertIn("revision = '20260819_0008'", migration)
+        self.assertIn("down_revision = '20260819_0007'", migration)
+        self.assertIn("op.alter_column('expenses', 'expense_type', new_column_name='expense_area')", migration)
+        self.assertIn("op.alter_column('expenses', 'expense_subcategory', new_column_name='expense_category')", migration)
+        self.assertIn('ix_expenses_expense_area', migration)
+        self.assertIn("op.alter_column('expenses', 'expense_category', new_column_name='expense_subcategory')", migration)
+        self.assertIn("op.alter_column('expenses', 'expense_area', new_column_name='expense_type')", migration)
 
 
 if __name__ == '__main__':
