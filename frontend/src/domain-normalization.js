@@ -140,12 +140,24 @@ function productTerminology(text) {
   return userTerminology(classificationTerminology(text));
 }
 
+function isCanonicalExpenseFormNode(node) {
+  const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+  return Boolean(element?.closest?.('#expense-form'));
+}
+
+function terminologyForNode(node, text) {
+  // The modular expense form already uses the canonical labels Área and Categoría.
+  // Applying the legacy classification adapter there would turn Categoría into Área,
+  // causing both selectors to be shown as Área.
+  return isCanonicalExpenseFormNode(node) ? userTerminology(text) : productTerminology(text);
+}
+
 function normalizeTextNodes(root) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const nodes = [];
   while (walker.nextNode()) nodes.push(walker.currentNode);
   for (const node of nodes) {
-    const normalized = productTerminology(node.nodeValue);
+    const normalized = terminologyForNode(node, node.nodeValue);
     if (normalized !== node.nodeValue) node.nodeValue = normalized;
   }
 
@@ -154,7 +166,7 @@ function normalizeTextNodes(root) {
       for (const attribute of ['placeholder', 'aria-label', 'title']) {
         if (!element.hasAttribute(attribute)) continue;
         const value = element.getAttribute(attribute);
-        const normalized = productTerminology(value);
+        const normalized = terminologyForNode(element, value);
         if (normalized !== value) element.setAttribute(attribute, normalized);
       }
     }
@@ -165,7 +177,7 @@ const observer = new MutationObserver((records) => {
   for (const record of records) {
     for (const node of record.addedNodes) {
       if (node.nodeType === Node.TEXT_NODE) {
-        const normalized = productTerminology(node.nodeValue);
+        const normalized = terminologyForNode(node, node.nodeValue);
         if (normalized !== node.nodeValue) node.nodeValue = normalized;
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         normalizeTextNodes(node);
