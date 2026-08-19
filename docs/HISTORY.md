@@ -1,5 +1,80 @@
 # Historial funcional y técnico
 
+## 2026-08-18 — Configuración técnica se separa de Gestión de Áreas
+
+### Problema observado
+
+El menú **Configuración** mostraba **Usuarios / Organigrama / Accesos** a actores que no debían administrar la plataforma técnicamente. Al mismo tiempo, la gestión de Áreas dependía de `config:manage`, por lo que no era posible delegar el catálogo organizacional sin entregar una capacidad demasiado amplia.
+
+### Decisión funcional
+
+Se separan dos fronteras:
+
+```text
+System Admin (system_accounts)
+→ Usuarios
+→ Organigrama
+→ Accesos
+→ Áreas
+→ configuración técnica
+
+Usuario ordinario con areas:manage
+→ Áreas solamente
+```
+
+`config:manage` pasa a ser **system-only**. Para usuarios ordinarios, una asignación directa, por Rol, Grupo o Cargo se ignora al calcular permisos efectivos.
+
+Se incorpora:
+
+```text
+areas:manage
+```
+
+como permiso organizacional configurable.
+
+### Neutralidad
+
+El producto no comprueba nombres como Administración o Junta Directiva. Alembic `0006` crea el Rol neutral:
+
+```text
+Gestor de áreas → areas:manage
+```
+
+pero no lo asigna a ningún Grupo/Cargo por nombre. La asociación se realiza desde Accesos según los datos configurados por cada organización.
+
+### Backend
+
+- `iam_service.py` incorpora `SYSTEM_ONLY_PERMISSION_CODES={'config:manage'}`.
+- la política de producción del System Admin queda `requests:read + areas:manage + config:manage`.
+- `users_with_permission('config:manage')` resuelve solo cuentas protegidas.
+- `/api/areas` usa `areas:manage` para mutaciones e inactivos.
+- `UserOut` expone `is_system_account` calculado desde persistencia.
+
+### Frontend
+
+El bridge temporal de Vite reemplaza inferencias legacy por:
+
+```text
+isSystemAdmin = user.is_system_account
+canManageAreas = isSystemAdmin OR areas:manage
+```
+
+**Accesos** solo se inyecta en el menú marcado `data-system-admin=true`.
+
+### Migración
+
+Nueva cadena:
+
+```text
+0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006
+```
+
+`0006` crea/upserta `areas:manage`, crea `area-manager / Gestor de áreas` y actualiza la descripción técnica de `config:manage`.
+
+La Constitución evoluciona a **2.8.0** / Feature 009.
+
+---
+
 ## 2026-08-18 — Hardening del bridge Vite de delegación de cierre
 
 Durante la validación local de Feature 008, `npm run build` falló con:
@@ -69,7 +144,7 @@ El source legacy todavía contiene `canClose={true}` físicamente; el bridge tem
 
 ### Migración
 
-Cadena actual:
+Cadena hasta Feature 008:
 
 ```text
 0000 → 0001 → 0002 → 0003 → 0004 → 0005
@@ -214,6 +289,7 @@ Los nombres organizacionales como Presidente, Tesorero o Junta Directiva son dat
 
 - `UserRole`, `users.title`, `can_*`, `AccessProfile`, `BOARD_CODES`, `/api/users` legacy y `requests:close` inactivo permanecen físicamente como compatibilidad.
 - `main.jsx` sigue monolítico en partes; Vite mantiene bridges transitorios hasta modularizar `ExpenseTable`/shell.
+- la consola IAM puede seguir mostrando referencias legacy a `config:manage`, aunque runtime lo filtre para usuarios ordinarios; retirar esa deuda visual sigue pendiente.
 - fórmula completa de quorum/mayoría APPROVED/REJECTED y empate MULTI_QUOTE siguen como deuda separada;
 - edición estructural de opciones MULTI_QUOTE y outbox/retry persistente de correo siguen pendientes.
 - GitHub Actions agotó cuota durante PR #9; mientras tanto los gates deben ejecutarse localmente.
