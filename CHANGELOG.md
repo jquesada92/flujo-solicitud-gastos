@@ -18,10 +18,16 @@
 - `iam-admin.jsx` solo inyecta **Accesos** en menú marcado como System Admin.
 - Constitución actualizada a **2.8.0**.
 
+### Fixed
+- El bridge temporal de Vite que protege la inyección de **Accesos** deja de depender de una coincidencia multilinea literal de `iam-admin.jsx`.
+- `protectAccessMenuInjection()` usa una regex estructural tolerante a whitespace y LF/CRLF, exige exactamente una coincidencia y conserva fail-fast ante código ambiguo.
+- Se corrige el build local de Vite 8.2.1 que fallaba con `Legacy main.jsx extraction could not find: system-only access menu injection`; el rerun local permanece como gate de aceptación hasta confirmación del desarrollador.
+
 ### Security
 - asignaciones legacy de `config:manage` a usuarios ordinarios dejan de producir permiso efectivo.
 - nombres de Grupos/Cargos como Administración o Junta Directiva no participan en autorización.
 - `0006` no asigna automáticamente `Gestor de áreas` a ningún nombre organizacional.
+- el bridge remueve cualquier botón **Accesos** de un menú no marcado `data-system-admin=true`.
 
 ### Migrations
 - Cadena actual: `0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006`.
@@ -32,6 +38,7 @@
 - usuario ordinario con `config:manage` legacy sigue bloqueado.
 - login/`/auth/me` distinguen `is_system_account`.
 - contratos frontend protegen separación de menú y Accesos system-only.
+- `test_frontend_configuration_access.py` verifica que el bridge use `matchAll`, `\s*`, unicidad y no vuelva a `replaceRequired()` para el guard de inyección.
 
 ---
 
