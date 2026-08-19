@@ -72,6 +72,49 @@ Al crear una solicitud:
 
 Si posteriormente se desactiva una relación Área-Categoría, las solicitudes históricas no se modifican.
 
+## Administración del catálogo
+
+La gestión de Áreas/Categorías está separada de la administración técnica del sistema.
+
+Permiso:
+
+```text
+areas:manage
+```
+
+Un usuario con `areas:manage` puede crear/editar/activar/desactivar Áreas, administrar el catálogo de Categorías y las relaciones Área ↔ Categoría.
+
+Puede recibir ese permiso mediante:
+
+```text
+Rol directo
+Grupo → Rol
+Cargo → Rol
+Permiso directo
+```
+
+El Administrador del sistema también posee `areas:manage` por política de `system_accounts`.
+
+`config:manage` **no es necesario** para administrar el catálogo y queda reservado para administración técnica.
+
+Nombres como Administración o Junta Directiva pueden ser Grupos/Cargos configurados por el cliente, pero el backend no los consulta para decidir acceso.
+
+## API canónica
+
+```text
+GET    /api/areas
+POST   /api/areas
+PATCH  /api/areas/{id}
+GET    /api/areas/categories
+POST   /api/areas/categories
+PATCH  /api/areas/categories/{id}
+POST   /api/areas/{id}/categories
+POST   /api/areas/{id}/categories/{category_id}
+DELETE /api/areas/{id}/categories/{category_id}
+```
+
+Las lecturas activas necesarias para clasificar solicitudes permanecen disponibles a usuarios autenticados. Las mutaciones y la consulta de elementos inactivos requieren `areas:manage`.
+
 ## Reportes esperados
 
 Este modelo permite analizar:
@@ -112,6 +155,8 @@ expense_area_categories
 ```
 
 La tabla legacy `expense_subcategories` se mantiene temporalmente sincronizada como puente de compatibilidad con validaciones y datos históricos del MVP.
+
+El frontend legacy todavía traduce `/api/categories` hacia `/api/areas` mediante `domain-normalization.js`; es compatibilidad transitoria, no el contrato de dominio objetivo.
 
 ## Regla de diseño
 
