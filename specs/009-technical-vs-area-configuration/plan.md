@@ -66,6 +66,8 @@ El menú Configuración existe si hay al menos una opción visible.
 
 `iam-admin.jsx` solo inyecta **Accesos** cuando el menú está marcado `data-system-admin=true`.
 
+Mientras esa inyección siga implementada mediante el bridge Vite temporal, la transformación debe localizar el guard de `injectAccessMenu()` mediante una expresión regular tolerante a espacios y finales de línea LF/CRLF. Debe exigir exactamente una coincidencia y abortar el build si encuentra cero o múltiples guards; no puede depender de una secuencia literal de indentación/saltos de línea.
+
 ## 6. Migración
 
 Crear `0006` después de `0005`:
@@ -104,7 +106,8 @@ Frontend contract:
 
 - Usuarios/Organigrama/Accesos usan system identity;
 - Áreas usa `areas:manage`;
-- Accesos no se inyecta a menú no técnico.
+- Accesos no se inyecta a menú no técnico;
+- el bridge de Accesos es tolerante a whitespace/LF/CRLF, conserva fail-fast y no usa `replaceRequired()` con un bloque multilinea literal para ese guard.
 
 Migración:
 
