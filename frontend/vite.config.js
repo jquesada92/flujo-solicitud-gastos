@@ -94,6 +94,20 @@ function injectClosureDelegationButton(source) {
   );
 }
 
+function replaceAuditMenuVisibility(source) {
+  const pattern = /\{\s*canConfigure\s*&&\s*\(\s*<button\s+onClick=\{\(\)\s*=>\s*navigateTo\("audit"\)\}>\s*Auditoría\s*<\/button>\s*\)\s*\}/g;
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length !== 1) {
+    throw new Error(
+      `Legacy main.jsx audit menu extraction expected 1 guard, found ${matches.length}`,
+    );
+  }
+  return source.replace(
+    pattern,
+    '{canReadConfiguration && (\n            <button onClick={() => navigateTo("audit")}>Auditoría</button>\n          )}',
+  );
+}
+
 function replaceConfigurationAccess(source) {
   let next = replaceRequired(
     source,
@@ -119,12 +133,7 @@ function replaceConfigurationAccess(source) {
     'canAccessOrganization = canReadConfiguration;',
     "organization visibility capability",
   );
-  next = replaceRequired(
-    next,
-    '{canConfigure && (\n            <button onClick={() => navigateTo("audit")}>Auditoría</button>\n          )}',
-    '{canReadConfiguration && (\n            <button onClick={() => navigateTo("audit")}>Auditoría</button>\n          )}',
-    "audit menu visibility",
-  );
+  next = replaceAuditMenuVisibility(next);
   next = replaceRequired(
     next,
     '{configOpen && <div className="config-menu-items">',
