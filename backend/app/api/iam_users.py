@@ -1,3 +1,4 @@
+import logging
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,13 +22,14 @@ from app.models.iam import (
     UserRoleAssignment,
 )
 from app.schemas.iam_user import IamUserCreate, IamUserOut, IamUserUpdate
-from app.services.email_service import send_user_invitation
+from app.services.email_service import send_user_access_update, send_user_invitation
 from app.services.iam_service import (
     effective_permission_codes,
     is_system_account,
     permission_sources,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(require_permission('config:manage'))])
 
 
@@ -37,6 +39,31 @@ def _full_name(user: User) -> str:
         for item in (user.first_name, user.middle_name, user.last_name, user.second_last_name)
         if item and item.strip()
     ) or user.name
+
+
+def _position_names(db: Session, user_id: int) -> list[str]:
+    return list(db.scalars(
+        select(Position.name)
+        .join(UserPosition, UserPosition.position_id == Position.id)
+        .where(UserPosition.user_id == user_id)
+        .order_by(Position.name)
+    ).all())
+
+
+def _permission_labels(db: Session, user_id: int) -> list[str]:
+    codes = effective_permission_codes(db, user_id)
+    if not codes:
+        return []
+    rows = db.execute(
+        select(Permission.name, Permission.code)
+        .where(Permission.code.in_(codes), Permission.active.is_(True))
+        .order_by(Permission.name, Permission.code)
+    ).all()
+    return [f'{name} ({code})' for name, code in rows]
+
+
+def _access_email_context(db: Session, user_id: int) -> tuple[list[str], list[str]]:
+    return _position_names(db, user_id), _permission_labels(db, user_id)
 
 
 def _out(db: Session, user: User) -> IamUserOut:
@@ -231,8 +258,14 @@ def create_user(payload: IamUserCreate, db: Session = Depends(get_db)):
         )
         db.flush()
         _sync_legacy_display_fields(db, user)
+        positions, permissions = _access_email_context(db, user.id)
         if user.active:
-            send_user_invitation(user, temporary_password)
+            send_user_invitation(
+                user,
+                temporary_password,
+                positions=positions,
+                permissions=permissions,
+            )
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -254,6 +287,11 @@ def update_user(user_id: int, payload: IamUserUpdate, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail='Usuario no encontrado')
     if db.scalar(select(SystemAccount.id).where(SystemAccount.user_id == user.id)):
         raise HTTPException(status_code=409, detail='La cuenta técnica se administra mediante el bootstrap de despliegue')
+
+    previous_position_ids = set(db.scalars(
+        select(UserPosition.position_id).where(UserPosition.user_id == user.id)
+    ).all())
+    previous_positions = _position_names(db, user.id)
 
     changes = payload.model_dump(
         exclude_unset=True,
@@ -291,6 +329,25 @@ def update_user(user_id: int, payload: IamUserUpdate, db: Session = Depends(get_
     )
     db.flush()
     _sync_legacy_display_fields(db, user)
+
+    current_position_ids = set(db.scalars(
+        select(UserPosition.position_id).where(UserPosition.user_id == user.id)
+    ).all())
+    position_changed = payload.position_ids is not None and previous_position_ids != current_position_ids
+    positions, permissions = _access_email_context(db, user.id)
+
     db.commit()
     db.refresh(user)
+
+    if position_changed:
+        try:
+            send_user_access_update(
+                user,
+                previous_positions=previous_positions,
+                positions=positions,
+                permissions=permissions,
+            )
+        except Exception:
+            logger.exception('Could not send cargo update email for user_id=%s', user.id)
+
     return _out(db, user)
