@@ -32,10 +32,23 @@ class FrontendDashboardContractTests(unittest.TestCase):
         self.assertIn('Votar por esta opción', source)
         self.assertIn('Subir factura y cerrar', source)
 
+    def test_closure_pending_action_reuses_existing_delegation_component(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'home-dashboard.jsx').read_text(encoding='utf-8')
+        css = (REPO_ROOT / 'frontend' / 'src' / 'home-dashboard.css').read_text(encoding='utf-8')
+        self.assertIn('import ClosureDelegationButton from "./closure-delegation.jsx";', source)
+        self.assertIn('request.can_delegate_close && <ClosureDelegationButton', source)
+        self.assertIn('api={dashboardApi}', source)
+        self.assertIn('onChanged={onDelegationChanged}', source)
+        self.assertIn('buttonClassName="pending-action-secondary"', source)
+        self.assertIn('overlayClassName="confirm-overlay pending-action-delegation-overlay"', source)
+        self.assertIn('.pending-action-delegation-overlay', css)
+        self.assertIn('z-index: 1300;', css)
+
     def test_dashboard_revalidates_actions_after_each_mutation(self):
         source = (REPO_ROOT / 'frontend' / 'src' / 'home-dashboard.jsx').read_text(encoding='utf-8')
         self.assertIn('Promise.all([loadDashboard(), loadDetail(selected.request_id)])', source)
         self.assertIn('Ya no tienes acciones pendientes para esta solicitud.', source)
+        self.assertIn('Delegación de cierre actualizada correctamente.', source)
 
     def test_top_kpis_are_informational_not_buttons(self):
         source = (REPO_ROOT / 'frontend' / 'src' / 'home-dashboard.jsx').read_text(encoding='utf-8')
