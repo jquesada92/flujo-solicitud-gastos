@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import ClosureDelegationButton from "./closure-delegation.jsx";
 import "./home-dashboard.css";
 
 const API_BASE_URL = String(import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
@@ -129,7 +130,7 @@ function QuotationVoteAction({ request, busy, onVote, onError }) {
   </section>;
 }
 
-function CloseRequestAction({ busy, onCloseRequest }) {
+function CloseRequestAction({ request, busy, onCloseRequest, onDelegationChanged }) {
   const [invoice, setInvoice] = useState(null);
   const [notes, setNotes] = useState("");
   const submit = (event) => {
@@ -141,7 +142,16 @@ function CloseRequestAction({ busy, onCloseRequest }) {
     <form className="pending-action-form" onSubmit={submit}>
       <label className="pending-action-field">Factura<input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" required onChange={(event) => setInvoice(event.target.files?.[0] || null)} /></label>
       <label className="pending-action-field">Notas de cierre<textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Opcional" /></label>
-      <div className="pending-action-buttons"><button className="pending-action-primary" disabled={busy || !invoice}>Subir factura y cerrar</button></div>
+      <div className="pending-action-buttons">
+        {request.can_delegate_close && <ClosureDelegationButton
+          expense={request}
+          api={dashboardApi}
+          onChanged={onDelegationChanged}
+          buttonClassName="pending-action-secondary"
+          overlayClassName="confirm-overlay pending-action-delegation-overlay"
+        />}
+        <button className="pending-action-primary" disabled={busy || !invoice}>Subir factura y cerrar</button>
+      </div>
     </form>
   </section>;
 }
@@ -154,7 +164,7 @@ function CorrectRequestAction({ busy, onOpenRequests }) {
   </section>;
 }
 
-function PendingActionModal({ detail, loading, error, busy, message, onClose, onReload, onOpenRequests, onError }) {
+function PendingActionModal({ detail, loading, error, busy, message, onClose, onReload, onDelegationChanged, onOpenRequests, onError }) {
   useEffect(() => {
     const onKeyDown = (event) => { if (event.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKeyDown);
@@ -204,7 +214,7 @@ function PendingActionModal({ detail, loading, error, busy, message, onClose, on
         {!detail.actions.length && !loading && <div className="pending-action-state">Ya no tienes acciones pendientes para esta solicitud.</div>}
         {codes.has("APPROVAL_DECISION") && <ApprovalAction request={request} busy={busy} onSubmit={(decision, comment) => submitApproval(decision, comment).catch((e) => onError(e.message))} />}
         {codes.has("QUOTATION_VOTE") && <QuotationVoteAction request={request} busy={busy} onVote={(id) => submitVote(id).catch((e) => onError(e.message))} onError={onError} />}
-        {codes.has("CLOSE_REQUEST") && <CloseRequestAction busy={busy} onCloseRequest={(invoice, notes) => closeRequest(invoice, notes).catch((e) => onError(e.message))} />}
+        {codes.has("CLOSE_REQUEST") && <CloseRequestAction request={request} busy={busy} onDelegationChanged={onDelegationChanged} onCloseRequest={(invoice, notes) => closeRequest(invoice, notes).catch((e) => onError(e.message))} />}
         {codes.has("CORRECT_REQUEST") && <CorrectRequestAction busy={busy} onOpenRequests={() => { onClose(); onOpenRequests(request.request_id, "CORRECT_REQUEST"); }} />}
       </>}
     </section>
@@ -271,6 +281,16 @@ export default function HomeDashboard({ refreshKey, onOpenRequests }) {
     }
   };
 
+  const reloadAfterDelegation = async () => {
+    setModalError("");
+    setModalMessage("Delegación de cierre actualizada correctamente.");
+    try {
+      await Promise.all([loadDashboard(), loadDetail(selected.request_id)]);
+    } catch (e) {
+      setModalError(e.message);
+    }
+  };
+
   if (error) return <section className="card"><div className="notice error">{error}</div></section>;
   if (!data) return <section className="card"><p className="muted">Cargando resumen...</p></section>;
 
@@ -297,6 +317,7 @@ export default function HomeDashboard({ refreshKey, onOpenRequests }) {
       message={modalMessage}
       onClose={() => { if (!busy) { setSelected(null); setDetail(null); setModalError(""); setModalMessage(""); } }}
       onReload={performAndReload}
+      onDelegationChanged={reloadAfterDelegation}
       onOpenRequests={onOpenRequests}
       onError={setModalError}
     />}
