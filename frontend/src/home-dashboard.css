@@ -132,6 +132,7 @@
 }
 
 .pending-action-primary,
+.pending-action-secondary,
 .pending-action-danger,
 .pending-action-review {
   border: 0;
@@ -146,6 +147,12 @@
   color: #fff;
 }
 
+.pending-action-secondary {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+}
+
 .pending-action-danger {
   background: #fee2e2;
   color: #991b1b;
@@ -157,10 +164,15 @@
 }
 
 .pending-action-primary:disabled,
+.pending-action-secondary:disabled,
 .pending-action-danger:disabled,
 .pending-action-review:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.pending-action-delegation-overlay {
+  z-index: 1300;
 }
 
 .pending-action-state,

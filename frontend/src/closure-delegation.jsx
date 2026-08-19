@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from "react";
 
-export default function ClosureDelegationButton({ expense, api, onChanged }) {
+export default function ClosureDelegationButton({
+  expense,
+  api,
+  onChanged,
+  buttonClassName = "secondary nowrap",
+  overlayClassName = "confirm-overlay",
+}) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState(null);
   const [selected, setSelected] = useState("");
@@ -62,11 +68,11 @@ export default function ClosureDelegationButton({ expense, api, onChanged }) {
 
   return (
     <>
-      <button className="secondary nowrap" onClick={() => setOpen(true)}>
+      <button type="button" className={buttonClassName} onClick={() => setOpen(true)}>
         {expense.status === "CLOSED" ? "Delegar factura" : "Delegar cierre/factura"}
       </button>
       {open && (
-        <div className="confirm-overlay" role="presentation" onMouseDown={() => setOpen(false)}>
+        <div className={overlayClassName} role="presentation" onMouseDown={() => setOpen(false)}>
           <section
             className="confirm-dialog"
             role="dialog"
@@ -80,7 +86,7 @@ export default function ClosureDelegationButton({ expense, api, onChanged }) {
                 <h2 id="closure-delegation-title">Cierre y factura</h2>
                 <span className="muted">{expense.display_id} · {expense.title}</span>
               </div>
-              <button className="secondary" onClick={() => setOpen(false)}>Cerrar</button>
+              <button className="secondary" type="button" onClick={() => setOpen(false)}>Cerrar</button>
             </div>
 
             <p>
