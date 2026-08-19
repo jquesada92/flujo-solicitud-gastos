@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-08-18 — Notificaciones de Cargo y permisos efectivos
+
+### Added
+- `send_user_access_updated()` para notificar cambios reales de Cargo.
+- resumen IAM reutilizable de Cargo(s) + permisos efectivos en `iam_users.py`.
+- Feature 010 y `test_user_access_notifications.py`.
+
+### Changed
+- la invitación inicial con contraseña temporal ahora incluye Cargo(s) y permisos efectivos.
+- el cambio real de `position_ids` recalcula permisos efectivos y envía **Actualización de cargo y permisos**.
+- guardar el mismo conjunto de Cargos no envía correo duplicado.
+- los correos usan `effective_permission_codes()` y `UserPosition → Position`; no usan `UserRole`, `title` ni `can_*` legacy.
+
+### Reliability
+- si falla la invitación inicial, la creación no se confirma, conservando el comportamiento vigente.
+- si falla la notificación de cambio de Cargo, la transacción se revierte y el endpoint devuelve 502.
+- no se añade una migración Alembic; la cadena permanece hasta `0006`.
+
+### Testing
+- invitación incluye Cargo/permisos heredados.
+- cambio Vocal → Tesorero recalcula y notifica `requests:approve`.
+- guardar el mismo Cargo no duplica correo.
+- fallo de transporte revierte el cambio.
+- plantillas texto/HTML contienen Cargo y códigos de permiso.
+
+---
+
 ## 2026-08-18 — Configuración técnica system-only y Gestión de Áreas delegable
 
 ### Added
