@@ -99,7 +99,35 @@ def _layout(title: str, content: str) -> str:
 <div style="padding:26px">{content}</div></div></body></html>'''
 
 
-def send_user_invitation(user, temporary_password: str) -> None:
+def _text_list(values: list[str], empty_message: str) -> str:
+    return '\n'.join(f'- {value}' for value in values) or f'- {empty_message}'
+
+
+def _html_list(values: list[str], empty_message: str) -> str:
+    items = values or [empty_message]
+    return '<ul style="margin-top:6px">' + ''.join(
+        f'<li>{html.escape(value)}</li>' for value in items
+    ) + '</ul>'
+
+
+def send_user_invitation(
+    user,
+    temporary_password: str,
+    *,
+    positions: list[str] | None = None,
+    permissions: list[str] | None = None,
+) -> None:
+    access_text = ''
+    access_html = ''
+    if positions is not None or permissions is not None:
+        position_values = positions or []
+        permission_values = permissions or []
+        access_text = f'''\nCargo(s):\n{_text_list(position_values, 'Sin cargo asignado')}\n\nPermisos efectivos:\n{_text_list(permission_values, 'Sin permisos efectivos')}\n'''
+        access_html = f'''<div style="background:#f7f8fa;padding:16px;border-radius:10px;margin:16px 0">
+<b>Cargo(s)</b>{_html_list(position_values, 'Sin cargo asignado')}
+<b>Permisos efectivos</b>{_html_list(permission_values, 'Sin permisos efectivos')}
+</div>'''
+
     text_body = f'''Acceso a {PRODUCT_NAME}
 
 Hola {user.name},
@@ -108,6 +136,7 @@ Se creó una cuenta para ti.
 
 Usuario: {user.email}
 Contraseña temporal: {temporary_password}
+{access_text}
 Acceso: {PUBLIC_URL}
 
 Al iniciar sesión deberás crear una contraseña nueva antes de continuar.
@@ -117,10 +146,50 @@ No compartas estas credenciales.
         'INVITACIÓN DE USUARIO',
         f'''<h2>Hola {html.escape(user.name)}</h2><p>Se creó una cuenta para ti.</p>
 <div style="background:#f7f8fa;padding:16px;border-radius:10px;line-height:1.8"><b>Usuario:</b> {html.escape(user.email)}<br><b>Contraseña temporal:</b> <code>{html.escape(temporary_password)}</code></div>
+{access_html}
 <p>Al iniciar sesión deberás reemplazar esta contraseña antes de usar el sistema.</p>
 <a href="{html.escape(PUBLIC_URL)}" style="display:inline-block;background:#172033;color:white;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">Iniciar sesión</a>''',
     )
     _send(user.email, f'Tu acceso a {PRODUCT_NAME}', text_body, html_body)
+
+
+def send_user_access_update(
+    user,
+    *,
+    previous_positions: list[str],
+    positions: list[str],
+    permissions: list[str],
+) -> None:
+    text_body = f'''Actualización de cargo y permisos
+
+Hola {user.name},
+
+Tu cargo dentro de {PRODUCT_NAME} fue actualizado.
+
+Cargo(s) anterior(es):
+{_text_list(previous_positions, 'Sin cargo asignado')}
+
+Cargo(s) actual(es):
+{_text_list(positions, 'Sin cargo asignado')}
+
+Permisos efectivos actuales:
+{_text_list(permissions, 'Sin permisos efectivos')}
+
+Los cambios ya se encuentran vigentes.
+Acceso: {PUBLIC_URL}
+'''
+    html_body = _layout(
+        'ACTUALIZACIÓN DE ACCESO',
+        f'''<h2>Hola {html.escape(user.name)}</h2><p>Tu cargo dentro de {html.escape(PRODUCT_NAME)} fue actualizado.</p>
+<div style="background:#f7f8fa;padding:16px;border-radius:10px;margin:16px 0">
+<b>Cargo(s) anterior(es)</b>{_html_list(previous_positions, 'Sin cargo asignado')}
+<b>Cargo(s) actual(es)</b>{_html_list(positions, 'Sin cargo asignado')}
+<b>Permisos efectivos actuales</b>{_html_list(permissions, 'Sin permisos efectivos')}
+</div>
+<p>Los cambios ya se encuentran vigentes.</p>
+<a href="{html.escape(PUBLIC_URL)}" style="display:inline-block;background:#172033;color:white;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">Abrir sistema</a>''',
+    )
+    _send(user.email, f'Actualización de cargo y permisos · {PRODUCT_NAME}', text_body, html_body)
 
 
 def send_approval_request(approval) -> None:
