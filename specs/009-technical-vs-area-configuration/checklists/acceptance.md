@@ -59,14 +59,14 @@
 
 - [x] Constitución actualizada a 2.8.0.
 - [x] Feature 009 spec/plan/checklist creados.
-- [ ] `docs/CONFIGURATION_ACCESS.md` creado.
-- [ ] `docs/IAM_MODEL.md` actualizado.
-- [ ] `docs/FASTAPI_ARCHITECTURE.md` actualizado.
-- [ ] `docs/CLASSIFICATION_MODEL.md` actualizado.
-- [ ] `docs/TERMINOLOGY.md` actualizado.
-- [ ] `docs/README.md` actualizado.
-- [ ] README principal actualizado.
-- [ ] PROMPT_RECONSTRUCCION actualizado.
-- [ ] HISTORY actualizado.
-- [ ] CHANGELOG actualizado.
+- [x] `docs/CONFIGURATION_ACCESS.md` creado.
+- [x] `docs/IAM_MODEL.md` actualizado.
+- [x] `docs/FASTAPI_ARCHITECTURE.md` actualizado.
+- [x] `docs/CLASSIFICATION_MODEL.md` actualizado.
+- [x] `docs/TERMINOLOGY.md` actualizado.
+- [x] `docs/README.md` actualizado.
+- [x] README principal actualizado.
+- [x] PROMPT_RECONSTRUCCION actualizado.
+- [x] HISTORY actualizado.
+- [x] CHANGELOG actualizado.
 - [ ] PR #9 actualizado.
