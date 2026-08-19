@@ -98,7 +98,10 @@ def apply_effective_permissions_to_user(db: Session, user: User) -> User:
     user.can_view = 'requests:read' in permissions
     user.can_request = 'requests:create' in permissions
     user.can_approve = 'requests:approve' in permissions
-    user.can_configure = 'config:manage' in permissions
+    # Compatibility output for the legacy React shell: either configuration
+    # capability makes the menu visible. Runtime mutation authority continues to
+    # be enforced from canonical config:manage in require_permission().
+    user.can_configure = bool({'config:read', 'config:manage'} & permissions)
     user.can_close = 'requests:close' in permissions
     user.permission_codes = sorted(permissions)
     user.is_system_account = is_system_account(db, user.id)
@@ -147,13 +150,25 @@ def current_user(
 
 
 def require_permission(permission_code: str):
-    """Authorize solely from effective permissions persisted in PostgreSQL."""
+    """Authorize solely from effective permissions persisted in PostgreSQL.
+
+    config:read is intentionally a read-only companion to config:manage. It may
+    satisfy a legacy config:manage guard only for safe HTTP reads; every mutation
+    still requires config:manage regardless of what the frontend renders.
+    """
     canonical_code = LEGACY_PERMISSION_ALIASES.get(permission_code, permission_code)
 
     def dependency(
+        request: Request,
         user: User = Depends(current_user),
         db: Session = Depends(get_db),
     ) -> User:
+        if (
+            canonical_code == 'config:manage'
+            and request.method in {'GET', 'HEAD'}
+            and has_permission(db, user.id, 'config:read')
+        ):
+            return user
         if not has_permission(db, user.id, canonical_code):
             raise HTTPException(status_code=403, detail='No tienes permiso para realizar esta acción')
         return user
