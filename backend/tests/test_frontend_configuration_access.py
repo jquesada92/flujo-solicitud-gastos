@@ -29,6 +29,17 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn('tab === "rules" && canReadConfiguration ?', vite)
         self.assertIn('tab === "audit" && canReadConfiguration ?', vite)
 
+    def test_audit_menu_bridge_is_whitespace_and_newline_tolerant(self):
+        vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')
+        function = vite.split('function replaceAuditMenuVisibility(source) {', 1)[1].split(
+            '\n}\n\nfunction replaceConfigurationAccess(source) {', 1
+        )[0]
+        self.assertIn('\\s*', function)
+        self.assertIn('source.matchAll(pattern)', function)
+        self.assertIn('matches.length !== 1', function)
+        self.assertIn('audit menu extraction expected 1 guard', function)
+        self.assertNotIn('replaceRequired(', function)
+
     def test_access_console_is_injected_for_configuration_readers(self):
         vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')
         self.assertIn('protectAccessMenuInjection', vite)
