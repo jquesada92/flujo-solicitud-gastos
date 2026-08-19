@@ -14,6 +14,13 @@ class FrontendClosureContractTests(unittest.TestCase):
         self.assertIn('Delegar cierre/factura', source)
         self.assertIn('Delegar factura', source)
 
+    def test_closure_delegation_component_supports_multiple_entry_points(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'closure-delegation.jsx').read_text(encoding='utf-8')
+        self.assertIn('buttonClassName = "secondary nowrap"', source)
+        self.assertIn('overlayClassName = "confirm-overlay"', source)
+        self.assertIn('type="button" className={buttonClassName}', source)
+        self.assertIn('className={overlayClassName}', source)
+
     def test_legacy_table_uses_backend_resource_capabilities(self):
         vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')
         self.assertIn('import ClosureDelegationButton from "./closure-delegation.jsx";', vite)
