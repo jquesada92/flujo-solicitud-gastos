@@ -92,11 +92,32 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn('window.location.hash = ""', source)
         self.assertIn('className="iam-page-nav"', source)
         self.assertIn('className="iam-button iam-refresh"', source)
-        self.assertIn('↻ Actualizar', source)
+        self.assertIn('↻ Recargar', source)
         self.assertNotIn('>Volver</button>', source)
         self.assertIn('.iam-overlay{position:fixed;top:72px;right:0;bottom:0;left:0;z-index:10', css)
         self.assertIn('.iam-shell{width:min(1180px,92vw);margin:0 auto;padding:48px 0 72px}', css)
-        self.assertIn('.iam-card{background:#fff;border:1px solid #e3e7ee;border-radius:18px;padding:26px;', css)
+        self.assertIn('.iam-card{min-width:0;background:#fff;border:1px solid #e3e7ee;border-radius:18px;padding:26px;', css)
+
+    def test_access_user_list_cannot_overflow_status_badges(self):
+        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.css').read_text(encoding='utf-8')
+        self.assertIn('grid-template-columns:minmax(330px,360px) minmax(0,1fr)', css)
+        self.assertIn('.iam-list-item{display:flex;width:100%;min-width:0;overflow:hidden;', css)
+        self.assertIn('.iam-list-main{flex:1 1 auto;min-width:0;overflow:hidden}', css)
+        self.assertIn('text-overflow:ellipsis;white-space:nowrap', css)
+        self.assertIn('.iam-list-item>span:last-child{flex:0 0 auto}', css)
+
+    def test_role_save_is_disabled_until_there_are_real_changes(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        action_css = (REPO_ROOT / 'frontend' / 'src' / 'action-state.css').read_text(encoding='utf-8')
+        index = (REPO_ROOT / 'frontend' / 'index.html').read_text(encoding='utf-8')
+        self.assertIn('const roleDirty = useMemo(() => {', source)
+        self.assertIn('const canPersistRole = roleDirty && form.name.trim().length >= 2;', source)
+        self.assertIn('iam-persist-action ${canPersistRole ? "pending" : ""}', source)
+        self.assertIn('disabled={!canPersistRole}', source)
+        self.assertIn('button.primary:disabled', action_css)
+        self.assertIn('.iam-persist-action.pending', action_css)
+        self.assertIn('.classification-save-assignment:not(:disabled)', action_css)
+        self.assertIn('/src/action-state.css', index)
 
 
 if __name__ == '__main__':
