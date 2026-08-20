@@ -1,20 +1,40 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ph_torre_delta}
+      POSTGRES_USER: ${POSTGRES_USER:-ph_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ph_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-ph_user} -d ${POSTGRES_DB:-ph_torre_delta}
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   backend:
     build: ./backend
-    # DEV application variables live in backend/.env. DATABASE_URL must point
-    # to the Neon DEV database and DATABASE_SCHEMA to the application schema.
+    # Application secrets and non-database settings live in backend/.env.
+    # Local Docker intentionally overrides DATABASE_URL so the backend uses the
+    # PostgreSQL service declared above instead of Neon.
     env_file:
       - path: ${BACKEND_ENV_FILE:-./backend/.env}
         required: false
     environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ph_user}:${POSTGRES_PASSWORD:-ph_password}@db:5432/${POSTGRES_DB:-ph_torre_delta}
+      DATABASE_SCHEMA: ${DATABASE_SCHEMA:-administracion}
       UPLOAD_DIR: /app/uploads
-      # Docker Compose serves the SPA through Nginx on host port 3000. These
-      # values intentionally override only the public frontend addresses; the
-      # database connection remains the one declared in backend/.env.
       PUBLIC_URL: ${LOCAL_PUBLIC_URL:-http://localhost:3000}
       CORS_ALLOWED_ORIGINS: ${LOCAL_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
     volumes:
       - expense_uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
     expose:
       - "8000"
     healthcheck:
@@ -34,12 +54,11 @@ services:
       args:
         VITE_TIME_ZONE: ${VITE_TIME_ZONE:-America/Panama}
     ports:
-      # Local-only by default. Public MVP access is provided by the optional
-      # Cloudflare tunnel, never by exposing this port on every interface.
       - "127.0.0.1:3000:80"
     depends_on:
       backend:
         condition: service_healthy
 
 volumes:
+  postgres_data:
   expense_uploads:
