@@ -1,248 +1,228 @@
-# Plan de implementación — Feature 012
+# Plan — Feature 012: base limpia en Neon + schema `administracion`
 
-**Feature:** Aislamiento de schema Neon por ambiente  
-**Branch:** `feature/neon-ph-torre-delta-schema`  
-**Constitución:** 2.10.0
-
-## Resultado objetivo
-
-DEV y PROD usan:
+## Resultado esperado
 
 ```text
-Neon project: ph_torre_delta
-Database: ph_torre_delta
-Schema: ph_torre_delta
+DEV
+DATABASE_URL  → Neon / database ph_torre_delta
+DATABASE_SCHEMA=administracion
+
+PROD / Render
+DATABASE_URL  → Neon / database ph_torre_delta
+DATABASE_SCHEMA=administracion
 ```
 
-con:
+No se conserva ninguna tabla, dato o revisión física previa.
+
+## 1. Configuración
+
+### `backend/app/core/config.py`
+
+Agregar:
 
 ```text
-main → PROD
-dev  → DEV
+database_schema
 ```
 
-Las tablas se crean desde cero con Alembic. No se migran datos ni tablas desde schemas anteriores.
+con default `administracion` y validación de identificador PostgreSQL simple.
 
-## Fase 1 — Configuración central
-
-### Backend Settings
-
-Agregar una configuración única:
+Rechazar:
 
 ```text
-DATABASE_SCHEMA=ph_torre_delta
+public
+pg_catalog
+information_schema
+pg_*
 ```
 
-Ubicación esperada:
+### ENV
+
+Alinear:
 
 ```text
-backend/app/core/config.py
 backend/.env.example
 backend/.env.preview.example
 .env.example
 .env.preview.example
 ```
 
-Requisitos:
+El nombre de la base local también se normaliza a `ph_torre_delta` / `ph_torre_delta_preview`.
 
-- valor por defecto seguro/documentado cuando corresponda;
-- no duplicar el literal en módulos de negocio;
-- `DATABASE_URL` continúa siendo secreto por ambiente;
-- `DATABASE_SCHEMA` no es secreto.
+## 2. SQLAlchemy
 
-## Fase 2 — SQLAlchemy
+### `backend/app/core/database.py`
 
-Actualizar `backend/app/core/database.py` para que el schema de aplicación sea parte del contrato de persistencia.
+Para PostgreSQL:
 
-La implementación debe garantizar:
+- `MetaData(schema=DATABASE_SCHEMA)`;
+- `search_path` de la conexión limitado al schema configurado.
 
-- metadata ORM asociada al schema configurado;
-- sesiones runtime resolviendo `ph_torre_delta`;
-- relaciones y FKs compatibles;
-- ninguna dependencia de `public` como fallback;
-- conexión Neon compatible con `postgresql+psycopg`.
+Para SQLite de tests:
 
-Se debe evitar prefijar manualmente el schema en cada query.
+- metadata sin schema;
+- no enviar opciones PostgreSQL.
 
-## Fase 3 — Alembic
+Objetivo: las consultas ORM en PostgreSQL quedan físicamente dirigidas a `administracion` y un SQL no cualificado tampoco cae en `public`.
 
-Actualizar `backend/alembic/env.py` para:
+## 3. Alembic
 
-1. leer `DATABASE_SCHEMA` desde Settings;
-2. garantizar que el schema exista antes de ejecutar DDL;
-3. establecer el schema efectivo de la conexión de migración;
-4. configurar `version_table_schema` para que `alembic_version` viva en `ph_torre_delta`;
-5. habilitar comparación de schema cuando corresponda;
-6. mantener `compare_type=True`;
-7. soportar modo online y offline de forma coherente.
+### `backend/alembic/env.py`
 
-### Cadena existente
+- crear el schema si todavía no existe;
+- establecer `search_path`;
+- configurar `version_table_schema`;
+- limitar autogenerate/discovery al schema de aplicación;
+- mantener SQLite sin schema para tests.
 
-La cadena actual permanece:
+## 4. Reinicio de historia
+
+Eliminar:
 
 ```text
-0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007 → 0008
+20260817_0000_application_baseline.py
+20260817_0001_iam_foundation.py
+20260817_0002_system_accounts.py
+20260817_0003_backfill_multi_quote_request_type.py
+20260818_0004_position_role_inheritance.py
+20260818_0005_closure_delegation.py
+20260818_0006_area_management_permission.py
+20260819_0007_configuration_read_access.py
+20260819_0008_expense_area_category_columns.py
+backend/migrations/20260817_remove_property_domain.sql
 ```
 
-No se crea una migración de traslado desde `flujos_de_aprobacion`.
-
-La instalación limpia debe ejecutar la cadena completa sobre el nuevo schema.
-
-Si alguna revisión contiene SQL o nombres de objetos que dependan explícitamente de `public`, debe corregirse para ser compatible con el schema configurado sin alterar la semántica funcional de la revisión.
-
-## Fase 4 — Protección contra schemas legacy
-
-Auditar código y migraciones buscando:
+Crear:
 
 ```text
-public.
-flujos_de_aprobacion
-search_path
-schema=
-version_table_schema
+backend/alembic/versions/20260820_0001_initial_schema.py
 ```
 
-Objetivo:
+## 5. Baseline inicial
 
-- no usar `flujos_de_aprobacion` como fallback;
-- no crear tablas de negocio bajo `public`;
-- no leer `alembic_version` legacy por accidente.
-
-Los objetos legacy existentes no se borran dentro de esta feature.
-
-## Fase 5 — Inicialización DEV
-
-Target:
+La revisión debe contener un snapshot congelado del modelo físico actual y crear desde cero:
 
 ```text
-Neon branch: dev
-Database: ph_torre_delta
-Schema: ph_torre_delta
+users / auditoría
+expenses / quotations / approvals
+clasificación Área + Categoría
+IAM configurable
+system_accounts
+closure delegation
 ```
 
-Procedimiento:
-
-1. confirmar conexión al branch `dev`;
-2. confirmar que `ph_torre_delta` existe;
-3. confirmar que el schema objetivo no contiene tablas de aplicación que deban preservarse;
-4. ejecutar `alembic upgrade head`;
-5. ejecutar `python -m scripts.bootstrap_admin`;
-6. validar estructura y revisión Alembic;
-7. ejecutar pruebas backend.
-
-No copiar datos desde `flujos_de_aprobacion`.
-
-## Fase 6 — Validación PROD
-
-Target:
+La baseline debe crear directamente:
 
 ```text
-Neon branch: main
-Database: ph_torre_delta
-Schema: ph_torre_delta
+expenses.expense_area
+expenses.expense_category
 ```
 
-Antes de inicializar:
+No crear primero nombres viejos para renombrarlos después.
 
-- validar la misma revisión de código probada en DEV;
-- confirmar que el schema objetivo puede tratarse como instalación limpia;
-- confirmar que no existe información que el usuario haya solicitado preservar dentro del schema objetivo.
+## 6. IAM mínimo
 
-Luego ejecutar la misma cadena de inicialización.
+Semillas de instalación:
 
-## Fase 7 — Gates técnicos
+### Permisos activos
 
-### Alembic
+```text
+requests:read
+requests:create
+requests:approve
+areas:manage
+config:read
+config:manage
+```
+
+### Registro inactivo
+
+```text
+requests:close
+```
+
+### Roles
+
+```text
+system-administrator
+area-manager
+configuration-viewer
+```
+
+No importar configuración organizacional de una base previa.
+
+## 7. Auditoría
+
+Mantener dentro del schema `administracion` la función PostgreSQL que rechaza UPDATE/DELETE y sus triggers para las tablas append-only.
+
+## 8. Protección contra reutilización accidental
+
+Antes de crear el snapshot, la baseline inspecciona el schema objetivo.
+
+Si existen tablas distintas de `alembic_version`, aborta con error explícito.
+
+Esto convierte “base limpia” en una condición técnica verificable y no solo en una instrucción documental.
+
+## 9. Bootstrap
+
+Después de `alembic upgrade head`:
+
+```text
+python -m scripts.bootstrap_admin
+```
+
+crea/reconcilia la cuenta técnica en la instalación nueva.
+
+No se importan usuarios antiguos.
+
+## 10. Tests
+
+Actualizar pruebas que dependían de `0008`.
+
+Agregar contrato que valide:
+
+- default `administracion`;
+- rechazo de schemas del sistema;
+- única revisión `20260820_0001`;
+- `version_table_schema` configurado;
+- ENV examples sincronizados;
+- baseline canónica sin renombres históricos.
+
+## 11. Validación DEV
+
+Con la base/schema vacíos:
 
 ```text
 cd backend
 alembic heads
-alembic current
+# esperado: 20260820_0001
+
 alembic upgrade head
+alembic current
 ```
 
-Debe existir una sola cabeza y `current == head` en el schema objetivo.
-
-### SQL de validación
-
-Validar conceptualmente:
+Verificar en PostgreSQL:
 
 ```sql
 SELECT table_schema, table_name
 FROM information_schema.tables
-WHERE table_schema IN ('ph_torre_delta', 'public', 'flujos_de_aprobacion')
-ORDER BY table_schema, table_name;
+WHERE table_schema = 'administracion'
+ORDER BY table_name;
 ```
 
-Esperado:
+Y ausencia de tablas de app en `public`:
 
-- tablas de aplicación vigentes bajo `ph_torre_delta`;
-- `alembic_version` bajo `ph_torre_delta`;
-- ninguna tabla de aplicación nueva creada por Feature 012 bajo `public`;
-- objetos legacy, si existen, permanecen aislados.
-
-### Backend
-
-```text
-python -m unittest discover -s tests -v
+```sql
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public';
 ```
 
-Agregar pruebas específicas para configuración de schema si son necesarias.
+## 12. Validación PROD
 
-### Frontend
+Solo después de validar DEV, ejecutar el mismo `alembic upgrade head` contra la nueva `DATABASE_URL` de Render/PROD.
 
-```text
-cd frontend
-npm ci
-npm run build
-```
+No ejecutar este baseline contra una base que se quiera conservar.
 
-Aunque la feature sea de persistencia, el build sigue siendo gate de integración.
+## 13. Evolución posterior
 
-## Fase 8 — Documentación
-
-Actualizar:
-
-```text
-.specify/memory/constitution.md
-README.md
-PROMPT_RECONSTRUCCION.md
-specs/012-neon-schema-isolation/*
-```
-
-Los documentos deben declarar explícitamente:
-
-```text
-main = PROD
-dev = DEV
-database = ph_torre_delta
-schema = ph_torre_delta
-fresh create; no data migration
-```
-
-## Riesgos y mitigaciones
-
-### Riesgo: Alembic detecta una revisión legacy
-
-Mitigación: `alembic_version` debe estar aislada dentro de `ph_torre_delta`; no usar `stamp` para reutilizar estado ajeno.
-
-### Riesgo: ORM cae en `public`
-
-Mitigación: metadata/configuración central + schema efectivo de conexión + prueba con schemas coexistentes.
-
-### Riesgo: migraciones con SQL hardcodeado
-
-Mitigación: auditoría de todas las revisiones y eliminación de dependencias explícitas de schemas legacy.
-
-### Riesgo: DEV y PROD divergen
-
-Mitigación: ambos parten de la misma cadena Alembic y la misma revisión de código; solo cambia `DATABASE_URL`/branch.
-
-## No hacer
-
-- no copiar tablas;
-- no mover tablas;
-- no renombrar schemas legacy;
-- no hacer `alembic stamp` para saltar revisiones;
-- no usar `public` como schema de aplicación;
-- no ejecutar DDL manual distinto entre DEV y PROD para obtener la estructura final.
+Una vez desplegado `20260820_0001`, queda congelado. Cualquier cambio de estructura posterior se hace mediante nuevas revisiones Alembic incrementales.
