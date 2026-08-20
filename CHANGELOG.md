@@ -6,11 +6,14 @@
 - **Configuración → Accesos** deja de cubrir la barra superior estándar y conserva visible la navegación principal del producto.
 - navegar desde Inicio/Solicitudes/Facturas/Configuración cierra la consola IAM y respeta la navegación normal de la aplicación.
 - se retira el botón independiente **Volver**; la salida se realiza mediante la navegación estándar.
-- **Actualizar** pasa a integrarse con las pestañas internas de Usuarios/Grupos/Roles/Permisos/Cargos.
+- la acción de refresco pasa a llamarse **Recargar** para no confundirse con una acción de persistencia y permanece integrada con las pestañas internas de Usuarios/Grupos/Roles/Permisos/Cargos.
 - ancho, espaciado, jerarquía del encabezado y tarjetas de IAM se alinean con el layout principal.
+- la columna de navegación IAM aumenta su ancho útil y aplica truncado seguro para que nombres/correos largos no recorten los badges **Activo/SISTEMA**.
+- `action-state.css` normaliza botones de persistencia deshabilitados en gris y aplica un brillo/acento leve cuando el componente conoce cambios pendientes.
+- **Guardar cambios** de Roles ahora calcula estado `dirty` real y permanece deshabilitado mientras nombre, descripción y permisos coincidan con persistencia.
 
 ### Testing
-- `test_frontend_configuration_access.py` protege visibilidad de la topbar, cierre por navegación estándar, ausencia de **Volver** y ubicación integrada de **Actualizar**.
+- `test_frontend_configuration_access.py` protege visibilidad de la topbar, cierre por navegación estándar, ausencia de **Volver**, ubicación integrada de **Recargar**, overflow de la lista y estados visuales/dirty de persistencia.
 
 ---
 
@@ -139,7 +142,7 @@
 
 ### Migrations
 - Cadena hasta Feature 008: `0000 → 0001 → 0002 → 0003 → 0004 → 0005`.
-- `0005` crea `expense_closure_delegations` y marca `requests:close` como inactivo/legacy sin borrar asignaciones históricas.
+- `0005` crea `expense_closure_delegations` y marca `requests:close` inactivo/legacy sin borrar asignaciones históricas.
 
 ### Testing
 - Requester/Admin/delegado positivos.
