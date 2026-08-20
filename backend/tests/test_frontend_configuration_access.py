@@ -84,6 +84,20 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn('.iam-check:focus-within', css)
         self.assertIn('cursor:pointer', css)
 
+    def test_access_console_reuses_standard_navigation_and_integrated_refresh(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.css').read_text(encoding='utf-8')
+        self.assertIn('document.querySelector(".topbar")', source)
+        self.assertIn('topbar.addEventListener("click", handleTopbarClick)', source)
+        self.assertIn('window.location.hash = ""', source)
+        self.assertIn('className="iam-page-nav"', source)
+        self.assertIn('className="iam-button iam-refresh"', source)
+        self.assertIn('↻ Actualizar', source)
+        self.assertNotIn('>Volver</button>', source)
+        self.assertIn('.iam-overlay{position:fixed;top:72px;right:0;bottom:0;left:0;z-index:10', css)
+        self.assertIn('.iam-shell{width:min(1180px,92vw);margin:0 auto;padding:48px 0 72px}', css)
+        self.assertIn('.iam-card{background:#fff;border:1px solid #e3e7ee;border-radius:18px;padding:26px;', css)
+
 
 if __name__ == '__main__':
     unittest.main()
