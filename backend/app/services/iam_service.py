@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models.entities import User
 from app.models.iam import (
-    GroupMember,
     GroupRole,
     Permission,
     Role,
@@ -60,39 +59,27 @@ def _system_account_policy_codes(db: Session) -> set[str]:
 
 
 def _role_permission_codes(db: Session, user_id: int) -> set[str]:
-    """Resolve permissions strictly from roles assigned directly or by groups.
+    """Resolve permissions from the user's role inside each active group.
 
-    Cargos are organizational metadata and do not grant access. Direct user
-    permissions are intentionally ignored; product permissions belong to roles.
+    A group does not grant every role configured in that group. Instead, each
+    user owns at most one explicit role in that group; GroupRole only provides
+    the scope/binding for that role. Cargos and direct user permissions do not
+    participate in authorization.
     """
-    direct_role_permissions = set(db.scalars(
+    return set(db.scalars(
         select(Permission.code)
         .join(RolePermission, RolePermission.permission_id == Permission.id)
         .join(Role, Role.id == RolePermission.role_id)
         .join(UserRoleAssignment, UserRoleAssignment.role_id == Role.id)
-        .where(
-            UserRoleAssignment.user_id == user_id,
-            Role.active.is_(True),
-            Permission.active.is_(True),
-        )
-    ).all())
-
-    group_role_permissions = set(db.scalars(
-        select(Permission.code)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .join(Role, Role.id == RolePermission.role_id)
         .join(GroupRole, GroupRole.role_id == Role.id)
         .join(UserGroup, UserGroup.id == GroupRole.group_id)
-        .join(GroupMember, GroupMember.group_id == UserGroup.id)
         .where(
-            GroupMember.user_id == user_id,
+            UserRoleAssignment.user_id == user_id,
             UserGroup.active.is_(True),
             Role.active.is_(True),
             Permission.active.is_(True),
         )
     ).all())
-
-    return direct_role_permissions | group_role_permissions
 
 
 def effective_permission_codes(db: Session, user_id: int) -> set[str]:
@@ -141,22 +128,11 @@ def users_with_permission(
             stmt = stmt.where(User.email.ilike(exclude_email).is_(False))
         return list(db.scalars(stmt.order_by(User.id)).all())
 
-    direct_role = (
+    role_assignment = (
         select(UserRoleAssignment.user_id.label('user_id'))
         .join(Role, Role.id == UserRoleAssignment.role_id)
-        .join(RolePermission, RolePermission.role_id == Role.id)
-        .join(Permission, Permission.id == RolePermission.permission_id)
-        .where(
-            Permission.code == permission_code,
-            Permission.active.is_(True),
-            Role.active.is_(True),
-        )
-    )
-    group_role = (
-        select(GroupMember.user_id.label('user_id'))
-        .join(UserGroup, UserGroup.id == GroupMember.group_id)
-        .join(GroupRole, GroupRole.group_id == UserGroup.id)
-        .join(Role, Role.id == GroupRole.role_id)
+        .join(GroupRole, GroupRole.role_id == Role.id)
+        .join(UserGroup, UserGroup.id == GroupRole.group_id)
         .join(RolePermission, RolePermission.role_id == Role.id)
         .join(Permission, Permission.id == RolePermission.permission_id)
         .where(
@@ -168,7 +144,7 @@ def users_with_permission(
     )
 
     policy_codes = _system_account_policy_codes(db)
-    permitted_queries = [direct_role, group_role]
+    permitted_queries = [role_assignment]
     if permission_code in policy_codes:
         permitted_queries.append(select(SystemAccount.user_id.label('user_id')))
 
@@ -191,38 +167,23 @@ def permission_sources(db: Session, user_id: int) -> dict[str, list[str]]:
     if 'requests:read' in effective and _user_is_active(db, user_id):
         sources['requests:read'].add('Acceso base del producto para usuarios activos')
 
-    direct_role_rows = db.execute(
-        select(Permission.code, Role.name)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .join(Role, Role.id == RolePermission.role_id)
-        .join(UserRoleAssignment, UserRoleAssignment.role_id == Role.id)
-        .where(
-            UserRoleAssignment.user_id == user_id,
-            Role.active.is_(True),
-            Permission.active.is_(True),
-        )
-    ).all()
-    for code, role_name in direct_role_rows:
-        if code in effective:
-            sources[code].add(f'Rol directo: {role_name}')
-
-    group_rows = db.execute(
+    scoped_rows = db.execute(
         select(Permission.code, UserGroup.name, Role.name)
         .join(RolePermission, RolePermission.permission_id == Permission.id)
         .join(Role, Role.id == RolePermission.role_id)
+        .join(UserRoleAssignment, UserRoleAssignment.role_id == Role.id)
         .join(GroupRole, GroupRole.role_id == Role.id)
         .join(UserGroup, UserGroup.id == GroupRole.group_id)
-        .join(GroupMember, GroupMember.group_id == UserGroup.id)
         .where(
-            GroupMember.user_id == user_id,
+            UserRoleAssignment.user_id == user_id,
             UserGroup.active.is_(True),
             Role.active.is_(True),
             Permission.active.is_(True),
         )
     ).all()
-    for code, group_name, role_name in group_rows:
+    for code, group_name, role_name in scoped_rows:
         if code in effective:
-            sources[code].add(f'Grupo {group_name} → {role_name}')
+            sources[code].add(f'Grupo {group_name} → Rol {role_name}')
 
     if is_system_account(db, user_id):
         policy_source = (

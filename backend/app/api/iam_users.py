@@ -11,12 +11,12 @@ from app.core.security import hash_password, normalize_email, require_permission
 from app.models.entities import User, UserRole
 from app.models.iam import (
     GroupMember,
+    GroupRole,
     Permission,
     Position,
     Role,
     SystemAccount,
     UserGroup,
-    UserPermission,
     UserPosition,
     UserRoleAssignment,
 )
@@ -79,12 +79,6 @@ def _out(db: Session, user: User) -> IamUserOut:
         .where(UserPosition.user_id == user.id)
         .order_by(UserPosition.position_id)
     ).all())
-    direct_permissions = list(db.scalars(
-        select(Permission.code)
-        .join(UserPermission, UserPermission.permission_id == Permission.id)
-        .where(UserPermission.user_id == user.id)
-        .order_by(Permission.code)
-    ).all())
     return IamUserOut(
         id=user.id,
         name=_full_name(user),
@@ -103,35 +97,72 @@ def _out(db: Session, user: User) -> IamUserOut:
         group_ids=group_ids,
         role_ids=role_ids,
         position_ids=position_ids,
-        direct_permission_codes=direct_permissions,
+        direct_permission_codes=[],
         effective_permission_codes=sorted(effective_permission_codes(db, user.id)),
         permission_sources=permission_sources(db, user.id),
     )
 
 
-def _validate_assignments(
-    db: Session,
-    group_ids: list[int],
-    role_ids: list[int],
-    permission_codes: list[str],
-    position_ids: list[int],
-) -> tuple[list[UserGroup], list[Role], list[Permission], list[Position]]:
-    groups = list(db.scalars(select(UserGroup).where(UserGroup.id.in_(set(group_ids)), UserGroup.active.is_(True))).all()) if group_ids else []
-    roles = list(db.scalars(select(Role).where(Role.id.in_(set(role_ids)), Role.active.is_(True))).all()) if role_ids else []
-    permissions = list(db.scalars(select(Permission).where(Permission.code.in_(set(permission_codes)), Permission.active.is_(True))).all()) if permission_codes else []
-    positions = list(db.scalars(select(Position).where(Position.id.in_(set(position_ids)), Position.active.is_(True))).all()) if position_ids else []
+def _validate_role_assignments(db: Session, role_ids: list[int]) -> tuple[list[Role], list[UserGroup]]:
+    unique_role_ids = list(dict.fromkeys(role_ids))
+    if not unique_role_ids:
+        return [], []
 
-    if len(groups) != len(set(group_ids)):
-        raise HTTPException(status_code=422, detail='Uno o más grupos no existen o están inactivos')
-    if len(roles) != len(set(role_ids)):
-        raise HTTPException(status_code=422, detail='Uno o más roles no existen o están inactivos')
-    if any(role.system_managed for role in roles):
-        raise HTTPException(status_code=422, detail='Los roles técnicos del sistema no pueden asignarse manualmente')
-    if len(permissions) != len(set(permission_codes)):
-        raise HTTPException(status_code=422, detail='Uno o más permisos no existen o están inactivos')
-    if len(positions) != len(set(position_ids)):
+    roles = list(db.scalars(select(Role).where(
+        Role.id.in_(unique_role_ids),
+        Role.active.is_(True),
+        Role.system_managed.is_(False),
+    )).all())
+    if len(roles) != len(unique_role_ids):
+        raise HTTPException(status_code=422, detail='Uno o más roles no existen, están inactivos o son técnicos')
+
+    binding_rows = db.execute(
+        select(GroupRole.role_id, UserGroup)
+        .join(UserGroup, UserGroup.id == GroupRole.group_id)
+        .where(
+            GroupRole.role_id.in_(unique_role_ids),
+            UserGroup.active.is_(True),
+        )
+    ).all()
+    group_by_role = {role_id: group for role_id, group in binding_rows}
+    if len(group_by_role) != len(unique_role_ids):
+        raise HTTPException(
+            status_code=422,
+            detail='Cada rol asignado al usuario debe pertenecer a un grupo activo',
+        )
+
+    groups = [group_by_role[role_id] for role_id in unique_role_ids]
+    group_ids = [group.id for group in groups]
+    if len(group_ids) != len(set(group_ids)):
+        raise HTTPException(
+            status_code=422,
+            detail='Solo se permite un rol por grupo para cada usuario',
+        )
+    return roles, groups
+
+
+def _validate_positions(db: Session, position_ids: list[int]) -> list[Position]:
+    unique_ids = list(dict.fromkeys(position_ids))
+    positions = list(db.scalars(select(Position).where(
+        Position.id.in_(unique_ids),
+        Position.active.is_(True),
+    )).all()) if unique_ids else []
+    if len(positions) != len(unique_ids):
         raise HTTPException(status_code=422, detail='Uno o más cargos no existen o están inactivos')
-    return groups, roles, permissions, positions
+    return positions
+
+
+def _validate_derived_groups(requested_group_ids: list[int] | None, groups: list[UserGroup]) -> None:
+    """Groups are output/compatibility only; role selection owns membership."""
+    if requested_group_ids is None:
+        return
+    requested = set(requested_group_ids)
+    derived = {group.id for group in groups}
+    if requested != derived:
+        raise HTTPException(
+            status_code=422,
+            detail='Los grupos no se asignan directamente: selecciona un rol dentro de cada grupo',
+        )
 
 
 def _replace_assignments(
@@ -143,47 +174,45 @@ def _replace_assignments(
     permission_codes: list[str] | None = None,
     position_ids: list[int] | None = None,
 ) -> None:
-    current_group_ids = list(db.scalars(select(GroupMember.group_id).where(GroupMember.user_id == user.id)).all())
-    current_role_ids = list(db.scalars(select(UserRoleAssignment.role_id).where(UserRoleAssignment.user_id == user.id)).all())
-    current_permission_codes = list(db.scalars(
-        select(Permission.code)
-        .join(UserPermission, UserPermission.permission_id == Permission.id)
-        .where(UserPermission.user_id == user.id)
+    if permission_codes:
+        raise HTTPException(
+            status_code=422,
+            detail='Los permisos deben asignarse mediante roles; no se permiten permisos individuales',
+        )
+
+    current_role_ids = list(db.scalars(
+        select(UserRoleAssignment.role_id).where(UserRoleAssignment.user_id == user.id)
     ).all())
-    current_position_ids = list(db.scalars(select(UserPosition.position_id).where(UserPosition.user_id == user.id)).all())
-
-    target_group_ids = current_group_ids if group_ids is None else list(dict.fromkeys(group_ids))
     target_role_ids = current_role_ids if role_ids is None else list(dict.fromkeys(role_ids))
-    target_permission_codes = current_permission_codes if permission_codes is None else list(dict.fromkeys(permission_codes))
-    target_position_ids = current_position_ids if position_ids is None else list(dict.fromkeys(position_ids))
+    roles, groups = _validate_role_assignments(db, target_role_ids)
+    _validate_derived_groups(group_ids, groups)
 
-    groups, roles, permissions, positions = _validate_assignments(
-        db,
-        target_group_ids,
-        target_role_ids,
-        target_permission_codes,
-        target_position_ids,
-    )
+    if group_ids is not None and role_ids is None:
+        current_group_ids = set(db.scalars(
+            select(GroupMember.group_id).where(GroupMember.user_id == user.id)
+        ).all())
+        if set(group_ids) != current_group_ids:
+            raise HTTPException(
+                status_code=422,
+                detail='La membresía de grupo se modifica asignando un rol del grupo',
+            )
 
-    if group_ids is not None:
-        db.execute(delete(GroupMember).where(GroupMember.user_id == user.id))
-        db.add_all(GroupMember(user_id=user.id, group_id=item.id) for item in groups)
     if role_ids is not None:
+        # Role and membership are one atomic assignment. There is no independent
+        # group membership and no unscoped/direct role in the authorization model.
         db.execute(delete(UserRoleAssignment).where(UserRoleAssignment.user_id == user.id))
-        db.add_all(UserRoleAssignment(user_id=user.id, role_id=item.id) for item in roles)
-    if permission_codes is not None:
-        db.execute(delete(UserPermission).where(UserPermission.user_id == user.id))
-        db.add_all(UserPermission(user_id=user.id, permission_id=item.id) for item in permissions)
+        db.execute(delete(GroupMember).where(GroupMember.user_id == user.id))
+        db.add_all(UserRoleAssignment(user_id=user.id, role_id=role.id) for role in roles)
+        db.add_all(GroupMember(user_id=user.id, group_id=group.id) for group in groups)
+
     if position_ids is not None:
+        positions = _validate_positions(db, position_ids)
         db.execute(delete(UserPosition).where(UserPosition.user_id == user.id))
         db.add_all(UserPosition(user_id=user.id, position_id=item.id) for item in positions)
 
 
 def _sync_legacy_display_fields(db: Session, user: User) -> None:
-    """Mirror IAM into old fields so the legacy React screen remains readable.
-
-    These fields are compatibility output only; authorization never reads them.
-    """
+    """Mirror IAM into old fields so the legacy React screen remains readable."""
     permissions = effective_permission_codes(db, user.id)
     user.can_view = 'requests:read' in permissions
     user.can_request = 'requests:create' in permissions
@@ -211,13 +240,10 @@ def create_user(payload: IamUserCreate, db: Session = Depends(get_db)):
     if db.scalar(select(User.id).where(func.upper(func.trim(User.identity_document)) == document)):
         raise HTTPException(status_code=409, detail='Ya existe un usuario con esa identificación')
 
-    _validate_assignments(
-        db,
-        payload.group_ids,
-        payload.role_ids,
-        payload.direct_permission_codes,
-        payload.position_ids,
-    )
+    roles, groups = _validate_role_assignments(db, payload.role_ids)
+    _validate_derived_groups(payload.group_ids, groups)
+    _validate_positions(db, payload.position_ids)
+
     temporary_password = secrets.token_urlsafe(15)
     full_name = ' '.join(
         part.strip()

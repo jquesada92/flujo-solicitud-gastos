@@ -17,7 +17,15 @@ from app.application import create_app
 from app.core.database import Base, get_db
 from app.core.security import apply_effective_permissions_to_user, create_token, hash_password
 from app.models.entities import User, UserRole
-from app.models.iam import Permission, Position, PositionRole, Role, RolePermission, UserPosition
+from app.models.iam import (
+    GroupMember,
+    GroupRole,
+    Permission,
+    Role,
+    RolePermission,
+    UserGroup,
+    UserRoleAssignment,
+)
 from app.services.iam_service import has_permission
 
 
@@ -78,16 +86,16 @@ class ConfigurationReadAccessTests(unittest.TestCase):
                 active=True,
                 system_managed=False,
             )
-            viewer_position = Position(
-                code='configuration-observer-seat',
-                name='Cargo de observación',
-                description='Cargo de prueba sin nombre organizacional especial',
+            configuration_group = UserGroup(
+                code='configuration',
+                name='Configuración',
+                description='Acceso de consulta a configuración',
                 active=True,
             )
-            db.add_all([requests_read, config_read, config_manage, viewer_role, viewer_position])
+            db.add_all([requests_read, config_read, config_manage, viewer_role, configuration_group])
             db.flush()
             db.add(RolePermission(role_id=viewer_role.id, permission_id=config_read.id))
-            db.add(PositionRole(position_id=viewer_position.id, role_id=viewer_role.id))
+            db.add(GroupRole(group_id=configuration_group.id, role_id=viewer_role.id))
 
             self.viewer = User(
                 name='Visor de configuración',
@@ -108,7 +116,10 @@ class ConfigurationReadAccessTests(unittest.TestCase):
             )
             db.add(self.viewer)
             db.flush()
-            db.add(UserPosition(user_id=self.viewer.id, position_id=viewer_position.id))
+            db.add_all([
+                UserRoleAssignment(user_id=self.viewer.id, role_id=viewer_role.id),
+                GroupMember(group_id=configuration_group.id, user_id=self.viewer.id),
+            ])
             db.commit()
             self.viewer_token = create_token(self.viewer)
             self.viewer_id = self.viewer.id
@@ -116,7 +127,7 @@ class ConfigurationReadAccessTests(unittest.TestCase):
     def auth(self) -> dict[str, str]:
         return {'Authorization': f'Bearer {self.viewer_token}'}
 
-    def test_config_read_is_inherited_by_cargo_without_config_manage(self):
+    def test_config_read_is_inherited_from_role_inside_group_without_config_manage(self):
         with self.Session() as db:
             user = db.get(User, self.viewer_id)
             hydrated = apply_effective_permissions_to_user(db, user)

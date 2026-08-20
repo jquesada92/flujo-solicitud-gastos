@@ -19,13 +19,16 @@ from app.core.database import Base, get_db
 from app.core.security import create_token, hash_password
 from app.models.entities import User, UserRole
 from app.models.iam import (
+    GroupMember,
+    GroupRole,
     Permission,
     Position,
-    PositionRole,
     Role,
     RolePermission,
     SystemAccount,
+    UserGroup,
     UserPosition,
+    UserRoleAssignment,
 )
 from app.services import email_service
 
@@ -69,26 +72,34 @@ class UserAccessNotificationTests(unittest.TestCase):
             db.flush()
 
             approver_role = Role(code='approver', name='Aprobador', active=True, system_managed=False)
-            db.add(approver_role)
+            request_group = UserGroup(code='requests', name='Solicitudes', active=True)
+            db.add_all([approver_role, request_group])
             db.flush()
-            db.add(RolePermission(role_id=approver_role.id, permission_id=approve.id))
+            db.add_all([
+                RolePermission(role_id=approver_role.id, permission_id=approve.id),
+                GroupRole(group_id=request_group.id, role_id=approver_role.id),
+            ])
 
             vocal = Position(code='vocal', name='Vocal', active=True)
             treasurer = Position(code='treasurer', name='Tesorero', active=True)
             db.add_all([vocal, treasurer])
             db.flush()
-            db.add(PositionRole(position_id=treasurer.id, role_id=approver_role.id))
 
             admin = self._new_user(db, 'admin@example.com', 'ADMIN-1')
             member = self._new_user(db, 'member@example.com', 'MEMBER-1')
             db.flush()
-            db.add(SystemAccount(user_id=admin.id, account_type='TECHNICAL_ADMIN'))
+            db.add_all([
+                SystemAccount(user_id=admin.id, account_type='TECHNICAL_ADMIN'),
+                UserRoleAssignment(user_id=member.id, role_id=approver_role.id),
+                GroupMember(group_id=request_group.id, user_id=member.id),
+            ])
             db.commit()
 
             self.admin_id = admin.id
             self.member_id = member.id
             self.vocal_id = vocal.id
             self.treasurer_id = treasurer.id
+            self.approver_role_id = approver_role.id
             self.admin_token = create_token(admin)
 
     def _new_user(self, db, email: str, identity_document: str) -> User:
@@ -115,7 +126,7 @@ class UserAccessNotificationTests(unittest.TestCase):
     def auth(self) -> dict[str, str]:
         return {'Authorization': f'Bearer {self.admin_token}'}
 
-    def test_invitation_contains_position_and_effective_permissions(self):
+    def test_invitation_contains_position_and_permissions_from_group_scoped_role(self):
         with patch('app.api.iam_users.send_user_invitation') as invitation:
             response = self.client.post(
                 '/api/iam/users',
@@ -127,6 +138,7 @@ class UserAccessNotificationTests(unittest.TestCase):
                     'email': 'ana@example.com',
                     'active': True,
                     'position_ids': [self.treasurer_id],
+                    'role_ids': [self.approver_role_id],
                 },
             )
         self.assertEqual(response.status_code, 201, response.text)
@@ -137,7 +149,27 @@ class UserAccessNotificationTests(unittest.TestCase):
         self.assertIn(('Consultar solicitudes', 'requests:read'), permissions)
         self.assertIn(('Aprobar solicitudes', 'requests:approve'), permissions)
 
-    def test_real_position_change_sends_updated_effective_permissions(self):
+    def test_cargo_alone_does_not_add_role_permissions_to_invitation(self):
+        with patch('app.api.iam_users.send_user_invitation') as invitation:
+            response = self.client.post(
+                '/api/iam/users',
+                headers=self.auth(),
+                json={
+                    'identity_document': 'NEW-101',
+                    'first_name': 'Luis',
+                    'last_name': 'Pérez',
+                    'email': 'luis@example.com',
+                    'active': True,
+                    'position_ids': [self.treasurer_id],
+                },
+            )
+        self.assertEqual(response.status_code, 201, response.text)
+        _, _, positions, permissions = invitation.call_args.args
+        self.assertEqual(positions, ['Tesorero'])
+        self.assertIn(('Consultar solicitudes', 'requests:read'), permissions)
+        self.assertNotIn(('Aprobar solicitudes', 'requests:approve'), permissions)
+
+    def test_real_position_change_sends_current_role_permissions_without_changing_them(self):
         with patch('app.api.iam_users.send_user_access_updated'):
             first = self.client.patch(
                 f'/api/iam/users/{self.member_id}',
