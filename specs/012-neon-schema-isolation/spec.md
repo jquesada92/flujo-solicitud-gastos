@@ -1,204 +1,170 @@
-# Especificación técnica — Aislamiento de schema Neon por ambiente
+# Feature 012 — Base limpia en Neon y aislamiento por schema
 
-**Feature:** 012  
-**Constitución:** 2.10.0
+**Constitución:** 2.10.0  
+**Estado:** Implementado en rama
 
 ## Objetivo
 
-Establecer una persistencia limpia y reproducible en Neon para DEV y PROD usando una única base de datos lógica y un único schema de aplicación:
+Reiniciar el ciclo de vida físico de la base de datos sin conservar tablas, datos ni revisiones Alembic anteriores.
+
+Contrato objetivo:
 
 ```text
-Proyecto Neon: ph_torre_delta
-Base de datos: ph_torre_delta
-Schema aplicación: ph_torre_delta
+Neon / Render
+Database: ph_torre_delta
+Schema de aplicación: administracion
+Variable: DATABASE_SCHEMA=administracion
 ```
 
-La aplicación debe crear sus tablas desde cero dentro de `ph_torre_delta`. Esta feature **no migra, mueve, copia ni renombra** tablas existentes desde `public`, `flujos_de_aprobacion` u otro schema previo.
+La aplicación crea el modelo vigente directamente dentro de `administracion`. `public` no es schema de aplicación y no existe fallback hacia schemas anteriores.
 
-## Topología de ambientes
+## F-012-01 — Base nueva
+
+DEV y PROD usan conexiones que apuntan a la base PostgreSQL `ph_torre_delta` correspondiente al ambiente.
+
+No se copian datos ni tablas desde bases anteriores.
+
+## F-012-02 — Schema dedicado
+
+Todas las tablas de la aplicación deben residir en el schema configurado por `DATABASE_SCHEMA`.
+
+Para este despliegue:
 
 ```text
-Neon project: ph_torre_delta
-├─ main  → PROD
-│  └─ database: ph_torre_delta
-│     └─ schema: ph_torre_delta
-└─ dev   → DEV
-   └─ database: ph_torre_delta
-      └─ schema: ph_torre_delta
+DATABASE_SCHEMA=administracion
 ```
 
-DEV y PROD deben compartir definición de esquema y migraciones, pero nunca depender de datos entre sí.
+También deben residir ahí:
 
-## F-012-01 — Schema canónico de aplicación
+- índices;
+- constraints;
+- secuencias asociadas;
+- tipos ENUM propios;
+- funciones/triggers propios de auditoría;
+- `alembic_version`.
 
-Toda tabla, secuencia, índice, constraint y objeto Alembic creado por la aplicación debe pertenecer al schema:
+`public`, `pg_catalog`, `information_schema` y schemas `pg_*` no son valores válidos para `DATABASE_SCHEMA`.
+
+## F-012-03 — SQLAlchemy schema-aware
+
+En PostgreSQL, SQLAlchemy debe:
+
+1. asociar el metadata ORM al schema configurado;
+2. establecer `search_path` exclusivamente al schema de aplicación como defensa adicional.
+
+SQLite permanece sin schema para las pruebas unitarias.
+
+## F-012-04 — Alembic como baseline futura, no como migración histórica
+
+Alembic se conserva para versionar cambios futuros, pero se elimina la historia anterior `0000 → 0008`.
+
+La nueva historia comienza en:
 
 ```text
-ph_torre_delta
+20260820_0001_initial_schema.py
 ```
 
-Esto incluye explícitamente `alembic_version`.
-
-No se crearán tablas de negocio nuevas en:
+con:
 
 ```text
-public
-flujos_de_aprobacion
+down_revision = None
 ```
 
-Los schemas legacy pueden existir temporalmente en Neon, pero no son fuente de verdad ni objetivo de creación.
+Esta revisión crea directamente el modelo vigente. No contiene:
 
-## F-012-02 — Creación limpia, no migración de datos
+- `ALTER ... SET SCHEMA`;
+- renombres para adaptar estructuras viejas;
+- `COPY`;
+- backfills históricos;
+- importación de permisos por nombres legacy;
+- `alembic stamp`;
+- preservación de datos anteriores.
 
-La instalación de DEV y PROD se considera una instalación limpia del modelo vigente.
+## F-012-05 — Baseline exige schema vacío
 
-Está prohibido para esta feature:
+La revisión inicial debe abortar si encuentra tablas de aplicación existentes en el schema destino.
 
-- mover tablas existentes entre schemas;
-- copiar registros legacy al nuevo schema;
-- renombrar `flujos_de_aprobacion` a `ph_torre_delta`;
-- usar `CREATE TABLE ... AS` para clonar estructuras o datos existentes;
-- usar `alembic stamp` para fingir que el nuevo schema ya contiene las revisiones.
+Se permite únicamente la tabla `alembic_version` que Alembic puede crear antes de ejecutar la revisión.
 
-El mecanismo esperado es ejecutar la cadena Alembic completa contra `ph_torre_delta` vacío.
+Esto evita que una instalación nueva reutilice accidentalmente una estructura vieja.
 
-## F-012-03 — Configuración centralizada
+## F-012-06 — IAM mínimo de instalación
 
-El nombre del schema debe resolverse desde Settings mediante una única configuración de infraestructura:
+La baseline crea los permisos vigentes:
 
 ```text
-DATABASE_SCHEMA=ph_torre_delta
+requests:read
+requests:create
+requests:approve
+areas:manage
+config:read
+config:manage
 ```
 
-No debe repetirse el literal del schema de forma dispersa en routers, servicios o modelos.
+`requests:close` se conserva únicamente como registro legacy **inactivo**, porque la autoridad de cierre/factura es por recurso.
 
-DEV y PROD usan el mismo valor de `DATABASE_SCHEMA`; cambia la conexión/branch de Neon, no el contrato lógico del schema.
+También crea los roles mínimos:
 
-## F-012-04 — SQLAlchemy debe resolver el schema correcto
+```text
+system-administrator
+area-manager
+configuration-viewer
+```
 
-La configuración de SQLAlchemy debe garantizar que las operaciones ORM de runtime apunten a `ph_torre_delta` aunque exista `public` u otro schema en la misma base.
+El bootstrap posterior crea la cuenta técnica usando `system-administrator`.
 
-La solución debe estar centralizada en `app/core/database.py` y ser compatible con las relaciones/FKs actuales.
+No se migran usuarios, cargos, grupos, roles organizacionales ni asignaciones anteriores.
 
-No se permite depender de que cada query recuerde prefijar manualmente el schema.
+## F-012-07 — Auditoría append-only
 
-## F-012-05 — Alembic debe aislar su versionado
+La baseline conserva la protección PostgreSQL contra UPDATE/DELETE de las tablas de eventos de auditoría mediante función y triggers dentro del mismo schema de aplicación.
 
-Alembic debe:
+## F-012-08 — Separación DEV / PROD
 
-1. crear/verificar `ph_torre_delta` antes de crear objetos de aplicación;
-2. ejecutar las revisiones con `ph_torre_delta` como schema efectivo;
-3. guardar `alembic_version` dentro de `ph_torre_delta`;
-4. autogenerar cambios comparando el schema de aplicación y no `public`;
-5. mantener una única cabeza válida.
+Cada ambiente tiene su propio `DATABASE_URL`.
 
-El estado Alembic de un schema legacy no debe hacer que el nuevo schema se considere migrado.
+Ambos usan:
 
-## F-012-06 — DEV y PROD reproducibles
+```text
+DATABASE_SCHEMA=administracion
+```
 
-Una base `ph_torre_delta` con el schema objetivo vacío debe poder llegar al estado vigente mediante:
+La estructura física debe provenir de la misma revisión `20260820_0001` y posteriores.
+
+## F-012-09 — Arranque
+
+El contrato de despliegue continúa siendo:
 
 ```text
 alembic upgrade head
 python -m scripts.bootstrap_admin
+uvicorn app.application:app
 ```
 
-El resultado estructural debe ser equivalente en las branches Neon `dev` y `main`.
+`alembic upgrade head` ahora significa construir una instalación limpia o aplicar exclusivamente revisiones futuras sobre la nueva baseline.
 
-Los datos de bootstrap pueden diferir por política de ambiente, pero no la estructura física de tablas.
+## F-012-10 — Evolución futura
 
-## F-012-07 — Protección contra creación accidental en `public`
-
-La validación de despliegue debe fallar si se detecta una tabla de aplicación nueva fuera de `ph_torre_delta`.
-
-Como mínimo se validará con `information_schema` que:
-
-- todas las tablas esperadas están bajo `ph_torre_delta`;
-- `ph_torre_delta.alembic_version` existe;
-- no aparecieron tablas de aplicación bajo `public`;
-- la revisión Alembic es `head`.
-
-## F-012-08 — Schemas legacy
-
-`flujos_de_aprobacion` y cualquier tabla histórica fuera del schema canónico pueden permanecer temporalmente mientras se confirma la instalación limpia.
-
-No deben ser consultados por la aplicación nueva ni usados como fallback silencioso.
-
-Su eliminación futura será una operación separada, explícita y destructiva; no forma parte de Feature 012.
-
-## F-012-09 — Variables y secretos por ambiente
-
-Cada deployment debe usar su propia `DATABASE_URL` correspondiente a la branch Neon correcta:
+Después de desplegar `20260820_0001`:
 
 ```text
-DEV  → Neon branch dev
-PROD → Neon branch main
+20260820_0001_initial_schema
+        ↓
+0002_nuevo_cambio
+        ↓
+0003_otro_cambio
 ```
 
-No se guardan connection strings ni credenciales reales en Git.
+No se reescribe `0001` una vez que se haya desplegado en un ambiente que deba conservarse.
 
-`DATABASE_SCHEMA=ph_torre_delta` sí puede documentarse porque no es secreto.
+## Criterios de aceptación
 
-## F-012-10 — Documentación como contrato
-
-La feature no está completa hasta sincronizar como mínimo:
-
-```text
-.specify/memory/constitution.md
-specs/012-neon-schema-isolation/spec.md
-specs/012-neon-schema-isolation/plan.md
-specs/012-neon-schema-isolation/checklists/acceptance.md
-README.md
-PROMPT_RECONSTRUCCION.md
-```
-
-## Escenarios de aceptación
-
-### Escenario A — DEV limpio
-
-```text
-Dado Neon branch dev
-Y database ph_torre_delta
-Y schema ph_torre_delta vacío
-Cuando se ejecuta alembic upgrade head
-Entonces todas las tablas de aplicación se crean bajo ph_torre_delta
-Y ph_torre_delta.alembic_version apunta a head
-Y no se copian datos desde schemas legacy
-```
-
-### Escenario B — PROD limpio
-
-```text
-Dado Neon branch main
-Y database ph_torre_delta
-Y schema ph_torre_delta vacío
-Cuando se ejecuta la misma cadena Alembic
-Entonces la estructura resultante equivale a DEV
-Y ninguna tabla de aplicación se crea en public
-```
-
-### Escenario C — Existe schema legacy
-
-```text
-Dado que flujos_de_aprobacion contiene objetos previos
-Cuando se inicializa ph_torre_delta
-Entonces Alembic no reutiliza ni mueve esos objetos
-Y la aplicación opera exclusivamente sobre ph_torre_delta
-```
-
-### Escenario D — Runtime ORM
-
-```text
-Dado que public y ph_torre_delta existen simultáneamente
-Cuando FastAPI consulta o muta entidades persistidas
-Entonces SQLAlchemy resuelve las tablas de ph_torre_delta
-Y nunca cae silenciosamente en public o flujos_de_aprobacion
-```
-
-## Fuera de alcance
-
-- migración de datos legacy;
-- eliminación del schema `flujos_de_aprobacion`;
-- eliminación de `public`;
-- cambio del modelo funcional de gastos/IAM;
-- cambio de proveedor de base de datos.
+1. `backend/alembic/versions/` contiene una sola revisión inicial.
+2. No existe el SQL legacy `backend/migrations/20260817_remove_property_domain.sql`.
+3. Settings reconoce `DATABASE_SCHEMA` y rechaza schemas de sistema.
+4. SQLAlchemy usa el schema configurado en PostgreSQL.
+5. Alembic coloca `alembic_version` en `administracion`.
+6. La baseline crea `expense_area` / `expense_category` directamente, sin renombrar columnas viejas.
+7. La baseline falla si encuentra tablas previas en el schema destino.
+8. DEV y PROD usan `ph_torre_delta` con `DATABASE_SCHEMA=administracion`.
+9. Las pruebas de contrato protegen esta arquitectura.
