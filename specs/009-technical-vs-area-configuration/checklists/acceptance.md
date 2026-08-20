@@ -40,6 +40,10 @@
 - [x] la columna de navegación IAM reserva ancho suficiente y nombres/correos largos no cortan badges **Activo/SISTEMA**.
 - [x] el Maestro de Roles muestra únicamente el nombre del Rol y su estado; el resumen de códigos de permiso queda en el panel de detalle/edición.
 - [x] **Guardar cambios** de Roles permanece deshabilitado mientras nombre, descripción y permisos coincidan con persistencia.
+- [x] en **Grupos**, cambiar Roles heredados o Miembros modifica un borrador local y no persiste inmediatamente.
+- [x] el detalle de Grupo expone un único botón **Guardar cambios** para Roles heredados + Miembros.
+- [x] **Guardar cambios** de Grupo permanece gris/deshabilitado sin cambios y usa el acento pendiente cuando existe un diff real.
+- [x] cambiar de Grupo con cambios pendientes exige confirmación antes de descartarlos.
 - [x] los botones de persistencia deshabilitados usan estado gris de bajo énfasis.
 - [x] los botones con cambios pendientes conocidos por el componente usan un brillo/acento leve de la paleta existente.
 - [x] la pantalla canónica separa Maestro de Áreas, Maestro de Categorías y **Categorías por área**.
@@ -54,7 +58,8 @@
 - [ ] validar manualmente navegación desde Accesos hacia Inicio/Solicitudes/Facturas/Configuración usando la barra estándar.
 - [ ] validar manualmente que emails largos no recorten el estado del usuario en Accesos.
 - [ ] validar manualmente que el Maestro de Roles no muestre cadenas de permisos debajo del nombre.
-- [ ] validar manualmente estados gris/pendiente de Guardar en Roles y Categorías por área.
+- [ ] validar manualmente estados gris/pendiente de Guardar en Roles, Grupos y Categorías por área.
+- [ ] validar manualmente que cambiar Roles/Miembros de Grupo no persista hasta pulsar **Guardar cambios**.
 - [ ] validar manualmente que una categoría desactivada desaparece de **Categorías por área** y reaparece al reactivarla conservando su relación previa.
 
 ## Migración
@@ -70,7 +75,7 @@
 ## Pruebas
 
 - [x] `test_iam_api.py` cubre system-only config y `areas:manage` ordinario.
-- [x] `test_frontend_configuration_access.py` protege separación de menú, robustez del bridge, checkbox IAM, integración de navegación, overflow de listas, presentación compacta de Roles y estado dirty de Roles.
+- [x] `test_frontend_configuration_access.py` protege separación de menú, robustez del bridge, checkbox IAM, integración de navegación, overflow de listas, presentación compacta de Roles, estado dirty de Roles y guardado explícito de asignaciones de Grupo.
 - [x] `test_frontend_classification_admin_contract.py` protege catálogo global, guardado por fila y visibilidad solo de categorías activas en asignación.
 - [x] `test_migrations.py` protege `0006`.
 - [ ] suite backend completa ejecutada localmente en head final.
