@@ -1,78 +1,74 @@
 # Checklist de aceptación — Feature 012
 
-## Topología Neon
+## Topología
 
-- [ ] El proyecto Neon usado es `ph_torre_delta`.
-- [ ] `main` está reservado para PROD.
-- [ ] `dev` está reservado para DEV.
-- [ ] Ambos ambientes usan la base `ph_torre_delta`.
-- [ ] Ambos ambientes usan el schema `ph_torre_delta`.
+- [x] Base objetivo documentada como `ph_torre_delta`.
+- [x] Schema objetivo documentado como `administracion`.
+- [x] `DATABASE_SCHEMA=administracion` agregado a los ENV de ejemplo del backend.
+- [x] DEV y PROD conservan `DATABASE_URL` separadas.
 
-## Creación limpia
+## Settings / SQLAlchemy
 
-- [ ] No se movieron tablas desde `flujos_de_aprobacion`.
-- [ ] No se copiaron datos desde schemas legacy.
-- [ ] No se renombró un schema legacy para simular la nueva estructura.
-- [ ] No se utilizó `alembic stamp` para saltar la creación real del schema.
-- [ ] La cadena Alembic completa puede ejecutarse sobre `ph_torre_delta` vacío.
-
-## Configuración
-
-- [ ] Existe una configuración central `DATABASE_SCHEMA`.
-- [ ] Su valor esperado es `ph_torre_delta`.
-- [ ] El literal del schema no está disperso por routers o servicios.
-- [ ] DEV utiliza la `DATABASE_URL` del branch `dev`.
-- [ ] PROD utiliza la `DATABASE_URL` del branch `main`.
-- [ ] No hay credenciales reales versionadas.
-
-## SQLAlchemy
-
-- [ ] El ORM resuelve tablas del schema `ph_torre_delta`.
-- [ ] La aplicación funciona aunque `public` exista simultáneamente.
-- [ ] La aplicación no cae silenciosamente en `flujos_de_aprobacion`.
-- [ ] Relaciones y foreign keys funcionan con el schema configurado.
+- [x] `Settings` expone `database_schema`.
+- [x] Default: `administracion`.
+- [x] Identificador inválido produce error.
+- [x] `public`, `information_schema` y `pg_*` se rechazan.
+- [x] SQLAlchemy usa metadata con schema en PostgreSQL.
+- [x] SQLAlchemy fuerza `search_path` al schema configurado.
+- [x] SQLite permanece schema-less para unit tests.
 
 ## Alembic
 
-- [ ] `ph_torre_delta.alembic_version` existe.
-- [ ] `alembic current` reporta la revisión esperada.
-- [ ] `alembic heads` reporta una única cabeza.
-- [ ] `alembic upgrade head` funciona desde un schema objetivo vacío.
-- [ ] Alembic no reutiliza el `alembic_version` de un schema legacy.
-- [ ] Autogenerate compara el schema de aplicación correcto.
+- [x] `version_table_schema` usa `DATABASE_SCHEMA`.
+- [x] `env.py` crea el schema si no existe.
+- [x] Autogenerate/discovery queda restringido al schema de aplicación.
+- [x] Revisiones `0000→0008` eliminadas.
+- [x] SQL legacy de migración eliminado.
+- [x] Existe una sola revisión: `20260820_0001_initial_schema.py`.
+- [x] `down_revision = None`.
 
-## Objetos físicos
+## Baseline limpia
 
-- [ ] Todas las tablas de aplicación están bajo `ph_torre_delta`.
-- [ ] Los índices de aplicación pertenecen a tablas del schema correcto.
-- [ ] Las secuencias de aplicación pertenecen al schema correcto.
-- [ ] Las constraints/FKs apuntan a objetos del schema correcto.
-- [ ] No se creó ninguna tabla de aplicación nueva bajo `public`.
+- [x] Crea el modelo actual desde cero.
+- [x] `expense_area` se crea directamente.
+- [x] `expense_category` se crea directamente.
+- [x] No contiene renombre desde `expense_type` / `expense_subcategory`.
+- [x] No contiene backfills de datos históricos.
+- [x] No importa usuarios/asignaciones de bases anteriores.
+- [x] No usa `alembic stamp`.
+- [x] Aborta si encuentra tablas previas en el schema destino.
 
-## DEV
+## IAM inicial
 
-- [ ] DEV fue inicializado desde cero con Alembic.
-- [ ] `bootstrap_admin` funciona después de `alembic upgrade head`.
-- [ ] Las pruebas backend pasan contra DEV/configuración equivalente.
+- [x] Siembra `requests:read`.
+- [x] Siembra `requests:create`.
+- [x] Siembra `requests:approve`.
+- [x] Siembra `areas:manage`.
+- [x] Siembra `config:read`.
+- [x] Siembra `config:manage`.
+- [x] Conserva `requests:close` solo como registro inactivo.
+- [x] Siembra `system-administrator`.
+- [x] Siembra `area-manager`.
+- [x] Siembra `configuration-viewer`.
 
-## PROD
+## Auditoría
 
-- [ ] La misma revisión de código validada en DEV se usa para PROD.
-- [ ] PROD fue inicializado desde cero en `ph_torre_delta`.
-- [ ] La estructura física de PROD equivale a DEV.
-- [ ] No se reutilizaron datos legacy durante la inicialización.
+- [x] La baseline conserva guards append-only de PostgreSQL.
+- [x] Función y triggers se crean dentro del schema de aplicación.
 
-## Gates
+## Pruebas
 
-- [ ] `alembic heads` pasa.
-- [ ] `alembic current` pasa.
-- [ ] `python -m unittest discover -s tests -v` pasa.
-- [ ] `npm run build` pasa.
-- [ ] Consulta de `information_schema` confirma aislamiento de schema.
+- [x] La prueba de Área/Categoría ya no exige la migración `0008`.
+- [x] Existe `test_database_schema_contract.py`.
+- [ ] Ejecutar `python -m unittest discover -s tests -v` en checkout local/CI.
+- [ ] Ejecutar `alembic heads` y confirmar `20260820_0001`.
+- [ ] Ejecutar baseline contra DEV vacío.
+- [ ] Confirmar todas las tablas en `administracion`.
+- [ ] Confirmar ausencia de tablas de aplicación en `public`.
+- [ ] Ejecutar `python -m scripts.bootstrap_admin` en DEV.
+- [ ] Validar login/flujo básico en DEV.
+- [ ] Repetir baseline en PROD nuevo después de validar DEV.
 
-## Documentación
+## Regla de cierre
 
-- [ ] Constitución actualizada a 2.10.0.
-- [ ] `README.md` refleja Neon DEV/PROD y schema canónico.
-- [ ] `PROMPT_RECONSTRUCCION.md` prohíbe crear en `public` o migrar desde schemas legacy.
-- [ ] Feature 012 tiene spec, plan y checklist sincronizados.
+Una vez que `20260820_0001` se despliegue en un ambiente persistente, la baseline queda congelada. Todo cambio posterior debe crear una revisión Alembic nueva.
