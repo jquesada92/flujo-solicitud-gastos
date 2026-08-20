@@ -1,47 +1,126 @@
 # Historial funcional y técnico
 
-## 2026-08-20 — Neon adopta `ph_torre_delta` como schema único de aplicación
+## 2026-08-20 — Nueva base `ph_torre_delta` con schema `administracion`
 
 ### Contexto
 
-El proyecto Neon ya utiliza una base llamada `ph_torre_delta`, pero coexistían schemas previos como `flujos_de_aprobacion` y el schema estándar `public`. La intención del producto no es mover tablas existentes entre schemas, sino volver a crear la estructura vigente desde cero bajo un namespace canónico y reproducible.
+Se decidió reiniciar el ciclo de vida físico de la base de datos. No se requiere conservar tablas, datos ni el historial Alembic utilizado por instalaciones anteriores.
+
+La aplicación mantiene su modelo funcional actual, pero la nueva instalación nace limpia y reproducible.
 
 ### Decisión técnica
 
-Se adopta Feature 012 y Constitución **2.10.0**:
+Feature 012 y Constitución **2.10.0** establecen:
 
 ```text
-Neon project: ph_torre_delta
-├─ main  → PROD
-│  └─ database: ph_torre_delta
-│     └─ schema: ph_torre_delta
-└─ dev   → DEV
-   └─ database: ph_torre_delta
-      └─ schema: ph_torre_delta
+DEV
+DATABASE_URL  → Neon / database ph_torre_delta
+DATABASE_SCHEMA=administracion
+
+PROD / Render
+DATABASE_URL  → Neon / database ph_torre_delta
+DATABASE_SCHEMA=administracion
 ```
 
-La configuración central debe exponer:
+La base y el schema cumplen responsabilidades distintas:
 
 ```text
-DATABASE_URL=<branch correspondiente>
-DATABASE_SCHEMA=ph_torre_delta
+Database: ph_torre_delta
+Schema:   administracion
 ```
 
-SQLAlchemy y Alembic deben resolver el schema de forma centralizada. Todas las tablas, secuencias, índices, constraints y `alembic_version` de la instalación vigente pertenecen a `ph_torre_delta`.
+`public` no es schema de aplicación ni fallback.
 
-### Instalación limpia
+### Reinicio de Alembic
 
-DEV y PROD se inicializan mediante la misma cadena Alembic sobre un schema `ph_torre_delta` vacío.
+La historia operativa anterior:
 
-No forma parte de esta decisión:
+```text
+0000 → 0001 → ... → 0008
+```
 
-- mover tablas desde `flujos_de_aprobacion`;
-- copiar datos legacy;
-- renombrar schemas;
-- reutilizar `alembic_version` de otro schema;
-- usar `alembic stamp` para saltar la creación física.
+se retira de la rama vigente.
 
-Los schemas legacy pueden coexistir temporalmente, pero no son fuente de verdad ni fallback de runtime. Su eliminación futura será una operación separada y explícita.
+La nueva historia comienza en:
+
+```text
+20260820_0001_initial_schema.py
+```
+
+con `down_revision = None`.
+
+Esta revisión es una baseline limpia, no una migración de la base anterior. Crea directamente el modelo físico actual y no ejecuta:
+
+- copia de tablas;
+- `ALTER ... SET SCHEMA`;
+- renombres para adaptar columnas históricas;
+- backfills de datos;
+- importación de usuarios/asignaciones anteriores;
+- `alembic stamp`.
+
+`expense_area` y `expense_category` nacen con sus nombres canónicos desde la baseline.
+
+### Protección contra reutilización accidental
+
+Antes de crear las tablas, la baseline inspecciona `administracion`. Si encuentra tablas de aplicación preexistentes, aborta. La única excepción permitida es `alembic_version`, que Alembic puede crear antes de ejecutar la revisión.
+
+Esto convierte el requisito de “crear desde cero” en una garantía técnica.
+
+### SQLAlchemy y Alembic schema-aware
+
+`DATABASE_SCHEMA` se incorpora a Settings y se valida como identificador PostgreSQL seguro. Se rechazan schemas del sistema como `public`, `information_schema` y `pg_*`.
+
+En PostgreSQL:
+
+- el metadata ORM usa el schema configurado;
+- la conexión limita `search_path` al schema de aplicación;
+- Alembic crea el schema si no existe;
+- `version_table_schema` coloca `alembic_version` dentro de `administracion`;
+- discovery/autogenerate se restringe al mismo schema.
+
+SQLite continúa sin schema para las pruebas unitarias.
+
+### Bootstrap IAM
+
+La baseline crea la estructura IAM actual y las semillas mínimas:
+
+```text
+Permisos activos
+- requests:read
+- requests:create
+- requests:approve
+- areas:manage
+- config:read
+- config:manage
+
+Registro legacy inactivo
+- requests:close
+
+Roles iniciales
+- system-administrator
+- area-manager
+- configuration-viewer
+```
+
+Después de la baseline, `python -m scripts.bootstrap_admin` crea/reconcilia la cuenta técnica de la nueva instalación.
+
+No se importan usuarios, grupos, cargos ni asignaciones de una base anterior.
+
+### Auditoría
+
+La nueva baseline mantiene la protección append-only de las tablas de eventos. La función y los triggers PostgreSQL también se crean dentro de `administracion`.
+
+### Evolución futura
+
+Una vez desplegada `20260820_0001` en un ambiente persistente, queda congelada. Cambios posteriores deben crear nuevas revisiones Alembic:
+
+```text
+20260820_0001_initial_schema
+        ↓
+0002_nuevo_cambio
+        ↓
+0003_otro_cambio
+```
 
 ### Gobierno documental
 
@@ -51,8 +130,12 @@ El cambio sincroniza:
 - Feature 012 (`spec.md`, `plan.md`, checklist);
 - README;
 - prompt maestro;
+- ENV examples;
+- pruebas de contrato;
 - HISTORY;
 - CHANGELOG.
+
+> Las menciones de migraciones `0000 → 0008` en eventos históricos posteriores a esta sección describen cómo evolucionó el producto antes del reset. Ya no son la cadena operativa vigente.
 
 ---
 
@@ -62,7 +145,7 @@ El cambio sincroniza:
 
 La Configuración tenía tres superficies solapadas para identidad y estructura: **Usuarios/Personas**, **Organigrama** y **Accesos**. Esto duplicaba navegación y permitía que el mismo dominio administrativo pareciera tener más de una fuente de verdad.
 
-Además, después de integrar la consola IAM con el shell principal, la barra superior permanecía visible pero podía no abandonar Accesos al pulsar Inicio/Solicitudes/Facturas/Auditoría/Salir. La causa era que Accesos se monta mediante `#access-management`: React podía cambiar la pestaña subyacente mientras el hash mantenía la consola montada. El caso era especialmente visible al volver a la misma pestaña desde la que se abrió Accesos.
+Además, después de integrar la consola IAM con el shell principal, la barra superior permanecía visible pero podía no abandonar Accesos al pulsar Inicio/Solicitudes/Facturas/Auditoría/Salir. La causa era que Accesos se monta mediante `#access-management`: React podía cambiar la pestaña subyacente mientras el hash mantenía la consola montada.
 
 ### Decisión funcional
 
@@ -78,27 +161,15 @@ Configuración
 
 **Usuarios/Personas y Organigrama dejan de ser pantallas independientes.**
 
-Accesos se convierte en la única superficie para:
-
-```text
-Usuarios
-Grupos
-Roles
-Permisos
-Cargos/Posiciones
-Asignaciones
-Permisos efectivos/fuentes
-```
-
-El modelo persistido de Usuario/Cargo/Grupo/Rol/Permiso no se elimina; la consolidación retira duplicidad de UX y navegación.
+Accesos se convierte en la única superficie para Usuarios, Grupos, Roles, Permisos, Cargos/Posiciones, asignaciones y permisos efectivos.
 
 Para `config:read`, la misma consola se usa en modo solo lectura. `areas:manage` continúa independiente y `config:manage` permanece system-only.
 
 ### Navegación desde Accesos
 
-Se agrega `frontend/src/access-navigation-bridge.js`, cargado antes de `main.jsx`.
+`frontend/src/access-navigation-bridge.js`, cargado antes de `main.jsx`, retira `#access-management` antes de que el shell procese el destino.
 
-El bridge escucha la topbar en capture phase y, cuando Accesos está activo, elimina `#access-management` antes de que el shell procese el destino. Así funcionan en un solo clic:
+Así funcionan en un solo clic:
 
 ```text
 Accesos → Inicio
@@ -111,83 +182,32 @@ Accesos → Salir
 
 Abrir/cerrar únicamente el dropdown **Configuración** no abandona Accesos.
 
-Se agrega `test_access_navigation_bridge.py` como contrato de regresión. La validación manual en Docker continúa como gate explícito del checklist hasta ser ejecutada.
+### Clasificación
 
-### Sincronización con main y clasificación
-
-La rama de Feature 011 se sincronizó con `main` antes de continuar. Esto incorporó Alembic `20260819_0008_expense_area_category_columns.py` y mantuvo alineada la base local que ya estaba en revisión `0008`.
-
-El contrato vigente queda:
+En esta etapa se consolidó el contrato funcional:
 
 ```text
 expense_area
 expense_category
 ```
 
-`expense_type` / `expense_subcategory` permanecen únicamente como aliases de compatibilidad transitoria.
-
-### Gobierno documental
-
-El cambio sincroniza:
-
-- Constitución 2.9.0;
-- Feature 011 (`spec.md`, `plan.md`, checklist);
-- README;
-- prompt maestro;
-- CONFIGURATION_ACCESS;
-- IAM_MODEL;
-- CLASSIFICATION_MODEL;
-- TERMINOLOGY;
-- FASTAPI_ARCHITECTURE;
-- índice de docs;
-- política documental;
-- HISTORY;
-- CHANGELOG.
+La cadena de migraciones que entonces preservaba datos quedó posteriormente reemplazada por la baseline limpia de Feature 012.
 
 ---
 
 ## 2026-08-19 — Asignación Área-Categoría oculta categorías inactivas
 
-### Problema observado
+La tarjeta **Categorías por área** muestra únicamente categorías activas, mientras el Maestro de Categorías conserva activas e inactivas para mantenimiento/reactivación.
 
-La tarjeta **Categorías por área** mostraba también categorías inactivas. Aunque esa visibilidad servía para inspección técnica, mezclaba dos responsabilidades distintas: mantenimiento del catálogo y selección de opciones realmente disponibles para asignar a un Área.
+Desactivar una categoría no elimina relaciones ni altera solicitudes existentes. Los cambios de asignación solo se persisten al pulsar **Guardar**.
 
-### Decisión funcional
-
-Se separa explícitamente la visibilidad:
-
-```text
-Maestro de Categorías
-→ activas + inactivas
-→ mantenimiento / reactivación
-
-Categorías por área
-→ solo active=true
-→ asignación operativa
-```
-
-Desactivar una categoría no elimina sus relaciones `expense_area_categories` ni altera solicitudes históricas. Mientras esté inactiva deja de aparecer en la tarjeta de asignación. Si se necesita editar nuevamente esa relación, se reactiva primero desde el Maestro de Categorías.
-
-Los checkboxes de la tarjeta siguen siendo estado local: la relación solo cambia al pulsar **Guardar** por fila. El contador usa la misma población activa visible para evitar discrepancias entre número mostrado y filas disponibles.
-
-### Implementación y protección
-
-- `classification-admin.js` centraliza la población visible en `visibleAssignmentCategories()`.
-- la tabla, el contador, el control de cambios pendientes y el estado vacío usan únicamente categorías activas.
-- `test_frontend_classification_admin_contract.py` protege esta regla.
-- Feature 009, checklist y `docs/CLASSIFICATION_MODEL.md` quedan sincronizados con el comportamiento.
+`test_frontend_classification_admin_contract.py` protege esta regla.
 
 ---
 
 ## 2026-08-18 — Notificaciones de Cargo y permisos efectivos
 
-### Necesidad
-
-Al crear usuarios o modificar su Cargo, el usuario debía recibir una comunicación explícita de su posición organizacional y de los permisos efectivos que realmente tiene en el sistema.
-
-### Decisión funcional
-
-Se incorpora Feature 010:
+Al crear usuarios o modificar realmente su Cargo, el usuario recibe comunicación explícita de su posición organizacional y permisos efectivos.
 
 ```text
 Creación de usuario activo
@@ -201,71 +221,15 @@ Cambio real de Cargo
 → correo Actualización de cargo y permisos
 ```
 
-El correo usa `UserPosition → Position` y `effective_permission_codes()` como fuentes de verdad. No usa `UserRole`, `title` ni `can_*` legacy.
-
-Guardar el mismo conjunto de `position_ids` no genera correo duplicado.
-
-### Semántica de entrega
-
-La invitación inicial conserva su comportamiento obligatorio. El cambio de Cargo adopta la misma garantía: si el proveedor de correo falla, la transacción se revierte y el endpoint devuelve 502.
-
-Esto es distinto de algunos correos de workflow, que actualmente pueden ser best-effort. La deuda futura sigue siendo una outbox/reintentos persistentes.
-
-### Código y pruebas
-
-- `email_service.send_user_invitation()` ahora recibe Cargo(s) y permisos efectivos.
-- se agrega `send_user_access_updated()` sin contraseña temporal.
-- `iam_users.py` detecta cambios reales de `position_ids`, recalcula el acceso y notifica.
-- `test_user_access_notifications.py` cubre creación, cambio real, no duplicación, rollback por fallo de correo y contenido HTML/texto.
-- no requiere nueva migración; Constitución permanece **2.8.0** para Feature 010.
-
----
-
-## 2026-08-18 — Hardening del bridge Vite de Accesos
-
-Durante la validación local de Feature 009 con Vite 8.2.1 en Windows, `npm run build` falló con:
-
-```text
-Legacy main.jsx extraction could not find: system-only access menu injection
-```
-
-La regla funcional de autorización era correcta. El fallo estaba en `protectAccessMenuInjection()`: el bridge temporal buscaba mediante `replaceRequired()` una secuencia multilinea exacta dentro de `iam-admin.jsx`, por lo que un cambio de formato/transformación impedía localizar el guard de `injectAccessMenu()`.
-
-Decisión técnica:
-
-- mantener la frontera funcional de Constitución 2.8.0 sin cambios en ese momento;
-- reemplazar la coincidencia multilinea literal por una regex estructural tolerante a whitespace y finales LF/CRLF;
-- exigir exactamente una coincidencia del guard para conservar fail-fast;
-- reforzar `test_frontend_configuration_access.py`;
-- mantener `npm run build` como gate local.
+Las fuentes de verdad son `UserPosition → Position` y `effective_permission_codes()`. Guardar el mismo conjunto de `position_ids` no genera correo duplicado.
 
 ---
 
 ## 2026-08-18 — Configuración técnica se separa de Gestión de Áreas
 
-### Problema observado
+Se incorporó `areas:manage` como permiso organizacional configurable y `config:manage` pasó a ser system-only.
 
-El menú **Configuración** mostraba Usuarios / Organigrama / Accesos a actores que no debían administrar técnicamente la plataforma. Al mismo tiempo, la gestión de Áreas dependía de `config:manage`.
-
-### Decisión funcional
-
-Se incorporó `areas:manage` como permiso organizacional configurable y `config:manage` pasó a ser system-only. Alembic `0006` creó el Rol neutral:
-
-```text
-Gestor de áreas → areas:manage
-```
-
-sin asignarlo a ningún Grupo/Cargo por nombre.
-
-Esta arquitectura evolucionó posteriormente con `config:read` (`0007`) y con Feature 011, que consolidó Usuarios/Organigrama dentro de Accesos.
-
----
-
-## 2026-08-18 — Hardening del bridge Vite de delegación de cierre
-
-Durante la validación local de Feature 008, `npm run build` falló porque el bridge temporal buscaba una secuencia con salto de línea e indentación exactos dentro de `main.jsx`.
-
-Se reemplazó la coincidencia literal por un ancla regex tolerante a LF/CRLF y whitespace variable, exigiendo una sola coincidencia y agregando regresión en `test_frontend_closure_contract.py`.
+El nombre de un Grupo/Cargo no concede autorización. El rol neutral **Gestor de áreas** se conserva en la nueva baseline, sin asignaciones organizacionales automáticas.
 
 ---
 
@@ -280,8 +244,6 @@ OR delegado activo creado por el solicitante para ESA solicitud
 ```
 
 `requests:close` quedó como registro histórico inactivo. Se creó `expense_closure_delegations` con historial de creación/revocación y una sola delegación activa por solicitud.
-
-`financial_actions.py` usa `can_manage_closure()` y `tracking.py` expone `can_close` / `can_delegate_close`.
 
 ---
 
@@ -315,13 +277,13 @@ Usuario → Grupo ─────────→ Rol → Permiso
        ↘ Permiso directo
 ```
 
-Migración `0004` creó `position_roles` e importó una sola vez configuración legacy a relaciones IAM. El nombre del Cargo nunca autoriza.
+El nombre del Cargo nunca autoriza. La nueva baseline conserva la estructura final sin importar configuraciones organizacionales históricas.
 
 ---
 
 ## 2026-08-18 — Dashboard: acciones contextuales y KPIs informativos
 
-Todo usuario activo obtiene baseline `requests:read` para Inicio/Solicitudes y seguimiento compartido. Las filas de **Acciones pendientes** abren un modal que revalida `/my-actions`; los KPIs superiores son informativos.
+Todo usuario activo obtiene baseline `requests:read` para Inicio/Solicitudes y seguimiento compartido.
 
 Códigos contextuales:
 
@@ -336,7 +298,7 @@ CLOSE_REQUEST
 
 ## 2026-08-17 — Seguimiento universal y cancelación por recurso
 
-`requests:read` pasó a baseline no revocable para usuarios activos. `GET /api/expenses` dejó de filtrar por solicitante.
+`requests:read` pasó a baseline no revocable para usuarios activos. `GET /api/expenses` dejó de filtrar exclusivamente por solicitante.
 
 Cancelación quedó reservada a:
 
@@ -344,13 +306,9 @@ Cancelación quedó reservada a:
 solicitante original OR system_accounts
 ```
 
-con `can_cancel` calculado por backend.
-
 ---
 
 ## 2026-08-17 — Corrección MULTI_QUOTE modular y preservación de tipo
-
-Se corrigió el bug donde una MULTI_QUOTE en corrección podía renderizar el formulario SIMPLE según la pestaña de creación activa.
 
 Regla:
 
@@ -359,7 +317,7 @@ SIMPLE      → corrección → SIMPLE
 MULTI_QUOTE → corrección → MULTI_QUOTE
 ```
 
-`revision_actions.py` valida backend, la ronda MULTI_QUOTE recibe nuevo `flow_id`, votos/invitaciones se reinician y evidencia se conserva. Migración `0003` repara filas históricas inconsistentes.
+La ronda MULTI_QUOTE corregida recibe nuevo `flow_id`; votos/invitaciones se reinician y la evidencia del flujo vigente se conserva según el contrato funcional.
 
 ---
 
@@ -378,13 +336,7 @@ Se agregó `python -m scripts.test_email` para diagnosticar transporte sin depen
 
 ## 2026-08-17 — FastAPI hardening e IAM configurable
 
-Se incorporaron Pydantic Settings, Argon2 con compatibilidad PBKDF2, application factory, Alembic, baseline `0000`, IAM `0001`, system accounts `0002`, routers/servicios canónicos, TestClient y entrypoint Docker:
-
-```text
-alembic upgrade head
-python -m scripts.bootstrap_admin
-uvicorn app.application:app
-```
+Se incorporaron Pydantic Settings, Argon2 con compatibilidad PBKDF2, application factory, Alembic, system accounts, routers/servicios canónicos, TestClient y entrypoint Docker.
 
 La cuenta técnica se identifica por `system_accounts`; producción se rige por `ENVIRONMENT=production`.
 
@@ -400,10 +352,11 @@ Los nombres organizacionales son datos configurables, nunca condiciones de autor
 
 ## Deuda explícita vigente
 
-- `UserRole`, `users.title`, `can_*`, `AccessProfile`, `BOARD_CODES`, `/api/users` legacy y `requests:close` inactivo permanecen físicamente como compatibilidad.
+- `UserRole`, `users.title`, `can_*`, `AccessProfile`, `BOARD_CODES`, `/api/users` legacy y `requests:close` inactivo permanecen físicamente como compatibilidad de código.
 - vistas internas `people` / `organization` pueden permanecer temporalmente, pero no son navegables ni autoridad.
 - `main.jsx` sigue monolítico en partes; Vite mantiene bridges transitorios.
-- `expense_type` / `expense_subcategory` pueden existir como aliases transitorios, pero la persistencia/contrato vigente es `expense_area` / `expense_category`.
-- schemas/tablas legacy fuera de `ph_torre_delta` pueden coexistir temporalmente, pero no son fuente de verdad ni fallback de runtime.
+- `expense_type` / `expense_subcategory` pueden existir como aliases internos transitorios; la persistencia vigente usa `expense_area` / `expense_category`.
 - fórmula completa de quorum/mayoría APPROVED/REJECTED y empate MULTI_QUOTE siguen como deuda separada.
 - edición estructural de opciones MULTI_QUOTE y outbox/retry persistente de correo siguen pendientes.
+
+La compatibilidad de código no implica conservar una base previa. La persistencia vigente nace desde `20260820_0001` en `ph_torre_delta.administracion`.
