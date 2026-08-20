@@ -17,8 +17,8 @@ Aplicación web neutral respecto al tipo de organización para solicitar, evalua
 - **Accesos es la única superficie administrativa para usuarios e IAM.** Usuarios/Personas y Organigrama no son pantallas independientes.
 - Área y Categoría son dimensiones independientes y usan `expense_area` / `expense_category` como contrato canónico.
 - Cierre/factura se autoriza por solicitud, no mediante `requests:close`.
-- Alembic es el mecanismo canónico de migraciones.
-- La persistencia de aplicación usa exclusivamente el schema PostgreSQL `ph_torre_delta`; DEV y PROD se crean desde cero y no migran tablas desde schemas legacy.
+- La persistencia vigente usa la base `ph_torre_delta` y el schema PostgreSQL dedicado `administracion`.
+- La historia física anterior de base de datos no se conserva: la instalación vigente nace desde una baseline Alembic limpia.
 
 ## Terminología canónica
 
@@ -59,7 +59,7 @@ Permisos vigentes:
 | `config:read` | Consultar Configuración en modo solo lectura |
 | `config:manage` | Administración técnica reservada a `system_accounts` |
 
-`requests:close` permanece solo como registro legacy inactivo y no autoriza cierre/factura.
+`requests:close` permanece únicamente como registro legacy **inactivo** y no autoriza cierre/factura.
 
 ## Configuración y Accesos
 
@@ -130,7 +130,7 @@ expense_category
 
 Los nombres `expense_type` / `expense_subcategory` son compatibilidad legacy y no deben usarse para nuevas APIs, modelos o documentación funcional.
 
-Alembic `20260819_0008_expense_area_category_columns.py` renombra las columnas físicas de `expenses` preservando los datos existentes.
+La baseline `20260820_0001_initial_schema.py` crea directamente las columnas físicas `expense_area` y `expense_category`. No existe una migración vigente que primero cree nombres anteriores y luego los renombre.
 
 El catálogo global y relaciones configurables permiten:
 
@@ -260,51 +260,69 @@ Ver [docs/EMAIL_CONFIGURATION.md](docs/EMAIL_CONFIGURATION.md).
 
 ## Persistencia Neon por ambiente
 
-Topología canónica:
+Contrato canónico:
 
 ```text
-Neon project: ph_torre_delta
-├─ main  → PROD
-│  └─ database: ph_torre_delta
-│     └─ schema: ph_torre_delta
-└─ dev   → DEV
-   └─ database: ph_torre_delta
-      └─ schema: ph_torre_delta
+DEV
+DATABASE_URL=<URL Neon DEV / database ph_torre_delta>
+DATABASE_SCHEMA=administracion
+
+PROD / Render
+DATABASE_URL=<URL Neon PROD / database ph_torre_delta>
+DATABASE_SCHEMA=administracion
 ```
 
-Contrato de infraestructura:
+Estructura física:
 
 ```text
-DATABASE_URL=<connection string de la branch correspondiente>
-DATABASE_SCHEMA=ph_torre_delta
+ph_torre_delta
+└── administracion
+    ├── users
+    ├── roles
+    ├── permissions
+    ├── expenses
+    ├── approvals
+    ├── ...
+    └── alembic_version
 ```
 
 Reglas obligatorias:
 
-- todas las tablas, secuencias, índices, constraints y `alembic_version` de la aplicación deben vivir bajo `ph_torre_delta`;
-- `public` no es schema de aplicación;
-- `flujos_de_aprobacion` es legacy y no se usa como fallback;
-- DEV y PROD se inicializan **desde cero** con Alembic;
-- no se mueven, copian ni renombran tablas desde schemas previos;
-- el estado Alembic de un schema legacy no se reutiliza ni se oculta con `alembic stamp`;
-- la misma cadena de migraciones produce la estructura física de DEV y PROD; solo cambia `DATABASE_URL`/branch.
+- todas las tablas de aplicación viven bajo `administracion`;
+- índices, constraints, secuencias, tipos ENUM, funciones/triggers propios y `alembic_version` usan el mismo schema;
+- `public` no es schema de aplicación ni fallback;
+- ninguna base/schema anterior es fuente de verdad para esta instalación;
+- DEV y PROD nacen desde cero con la misma baseline;
+- no se mueven, copian, clonan ni renombran tablas anteriores;
+- no se migran ni backfillean datos legacy;
+- no se usa `alembic stamp` para adoptar una estructura anterior;
+- SQLAlchemy y Alembic resuelven `DATABASE_SCHEMA` centralmente;
+- una baseline nueva aborta si encuentra tablas de aplicación preexistentes en `administracion`.
 
 Ver [Feature 012](specs/012-neon-schema-isolation/spec.md).
 
-## Migraciones Alembic
+## Alembic: nueva historia
 
-Cadena vigente:
+La historia física vigente comienza aquí:
 
 ```text
-0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007 → 0008
+20260820_0001_initial_schema
 ```
 
-- `0003`: reparación de `request_type` MULTI_QUOTE.
-- `0004`: `position_roles` e import legacy a IAM.
-- `0005`: delegación de cierre y retiro operativo de `requests:close`.
-- `0006`: `areas:manage` + Rol Gestor de áreas.
-- `0007`: `config:read` + Rol Visor de configuración.
-- `0008`: `expense_area` / `expense_category` como columnas físicas canónicas.
+`down_revision = None`.
+
+Las revisiones históricas `0000 → 0008` fueron retiradas de la rama vigente. Su propósito histórico queda documentado en HISTORY/CHANGELOG, pero no forman parte del despliegue nuevo.
+
+La baseline inicial:
+
+- crea el modelo actual directamente;
+- crea `expense_area` / `expense_category` con sus nombres canónicos;
+- crea la estructura IAM actual;
+- siembra los permisos/roles técnicos mínimos;
+- deja `requests:close` inactivo;
+- conserva los guards append-only de auditoría;
+- no importa usuarios, cargos, grupos, permisos ni datos de bases anteriores;
+- exige que el schema destino esté vacío.
 
 El backend arranca con:
 
@@ -314,9 +332,7 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
-Para una instalación limpia, `alembic upgrade head` debe crear el modelo vigente dentro de `ph_torre_delta`, incluida `ph_torre_delta.alembic_version`.
-
-Si PostgreSQL referencia una revisión inexistente en la rama, primero se debe sincronizar la rama/migraciones correctas; no ocultar el problema con `alembic stamp`.
+Una vez desplegada `20260820_0001` en un ambiente persistente, **no debe reescribirse**. Cualquier cambio físico posterior crea una nueva revisión Alembic.
 
 ## Desarrollo local
 
@@ -340,7 +356,8 @@ Gates recomendados:
 ```text
 cd backend
 alembic heads
-alembic current
+# esperado: 20260820_0001
+
 python -m unittest discover -s tests -v
 
 cd ../frontend
@@ -348,7 +365,16 @@ npm ci
 npm run build
 ```
 
-Para Feature 012 validar además con `information_schema` que las tablas de aplicación y `alembic_version` existen solo bajo `ph_torre_delta` y que no aparecieron tablas nuevas en `public`.
+Para Feature 012, después de ejecutar la baseline en DEV validar:
+
+```sql
+SELECT table_schema, table_name
+FROM information_schema.tables
+WHERE table_schema = 'administracion'
+ORDER BY table_name;
+```
+
+Y confirmar que no existan tablas de aplicación nuevas en `public`.
 
 Para cambios de Accesos validar manualmente:
 
@@ -381,7 +407,7 @@ frontend/src/config-readonly.js
 frontend/src/classification-admin.js
 ```
 
-FastAPI mantiene routers, schemas, servicios y modelos separados. SQLAlchemy y Alembic deben resolver el schema de aplicación desde configuración central. El frontend puede usar bridges legacy de forma temporal, pero esos bridges no reemplazan la autorización backend.
+FastAPI mantiene routers, schemas, servicios y modelos separados. SQLAlchemy y Alembic resuelven el schema de aplicación desde configuración central. El frontend puede usar bridges legacy de forma temporal, pero esos bridges no reemplazan la autorización backend.
 
 ## Documentación
 
@@ -401,13 +427,13 @@ Feature vigente para consolidación de Accesos: [specs/011-access-console-consol
 
 ## Deuda explícita
 
-Permanecen temporalmente sin ser arquitectura objetivo:
+Permanecen temporalmente en código sin ser autoridad runtime ni arquitectura objetivo:
 
 - `UserRole` y flags `can_*` legacy;
 - `AccessProfile` y `BOARD_CODES`;
 - `/api/users` legacy;
 - vistas internas `people` / `organization` no navegables;
 - `main.jsx`, `domain-normalization.js` y bridges Vite;
-- schemas/tablas legacy fuera de `ph_torre_delta`, mientras no sean consultados por runtime.
+- aliases `expense_type` / `expense_subcategory` de compatibilidad interna.
 
-La compatibilidad legacy no debe reintroducir Usuarios/Organigrama como pantallas independientes, `expense_type` / `expense_subcategory` como contrato nuevo ni schemas anteriores como fuente de verdad.
+La compatibilidad de código legacy no implica conservar la base anterior. La fuente física vigente es la instalación limpia de `ph_torre_delta.administracion`.
