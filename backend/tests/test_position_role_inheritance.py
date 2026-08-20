@@ -24,6 +24,7 @@ from app.models.iam import (
     RolePermission,
     UserGroup,
     UserPosition,
+    UserRoleAssignment,
 )
 from app.services.iam_service import (
     effective_permission_codes,
@@ -32,7 +33,7 @@ from app.services.iam_service import (
 )
 
 
-class PositionRoleInheritanceTests(unittest.TestCase):
+class PositionRoleIsolationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.engine = create_engine(
@@ -96,7 +97,7 @@ class PositionRoleInheritanceTests(unittest.TestCase):
         db.flush()
         return role
 
-    def test_user_inherits_approve_from_position_role(self):
+    def test_position_role_relation_does_not_grant_permission(self):
         with self.Session() as db:
             role = self._approver_role(db)
             user = self._user(db, 'treasurer@example.com')
@@ -109,54 +110,47 @@ class PositionRoleInheritanceTests(unittest.TestCase):
             ])
             db.commit()
 
-            self.assertIn('requests:approve', effective_permission_codes(db, user.id))
-            self.assertIn(
-                'Cargo Tesorero → Aprobador',
-                permission_sources(db, user.id)['requests:approve'],
-            )
-            eligible = users_with_permission(db, 'requests:approve')
-            self.assertEqual([item.id for item in eligible], [user.id])
+            self.assertNotIn('requests:approve', effective_permission_codes(db, user.id))
+            self.assertNotIn('requests:approve', permission_sources(db, user.id))
+            self.assertEqual(users_with_permission(db, 'requests:approve'), [])
 
-    def test_group_and_position_inheritance_are_both_valid_sources(self):
+    def test_group_membership_without_explicit_user_role_does_not_grant_permission(self):
         with self.Session() as db:
             role = self._approver_role(db)
-            president = self._user(db, 'president@example.com')
-            vice = self._user(db, 'vice@example.com')
-
-            position = Position(code='president', name='Presidente', active=True)
+            user = self._user(db, 'member@example.com')
             group = UserGroup(code='board', name='Junta Directiva', active=True)
-            db.add_all([position, group])
+            db.add(group)
             db.flush()
             db.add_all([
-                UserPosition(user_id=president.id, position_id=position.id),
-                PositionRole(position_id=position.id, role_id=role.id),
-                GroupMember(group_id=group.id, user_id=vice.id),
+                GroupMember(group_id=group.id, user_id=user.id),
                 GroupRole(group_id=group.id, role_id=role.id),
-            ])
-            db.commit()
-
-            eligible = users_with_permission(db, 'requests:approve')
-            self.assertEqual({item.id for item in eligible}, {president.id, vice.id})
-            self.assertIn(
-                'Grupo Junta Directiva → Aprobador',
-                permission_sources(db, vice.id)['requests:approve'],
-            )
-
-    def test_inactive_position_does_not_grant_permission(self):
-        with self.Session() as db:
-            role = self._approver_role(db)
-            user = self._user(db, 'inactive-position@example.com')
-            position = Position(code='treasurer', name='Tesorero', active=False)
-            db.add(position)
-            db.flush()
-            db.add_all([
-                UserPosition(user_id=user.id, position_id=position.id),
-                PositionRole(position_id=position.id, role_id=role.id),
             ])
             db.commit()
 
             self.assertNotIn('requests:approve', effective_permission_codes(db, user.id))
             self.assertEqual(users_with_permission(db, 'requests:approve'), [])
+
+    def test_explicit_role_inside_group_is_the_authorization_source(self):
+        with self.Session() as db:
+            role = self._approver_role(db)
+            user = self._user(db, 'approver@example.com')
+            group = UserGroup(code='board', name='Junta Directiva', active=True)
+            db.add(group)
+            db.flush()
+            db.add_all([
+                GroupRole(group_id=group.id, role_id=role.id),
+                GroupMember(group_id=group.id, user_id=user.id),
+                UserRoleAssignment(user_id=user.id, role_id=role.id),
+            ])
+            db.commit()
+
+            self.assertIn('requests:approve', effective_permission_codes(db, user.id))
+            self.assertIn(
+                'Grupo Junta Directiva → Rol Aprobador',
+                permission_sources(db, user.id)['requests:approve'],
+            )
+            eligible = users_with_permission(db, 'requests:approve')
+            self.assertEqual([item.id for item in eligible], [user.id])
 
 
 if __name__ == '__main__':
