@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-08-20 — Feature 012: Neon `ph_torre_delta` aislado por ambiente
+
+### Added
+- Feature 012 con `spec.md`, `plan.md` y checklist de aceptación para aislamiento de schema Neon.
+- contrato central `DATABASE_SCHEMA=ph_torre_delta` para SQLAlchemy/Alembic.
+
+### Changed
+- Constitución actualizada a **2.10.0**.
+- topología canónica de persistencia: `main → PROD`, `dev → DEV`, base `ph_torre_delta`, schema `ph_torre_delta`.
+- DEV y PROD se definen como instalaciones limpias creadas desde cero mediante Alembic.
+- `ph_torre_delta.alembic_version` debe ser la única tabla de versión usada por la instalación vigente.
+
+### Prohibited
+- no mover, copiar, clonar ni renombrar tablas desde `flujos_de_aprobacion`, `public` u otros schemas legacy.
+- no usar `public` como schema de aplicación.
+- no usar `alembic stamp` para reutilizar estado Alembic de schemas previos.
+
+### Documentation
+- Constitución, Feature 012, README, prompt maestro, HISTORY y CHANGELOG quedan sincronizados.
+
+---
+
 ## 2026-08-19 — Feature 011: Accesos como única superficie de Usuarios/IAM
 
 ### Changed
@@ -244,6 +266,7 @@ Permanecen temporalmente sin autoridad o arquitectura objetivo:
 - `requests:close` inactivo;
 - vistas internas `people` / `organization` no navegables;
 - `expense_type` / `expense_subcategory` como aliases transitorios;
-- `main.jsx`, `domain-normalization.js` y bridges Vite.
+- `main.jsx`, `domain-normalization.js` y bridges Vite;
+- schemas/tablas legacy fuera de `ph_torre_delta`, sin autoridad runtime.
 
 Pendientes separados: fórmula completa de mayoría APPROVED/REJECTED, empate MULTI_QUOTE, edición estructural de opciones y outbox/retry persistente.
