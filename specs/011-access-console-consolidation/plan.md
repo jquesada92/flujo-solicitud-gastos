@@ -10,7 +10,11 @@
 - conservar el modo solo lectura de Accesos para `config:read`;
 - no duplicar formularios o lógica IAM en vistas legacy;
 - dejar cualquier vista legacy no navegable como compatibilidad temporal hasta su limpieza;
-- verificar que el plugin/bridge de Vite continúe compilando después del cambio de menú.
+- verificar que el plugin/bridge de Vite continúe compilando después del cambio de menú;
+- mantener funcional la barra superior mientras `#access-management` está activo;
+- cargar `access-navigation-bridge.js` antes de `main.jsx` para retirar el hash de Accesos en fase de captura cuando el usuario navega a otra pantalla;
+- no cerrar Accesos únicamente al abrir/cerrar el dropdown Configuración; sí cerrarlo al seleccionar una opción navegable del dropdown;
+- cubrir explícitamente el caso de navegar a la misma pestaña subyacente desde la que se abrió Accesos.
 
 ## Backend
 
@@ -46,6 +50,10 @@ Actualizar como un conjunto coherente:
 - `areas:manage` no obtiene administración IAM;
 - creación/edición de usuarios sigue disponible dentro de Accesos;
 - Cargos y permisos efectivos siguen configurables desde Accesos;
+- desde Accesos, Inicio/Solicitudes/Facturas/Auditoría/Salir cierran la consola y continúan la acción esperada;
+- desde Accesos, seleccionar una opción de Configuración navega y cierra la consola;
+- abrir/cerrar solamente el dropdown Configuración no desmonta Accesos;
+- existe test de contrato para que `access-navigation-bridge.js` esté cargado antes de `main.jsx` y limpie `#access-management` desde `.topbar`;
 - `npm run build` completa sin errores del transform de Vite;
 - suite backend continúa verde;
 - `alembic heads` y `alembic current` son compatibles con la rama activa.
@@ -59,6 +67,7 @@ git pull origin agent/consolidate-users-organigram-in-access
 
 cd backend
 alembic heads
+python -m unittest tests.test_access_navigation_bridge -v
 python -m unittest discover -s tests -v
 
 cd ../frontend
