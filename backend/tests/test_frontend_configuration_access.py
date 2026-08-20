@@ -128,6 +128,20 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn(f'{role_scope} .iam-list-item{{align-items:center;padding:14px}}', css)
         self.assertIn(f'{role_scope} .iam-system{{margin-left:auto}}', css)
 
+    def test_group_assignments_are_staged_until_explicit_save(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        self.assertIn('const [draftRoleIds, setDraftRoleIds] = useState([]);', source)
+        self.assertIn('const [draftMemberIds, setDraftMemberIds] = useState([]);', source)
+        self.assertIn('const groupDirty = useMemo(() => {', source)
+        self.assertIn('const saveGroupAssignments = async () => {', source)
+        self.assertIn('selected={draftRoleIds}', source)
+        self.assertIn('selected={draftMemberIds}', source)
+        self.assertIn('data-unsaved={groupDirty ? "true" : "false"}', source)
+        self.assertIn('iam-persist-action ${groupDirty ? "pending" : ""}', source)
+        self.assertIn('disabled={!groupDirty || savingAssignments}', source)
+        self.assertIn('{savingAssignments ? "Guardando..." : "Guardar cambios"}', source)
+        self.assertIn('Hay cambios sin guardar en este grupo.', source)
+
 
 if __name__ == '__main__':
     unittest.main()
