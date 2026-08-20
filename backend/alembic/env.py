@@ -35,10 +35,17 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    engine_options = {}
+    if database_url.startswith('postgresql+psycopg://'):
+        engine_options['connect_args'] = {
+            'options': f'-csearch_path={settings.database_schema},public'
+        }
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix='sqlalchemy.',
         poolclass=pool.NullPool,
+        **engine_options,
     )
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
