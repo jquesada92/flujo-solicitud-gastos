@@ -15,6 +15,7 @@ from app.api import (
     expenses,
     financial_actions,
     iam,
+    iam_access_policy,
     iam_group_assignments,
     iam_users,
     legacy_position_notifications,
@@ -145,8 +146,9 @@ def create_app() -> FastAPI:
     )
     app.include_router(iam_users.router, prefix='/api/iam/users', tags=['Access Management'])
     app.include_router(iam_group_assignments.router, prefix='/api/iam', tags=['Access Management'])
-    # Position access remains a compatibility API for the organizational chart;
-    # cargo assignments no longer participate in authorization.
+    app.include_router(iam_access_policy.router, prefix='/api/iam', tags=['Access Policy'])
+    # Position endpoints remain only for the organizational chart. Authorization
+    # ignores cargos and the policy router blocks new cargo-to-role grants.
     app.include_router(position_access.router, prefix='/api/iam', tags=['Organization Compatibility'])
     app.include_router(iam.router, prefix='/api/iam', tags=['Access Management'])
 
