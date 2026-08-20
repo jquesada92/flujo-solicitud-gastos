@@ -63,12 +63,13 @@ class DatabaseSchemaContractTests(unittest.TestCase):
         self.assertLess(configure_position, begin_position)
         self.assertNotIn('SET search_path TO', env_source)
 
-    def test_default_compose_uses_backend_env_database_connection(self):
+    def test_default_compose_uses_local_postgres_service(self):
         compose_source = (REPO_ROOT / 'docker-compose.yml').read_text(encoding='utf-8')
-        self.assertIn('BACKEND_ENV_FILE', compose_source)
-        self.assertNotIn('DATABASE_URL:', compose_source)
-        self.assertNotIn('image: postgres:', compose_source)
-        self.assertNotIn('postgres_data:', compose_source)
+        self.assertIn('image: postgres:16-alpine', compose_source)
+        self.assertIn('postgres_data:/var/lib/postgresql/data', compose_source)
+        self.assertIn('@db:5432/${POSTGRES_DB:-ph_torre_delta}', compose_source)
+        self.assertIn('DATABASE_SCHEMA: ${DATABASE_SCHEMA:-administracion}', compose_source)
+        self.assertIn('condition: service_healthy', compose_source)
 
     def test_env_examples_declare_administracion(self):
         backend_env = (REPO_ROOT / 'backend' / '.env.example').read_text(encoding='utf-8')
