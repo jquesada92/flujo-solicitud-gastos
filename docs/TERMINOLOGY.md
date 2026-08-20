@@ -6,6 +6,24 @@ Este documento define los términos canónicos visibles y técnicos del producto
 
 Cuenta que interactúa con el sistema. No usar **Persona/Personas** como nombre del módulo de cuentas.
 
+La creación y configuración de usuarios vive dentro de **Configuración → Accesos**.
+
+## Accesos
+
+Consola única para administrar o consultar, según permisos:
+
+```text
+Usuarios
+Grupos
+Roles
+Permisos
+Cargos/Posiciones
+Asignaciones
+Permisos efectivos y fuentes
+```
+
+No existen pantallas independientes de **Usuarios/Personas** u **Organigrama** en la navegación canónica.
+
 ## Grupo
 
 Conjunto configurable de usuarios que puede heredar Roles. Nombres como Junta Directiva, Finanzas o Procurement son datos del cliente; no autorizan por sí mismos.
@@ -20,33 +38,39 @@ Capacidad IAM atómica implementada por el producto.
 
 Permisos vigentes:
 
-- `requests:read` — Consultar dashboard/solicitudes/evidencia; baseline para usuarios activos.
-- `requests:create` — Crear nuevas solicitudes y cargar soportes asociados.
-- `requests:approve` — Votar/aprobar/rechazar/enviar a revisión según asignación.
-- `areas:manage` — Administrar Áreas, Categorías y sus relaciones; configurable para usuarios ordinarios.
-- `config:manage` — Administración técnica **system-only**, reservada a `system_accounts`.
+- `requests:read` — seguimiento universal; baseline para usuarios activos.
+- `requests:create` — crear nuevas solicitudes.
+- `requests:approve` — votar/aprobar/rechazar/enviar a revisión según asignación.
+- `areas:manage` — administrar Área + Categoría y sus relaciones.
+- `config:read` — consultar Configuración sin mutarla.
+- `config:manage` — administración técnica **system-only** reservada a `system_accounts`.
 
-`requests:close` permanece como **registro legacy inactivo** para trazabilidad. No autoriza cierre, factura ni delegación.
+`requests:close` permanece como registro legacy inactivo. No autoriza cierre, factura ni delegación.
 
 ## Permiso efectivo
 
 Unión de baseline, permisos directos, Roles directos, Roles heredados por Grupos/Cargos y política técnica aplicable, menos capacidades system-only no aplicables al actor.
 
-Para un usuario ordinario, una asignación de `config:manage` no se convierte en permiso efectivo. Las capacidades por recurso y delegaciones tampoco se convierten en permisos IAM.
+Para usuario ordinario, una asignación de `config:manage` no se convierte en permiso efectivo.
+
+## `config:read`
+
+Permiso de consulta de Configuración. Permite ver Accesos, Áreas, Reglas y Auditoría en modo solo lectura. No concede mutaciones ni implica `config:manage` o `areas:manage`.
 
 ## Administración técnica
 
-Conjunto de funciones reservadas a la cuenta protegida del sistema:
+Funciones reservadas al Administrador del sistema protegido mediante `system_accounts`.
+
+La navegación canónica es:
 
 ```text
-Usuarios
-Organigrama
-Accesos / IAM
+Accesos
+Áreas
 Reglas
-Auditoría técnica
+Auditoría / configuración técnica
 ```
 
-Su permiso canónico es `config:manage`, pero la identidad final se verifica mediante `system_accounts`/política IAM, no por cargo o `UserRole.ADMIN`.
+No incluye Usuarios/Personas ni Organigrama como pantallas separadas.
 
 ## Gestión de Áreas
 
@@ -58,17 +82,7 @@ Permiso:
 areas:manage
 ```
 
-Puede heredarse por Rol/Grupo/Cargo o asignarse directamente. Un usuario con esta capacidad ve **Configuración → Áreas** sin recibir administración técnica.
-
-## Gestor de áreas
-
-Rol neutral sembrado por migración `0006`:
-
-```text
-Gestor de áreas → areas:manage
-```
-
-La organización decide a qué Grupos/Cargos/Usuarios asociarlo. No significa automáticamente Administración, Junta Directiva ni ningún nombre concreto.
+Puede heredarse por Rol/Grupo/Cargo o asignarse directamente.
 
 ## Cargo / Posición
 
@@ -78,17 +92,29 @@ Elemento configurable de estructura organizacional que puede heredar Roles. El n
 
 Cuenta protegida persistida en `system_accounts`.
 
-Producción: IAM máximo `config:manage + areas:manage + requests:read` y exclusión de aprobación/votación. Conserva excepciones administrativas por recurso para cancelar, corregir y gestionar cierre/factura. No administra delegaciones ordinarias en nombre del solicitante.
-
-El frontend recibe `is_system_account` para UX; ese booleano no reemplaza la autorización backend.
+Producción: IAM máximo `config:manage + config:read + areas:manage + requests:read`, sin aprobación/votación. Conserva excepciones administrativas por recurso para cancelar, corregir y gestionar cierre/factura.
 
 ## Área
 
 Unidad/departamento/función organizacional asociada al gasto.
 
+Campo canónico de solicitud:
+
+```text
+expense_area
+```
+
 ## Categoría
 
 Naturaleza del bien o servicio adquirido. Área y Categoría son independientes.
+
+Campo canónico:
+
+```text
+expense_category
+```
+
+`expense_type` y `expense_subcategory` son nombres legacy de compatibilidad, no terminología vigente.
 
 ## SIMPLE / Solicitud sencilla
 
@@ -100,7 +126,7 @@ Solicitud con varias opciones que pasa por selección/votación antes de continu
 
 ## Enviar a revisión
 
-Acción del aprobador/revisor que detecta un problema y devuelve la solicitud al solicitante con comentario obligatorio.
+Acción del aprobador que detecta un problema y devuelve la solicitud al solicitante con comentario obligatorio.
 
 ```text
 REVISION_REQUESTED
@@ -144,41 +170,28 @@ Transición de `APPROVED` a `CLOSED` que exige factura final. La autoridad es po
 
 ## Factura de cierre
 
-Documento final asociado al cierre. Puede reemplazarse en `CLOSED` por un actor autorizado, conservando la versión anterior y un `InvoiceChangeEvent` con motivo.
+Documento final asociado al cierre. Puede reemplazarse en `CLOSED` por un actor autorizado, conservando la versión anterior y el evento de cambio.
 
 ## Delegación de cierre/factura
 
-Asignación explícita por **una solicitud** que el solicitante original otorga a otro usuario activo para registrar/corregir la factura y cerrar.
-
-Reglas:
-
-- solo el solicitante crea/cambia/revoca;
-- una delegación activa por solicitud;
-- delegado distinto del solicitante y no cuenta de sistema;
-- cambiar/revocar conserva historial (`revoked_at`, actor);
-- no concede acceso de cierre a otras solicitudes;
-- el solicitante mantiene su autoridad.
+Asignación explícita por una solicitud que el solicitante original otorga a otro usuario activo para registrar/corregir factura y cerrar.
 
 ## `can_close`
-
-Capacidad por solicitud:
 
 ```text
 status ∈ {APPROVED, CLOSED}
 AND (solicitante original OR system_accounts OR delegado activo)
 ```
 
-No es `UserOut.can_close` legacy ni un permiso IAM.
+No es permiso IAM.
 
 ## `can_delegate_close`
 
-Capacidad por solicitud que indica si el usuario actual puede administrar su delegación de cierre/factura. Solo el solicitante original.
+Capacidad por solicitud que indica si el usuario actual puede administrar la delegación de cierre/factura. Solo el solicitante original.
 
 ## Acción pendiente
 
 Tarea contextual concreta; no es permiso IAM.
-
-Códigos actuales:
 
 ```text
 APPROVAL_DECISION
@@ -187,11 +200,9 @@ CORRECT_REQUEST
 CLOSE_REQUEST
 ```
 
-`CLOSE_REQUEST` significa solicitud `APPROVED` cuya responsabilidad corresponde al solicitante o delegado activo.
+## Navegación desde Accesos
 
-## Tipo canónico de solicitud
-
-Tipo derivado de persistencia/evidencia durable. En compatibilidad legacy, MULTI_QUOTE si está marcado como tal, está en `QUOTATION_VOTING` o tiene 2+ opciones.
+Mientras Accesos esté abierto, Inicio, Solicitudes, Facturas, Auditoría, Configuración y Salir continúan siendo acciones normales del shell. Salir de Accesos implica retirar `#access-management` antes de continuar la navegación.
 
 ## Términos legacy
 
@@ -204,8 +215,10 @@ Pueden aparecer físicamente, pero no son arquitectura objetivo:
 - `AccessProfile`;
 - `BOARD_CODES`;
 - Persona/Personas;
-- Subárea para Categoría.
+- Organigrama como pantalla independiente;
+- Subárea/Subcategoría como Categoría;
+- `expense_type` / `expense_subcategory` como contrato nuevo.
 
 ## Regla de consistencia
 
-Usar siempre Usuario, Grupo, Rol, Permiso, Cargo/Posición, Área, Categoría, Gestión de Áreas, Administración técnica, SIMPLE/MULTI_QUOTE, Enviar a revisión, Corregir/reenviar, Cancelar solicitud y Delegación de cierre/factura según las definiciones anteriores.
+Usar siempre Usuario, Accesos, Grupo, Rol, Permiso, Cargo/Posición, Área, Categoría, Gestión de Áreas, Administración técnica, SIMPLE/MULTI_QUOTE, Enviar a revisión, Corregir/reenviar, Cancelar solicitud y Delegación de cierre/factura según estas definiciones.
