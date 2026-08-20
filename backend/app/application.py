@@ -11,13 +11,17 @@ from app.api import (
     auth,
     cancellation_actions,
     closure_delegation,
+    dashboard,
     document_actions,
     expenses,
     financial_actions,
     iam,
+    iam_access_policy,
+    iam_group_assignments,
     iam_users,
     legacy_position_notifications,
     my_actions,
+    organization_overview,
     position_access,
     quotation_actions,
     request_actions,
@@ -110,7 +114,9 @@ def create_app() -> FastAPI:
     app.include_router(financial_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(my_actions.router, prefix='/api/expenses', tags=['My Request Actions'])
     app.include_router(tracking.router, prefix='/api/expenses', tags=['Request Tracking'])
+    app.include_router(dashboard.router, prefix='/api/expenses', tags=['Dashboard'])
     app.include_router(expenses.router, prefix='/api/expenses', tags=['Expenses (legacy compatibility)'])
+    app.include_router(organization_overview.router, prefix='/api/organization', tags=['Organization Overview'])
     app.include_router(approvals.router, prefix='/api/approvals', tags=['Approvals'])
     app.include_router(
         rules.router,
@@ -141,9 +147,11 @@ def create_app() -> FastAPI:
         dependencies=[Depends(require_permission('config:manage'))],
     )
     app.include_router(iam_users.router, prefix='/api/iam/users', tags=['Access Management'])
-    # Position access must precede the generic IAM router because it enriches
-    # GET /positions with inherited role ids while legacy CRUD remains behind it.
-    app.include_router(position_access.router, prefix='/api/iam', tags=['Access Management'])
+    app.include_router(iam_group_assignments.router, prefix='/api/iam', tags=['Access Management'])
+    app.include_router(iam_access_policy.router, prefix='/api/iam', tags=['Access Policy'])
+    # Position endpoints remain only for the organizational chart. Authorization
+    # ignores cargos and the policy router blocks new cargo-to-role grants.
+    app.include_router(position_access.router, prefix='/api/iam', tags=['Organization Compatibility'])
     app.include_router(iam.router, prefix='/api/iam', tags=['Access Management'])
 
     @app.get('/api/health')

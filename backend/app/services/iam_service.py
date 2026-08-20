@@ -9,14 +9,10 @@ from app.models.iam import (
     GroupMember,
     GroupRole,
     Permission,
-    Position,
-    PositionRole,
     Role,
     RolePermission,
     SystemAccount,
     UserGroup,
-    UserPermission,
-    UserPosition,
     UserRoleAssignment,
 )
 
@@ -56,23 +52,19 @@ def _baseline_permission_codes(db: Session, user_id: int) -> set[str]:
 
 
 def _system_account_policy_codes(db: Session) -> set[str]:
-    """Return the environment policy for technical system accounts."""
+    """Return the environment policy for protected technical accounts."""
     active = _active_permission_codes(db)
     if get_settings().is_production_environment:
         return active & PRODUCTION_SYSTEM_ACCOUNT_PERMISSIONS
     return active
 
 
-def _unrestricted_permission_codes(db: Session, user_id: int) -> set[str]:
-    direct_permissions = set(db.scalars(
-        select(Permission.code)
-        .join(UserPermission, UserPermission.permission_id == Permission.id)
-        .where(
-            UserPermission.user_id == user_id,
-            Permission.active.is_(True),
-        )
-    ).all())
+def _role_permission_codes(db: Session, user_id: int) -> set[str]:
+    """Resolve permissions strictly from roles assigned directly or by groups.
 
+    Cargos are organizational metadata and do not grant access. Direct user
+    permissions are intentionally ignored; product permissions belong to roles.
+    """
     direct_role_permissions = set(db.scalars(
         select(Permission.code)
         .join(RolePermission, RolePermission.permission_id == Permission.id)
@@ -100,36 +92,14 @@ def _unrestricted_permission_codes(db: Session, user_id: int) -> set[str]:
         )
     ).all())
 
-    position_role_permissions = set(db.scalars(
-        select(Permission.code)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .join(Role, Role.id == RolePermission.role_id)
-        .join(PositionRole, PositionRole.role_id == Role.id)
-        .join(Position, Position.id == PositionRole.position_id)
-        .join(UserPosition, UserPosition.position_id == Position.id)
-        .where(
-            UserPosition.user_id == user_id,
-            Position.active.is_(True),
-            Role.active.is_(True),
-            Permission.active.is_(True),
-        )
-    ).all())
-
-    return (
-        direct_permissions
-        | direct_role_permissions
-        | group_role_permissions
-        | position_role_permissions
-    )
+    return direct_role_permissions | group_role_permissions
 
 
 def effective_permission_codes(db: Session, user_id: int) -> set[str]:
     baseline = _baseline_permission_codes(db, user_id)
     if is_system_account(db, user_id):
         return _system_account_policy_codes(db) | baseline
-    # Technical configuration is never inherited by ordinary users, even if a
-    # stale legacy assignment still points at config:manage.
-    inherited = _unrestricted_permission_codes(db, user_id) - SYSTEM_ONLY_PERMISSION_CODES
+    inherited = _role_permission_codes(db, user_id) - SYSTEM_ONLY_PERMISSION_CODES
     return inherited | baseline
 
 
@@ -157,8 +127,6 @@ def users_with_permission(
             stmt = stmt.where(User.email.ilike(exclude_email).is_(False))
         return list(db.scalars(stmt.order_by(User.id)).all())
 
-    # System-only permissions deliberately ignore stale direct/group/role/cargo
-    # assignments. Only protected persisted system accounts can own them.
     if permission_code in SYSTEM_ONLY_PERMISSION_CODES:
         if permission_code not in _system_account_policy_codes(db):
             return []
@@ -173,11 +141,6 @@ def users_with_permission(
             stmt = stmt.where(User.email.ilike(exclude_email).is_(False))
         return list(db.scalars(stmt.order_by(User.id)).all())
 
-    direct = (
-        select(UserPermission.user_id.label('user_id'))
-        .join(Permission, Permission.id == UserPermission.permission_id)
-        .where(Permission.code == permission_code, Permission.active.is_(True))
-    )
     direct_role = (
         select(UserRoleAssignment.user_id.label('user_id'))
         .join(Role, Role.id == UserRoleAssignment.role_id)
@@ -203,23 +166,9 @@ def users_with_permission(
             UserGroup.active.is_(True),
         )
     )
-    position_role = (
-        select(UserPosition.user_id.label('user_id'))
-        .join(Position, Position.id == UserPosition.position_id)
-        .join(PositionRole, PositionRole.position_id == Position.id)
-        .join(Role, Role.id == PositionRole.role_id)
-        .join(RolePermission, RolePermission.role_id == Role.id)
-        .join(Permission, Permission.id == RolePermission.permission_id)
-        .where(
-            Permission.code == permission_code,
-            Permission.active.is_(True),
-            Role.active.is_(True),
-            Position.active.is_(True),
-        )
-    )
 
     policy_codes = _system_account_policy_codes(db)
-    permitted_queries = [direct, direct_role, group_role, position_role]
+    permitted_queries = [direct_role, group_role]
     if permission_code in policy_codes:
         permitted_queries.append(select(SystemAccount.user_id.label('user_id')))
 
@@ -241,14 +190,6 @@ def permission_sources(db: Session, user_id: int) -> dict[str, list[str]]:
 
     if 'requests:read' in effective and _user_is_active(db, user_id):
         sources['requests:read'].add('Acceso base del producto para usuarios activos')
-
-    for code in db.scalars(
-        select(Permission.code)
-        .join(UserPermission, UserPermission.permission_id == Permission.id)
-        .where(UserPermission.user_id == user_id, Permission.active.is_(True))
-    ).all():
-        if code in effective:
-            sources[code].add('Asignación directa')
 
     direct_role_rows = db.execute(
         select(Permission.code, Role.name)
@@ -282,24 +223,6 @@ def permission_sources(db: Session, user_id: int) -> dict[str, list[str]]:
     for code, group_name, role_name in group_rows:
         if code in effective:
             sources[code].add(f'Grupo {group_name} → {role_name}')
-
-    position_rows = db.execute(
-        select(Permission.code, Position.name, Role.name)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .join(Role, Role.id == RolePermission.role_id)
-        .join(PositionRole, PositionRole.role_id == Role.id)
-        .join(Position, Position.id == PositionRole.position_id)
-        .join(UserPosition, UserPosition.position_id == Position.id)
-        .where(
-            UserPosition.user_id == user_id,
-            Position.active.is_(True),
-            Role.active.is_(True),
-            Permission.active.is_(True),
-        )
-    ).all()
-    for code, position_name, role_name in position_rows:
-        if code in effective:
-            sources[code].add(f'Cargo {position_name} → {role_name}')
 
     if is_system_account(db, user_id):
         policy_source = (

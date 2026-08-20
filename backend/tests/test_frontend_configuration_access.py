@@ -132,7 +132,7 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
         self.assertIn('const [draftRoleIds, setDraftRoleIds] = useState([]);', source)
         self.assertIn('const [draftMemberIds, setDraftMemberIds] = useState([]);', source)
-        self.assertIn('const groupDirty = useMemo(() => {', source)
+        self.assertIn('const groupDirty = useMemo(() =>', source)
         self.assertIn('const saveGroupAssignments = async () => {', source)
         self.assertIn('selected={draftRoleIds}', source)
         self.assertIn('selected={draftMemberIds}', source)

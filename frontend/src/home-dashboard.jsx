@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import ClosureDelegationButton from "./closure-delegation.jsx";
+import OrganizationOverview from "./organization-overview.jsx";
 import "./home-dashboard.css";
 
 const API_BASE_URL = String(import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
@@ -308,6 +309,7 @@ export default function HomeDashboard({ refreshKey, onOpenRequests }) {
       <section className="card dashboard-pending"><div className="card-heading"><div><p className="eyebrow">REQUIERE TU ATENCIÓN</p><h2>Acciones pendientes</h2></div><button className="secondary" onClick={onOpenRequests}>Ver todas</button></div>
         {data.pending_items.length ? <div className="dashboard-request-list">{data.pending_items.map((item) => <button key={item.request_id} onClick={() => openAction(item)}><span><strong>{item.title}</strong><small>{item.display_id} · {(item.actions || []).map((code) => ACTION_LABELS[code] || code).join(" · ") || statusName(item.status)}</small></span><span className={`urgency-badge urgency-${String(item.urgency).toLowerCase()}`}>{urgencyName(item.urgency)}</span><time>{pendingAge(item.created_at)}</time></button>)}</div> : <p className="muted">No tienes acciones pendientes.</p>}
       </section>
+      <OrganizationOverview refreshKey={refreshKey} />
     </div>
     {selected && <PendingActionModal
       detail={detail}
