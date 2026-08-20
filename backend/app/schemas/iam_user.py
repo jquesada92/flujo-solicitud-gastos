@@ -15,7 +15,7 @@ class IamUserCreate(BaseModel):
     group_ids: list[int] = Field(default_factory=list, max_length=100)
     role_ids: list[int] = Field(default_factory=list, max_length=100)
     direct_permission_codes: list[str] = Field(default_factory=list, max_length=100)
-    position_ids: list[int] = Field(default_factory=list, max_length=20)
+    position_ids: list[int] = Field(default_factory=list, max_length=1)
 
     @field_validator('middle_name', 'second_last_name', 'phone', mode='before')
     @classmethod
@@ -35,7 +35,7 @@ class IamUserUpdate(BaseModel):
     group_ids: list[int] | None = Field(default=None, max_length=100)
     role_ids: list[int] | None = Field(default=None, max_length=100)
     direct_permission_codes: list[str] | None = Field(default=None, max_length=100)
-    position_ids: list[int] | None = Field(default=None, max_length=20)
+    position_ids: list[int] | None = Field(default=None, max_length=1)
 
     @field_validator('middle_name', 'second_last_name', 'phone', mode='before')
     @classmethod
