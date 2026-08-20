@@ -11,6 +11,7 @@ from app.api import (
     auth,
     cancellation_actions,
     closure_delegation,
+    dashboard,
     document_actions,
     expenses,
     financial_actions,
@@ -113,6 +114,7 @@ def create_app() -> FastAPI:
     app.include_router(financial_actions.router, prefix='/api/expenses', tags=['Expenses'])
     app.include_router(my_actions.router, prefix='/api/expenses', tags=['My Request Actions'])
     app.include_router(tracking.router, prefix='/api/expenses', tags=['Request Tracking'])
+    app.include_router(dashboard.router, prefix='/api/expenses', tags=['Dashboard'])
     app.include_router(expenses.router, prefix='/api/expenses', tags=['Expenses (legacy compatibility)'])
     app.include_router(organization_overview.router, prefix='/api/organization', tags=['Organization Overview'])
     app.include_router(approvals.router, prefix='/api/approvals', tags=['Approvals'])
