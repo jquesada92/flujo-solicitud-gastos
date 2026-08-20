@@ -49,7 +49,14 @@ class DatabaseSchemaContractTests(unittest.TestCase):
         self.assertIn('version_table_schema=database_schema', env_source)
         self.assertIn("config.attributes['database_schema'] = database_schema", env_source)
         self.assertIn('CREATE SCHEMA IF NOT EXISTS', env_source)
-        self.assertIn("connect_args['options'] = f'-csearch_path={database_schema}'", env_source)
+        self.assertNotIn("connect_args['options']", env_source)
+        self.assertNotIn('-csearch_path=', env_source)
+
+    def test_runtime_engine_is_compatible_with_neon_pooler(self):
+        database_source = (REPO_ROOT / 'backend' / 'app' / 'core' / 'database.py').read_text(encoding='utf-8')
+        self.assertIn('MetaData(schema=APPLICATION_SCHEMA)', database_source)
+        self.assertNotIn("connect_args['options']", database_source)
+        self.assertNotIn('-csearch_path=', database_source)
 
     def test_alembic_schema_setup_commits_before_migration_transaction(self):
         env_source = (REPO_ROOT / 'backend' / 'alembic' / 'env.py').read_text(encoding='utf-8')
@@ -62,6 +69,11 @@ class DatabaseSchemaContractTests(unittest.TestCase):
         self.assertLess(setup_commit_position, configure_position)
         self.assertLess(configure_position, begin_position)
         self.assertNotIn('SET search_path TO', env_source)
+
+    def test_render_declares_application_schema_explicitly(self):
+        render_source = (REPO_ROOT / 'render.yaml').read_text(encoding='utf-8')
+        self.assertIn('- key: DATABASE_SCHEMA', render_source)
+        self.assertIn('value: administracion', render_source)
 
     def test_default_compose_uses_local_postgres_service(self):
         compose_source = (REPO_ROOT / 'docker-compose.yml').read_text(encoding='utf-8')

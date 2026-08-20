@@ -52,17 +52,12 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    connect_args: dict[str, object] = {}
-    if is_postgresql and database_schema:
-        # Configure the PostgreSQL session before SQLAlchemy/Alembic starts its
-        # migration transaction. This also makes unqualified migration SQL land
-        # in the application schema instead of public.
-        connect_args['options'] = f'-csearch_path={database_schema}'
-
+    # Neon pooled endpoints reject libpq startup `options` such as
+    # `-csearch_path=...`. Migrations are schema-qualified through metadata and
+    # version_table_schema, so no startup search_path is required.
     connectable = create_engine(
         database_url,
         poolclass=pool.NullPool,
-        connect_args=connect_args,
     )
 
     with connectable.connect() as connection:
@@ -76,9 +71,9 @@ def run_migrations_online() -> None:
             connection.exec_driver_sql(f'CREATE SCHEMA IF NOT EXISTS {quoted_schema}')
             connection.commit()
 
-            # search_path is already set through libpq `options` above. Tell
-            # SQLAlchemy which schema should be considered the default for
-            # reflection/autogeneration without opening another transaction.
+            # Metadata and the version table are explicitly schema-qualified.
+            # Set the dialect default only for reflection/autogeneration logic;
+            # this does not emit SET search_path or alter the startup packet.
             connection.dialect.default_schema_name = database_schema
 
         context.configure(

@@ -86,8 +86,8 @@ export default function ExpenseForm({
     () => ({
       title: "",
       description: "",
-      expense_type: firstType,
-      expense_subcategory: firstSub,
+      expense_area: firstType,
+      expense_category: firstSub,
       urgency: "NORMAL",
       amount: "",
       supplier: "",
@@ -110,9 +110,9 @@ export default function ExpenseForm({
       setMessage(null);
       setForm((current) => ({
         ...current,
-        expense_type: current.expense_type || firstType,
-        expense_subcategory:
-          current.expense_subcategory || subcategoryOptions[firstType]?.[0]?.[0] || "",
+        expense_area: current.expense_area || firstType,
+        expense_category:
+          current.expense_category || subcategoryOptions[firstType]?.[0]?.[0] || "",
       }));
       return;
     }
@@ -122,8 +122,8 @@ export default function ExpenseForm({
     setForm({
       title: draft.title || "",
       description: draft.description || "",
-      expense_type: draft.expense_type || firstType,
-      expense_subcategory: draft.expense_subcategory || "",
+      expense_area: draft.expense_area || firstType,
+      expense_category: draft.expense_category || "",
       urgency: draft.urgency || "NORMAL",
       amount: draftType === "SIMPLE" ? String(draft.amount ?? "") : "",
       supplier: draftType === "SIMPLE" ? draft.supplier || "" : "",
@@ -149,7 +149,7 @@ export default function ExpenseForm({
     }),
   );
   const expenseDirty = Boolean(quotation) || quoteDirty || (draft
-    ? ["title", "description", "expense_type", "expense_subcategory", "urgency"].some(
+    ? ["title", "description", "expense_area", "expense_category", "urgency"].some(
         (key) => String(form[key] || "") !== String(draft[key] || ""),
       ) || (effectiveRequestType === "SIMPLE" && (
         String(form.supplier || "") !== String(draft.supplier || "") ||
@@ -330,13 +330,13 @@ export default function ExpenseForm({
         <label>
           Área
           <select
-            value={form.expense_type}
+            value={form.expense_area}
             onChange={(event) => {
               const area = event.target.value;
               setForm({
                 ...form,
-                expense_type: area,
-                expense_subcategory: subcategoryOptions[area]?.[0]?.[0] || "",
+                expense_area: area,
+                expense_category: subcategoryOptions[area]?.[0]?.[0] || "",
               });
             }}
           >
@@ -349,10 +349,10 @@ export default function ExpenseForm({
         <label>
           Categoría
           <select
-            value={form.expense_subcategory}
-            onChange={(event) => setForm({ ...form, expense_subcategory: event.target.value })}
+            value={form.expense_category}
+            onChange={(event) => setForm({ ...form, expense_category: event.target.value })}
           >
-            {(subcategoryOptions[form.expense_type] || []).map(([value, label]) => (
+            {(subcategoryOptions[form.expense_area] || []).map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
@@ -492,7 +492,7 @@ export default function ExpenseForm({
 
         <div className="full form-actions">
           {message && <div className={`notice ${message.type}`}>{message.text}</div>}
-          <button className="primary" disabled={saving || !categoryOptions.length || !form.expense_subcategory}>
+          <button className="primary" disabled={saving || !categoryOptions.length || !form.expense_category}>
             {saving ? "Guardando..." : draft ? "Guardar y reenviar" : "Crear solicitud"}
           </button>
         </div>
