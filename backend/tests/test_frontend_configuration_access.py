@@ -76,6 +76,14 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn("readJson('/api/iam/positions')", source)
         self.assertIn('/src/config-readonly.js', index)
 
+    def test_iam_checkboxes_have_larger_click_target_and_visible_selected_state(self):
+        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.css').read_text(encoding='utf-8')
+        self.assertIn('.iam-check input{width:20px;height:20px;min-width:20px;', css)
+        self.assertIn('accent-color:#172033', css)
+        self.assertIn('.iam-check:has(input:checked)', css)
+        self.assertIn('.iam-check:focus-within', css)
+        self.assertIn('cursor:pointer', css)
+
 
 if __name__ == '__main__':
     unittest.main()
