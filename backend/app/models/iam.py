@@ -60,7 +60,12 @@ class GroupMember(Base):
 
 class GroupRole(Base):
     __tablename__ = 'group_roles'
-    __table_args__ = (UniqueConstraint('group_id', 'role_id', name='uq_group_role'),)
+    __table_args__ = (
+        UniqueConstraint('group_id', 'role_id', name='uq_group_role'),
+        # A business role belongs to one group only. The user receives the group
+        # membership through the role assignment, never as an independent grant.
+        UniqueConstraint('role_id', name='uq_group_role_role'),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     group_id: Mapped[int] = mapped_column(ForeignKey('user_groups.id', ondelete='CASCADE'), nullable=False, index=True)
