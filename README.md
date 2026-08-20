@@ -1,6 +1,6 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.9.0**.
+> Constitución vigente: **2.10.0**.
 
 Aplicación web neutral respecto al tipo de organización para solicitar, evaluar, aprobar, votar, dar seguimiento, devolver a revisión, corregir, cancelar, cerrar y documentar gastos con trazabilidad y evidencia verificable.
 
@@ -18,6 +18,7 @@ Aplicación web neutral respecto al tipo de organización para solicitar, evalua
 - Área y Categoría son dimensiones independientes y usan `expense_area` / `expense_category` como contrato canónico.
 - Cierre/factura se autoriza por solicitud, no mediante `requests:close`.
 - Alembic es el mecanismo canónico de migraciones.
+- La persistencia de aplicación usa exclusivamente el schema PostgreSQL `ph_torre_delta`; DEV y PROD se crean desde cero y no migran tablas desde schemas legacy.
 
 ## Terminología canónica
 
@@ -257,6 +258,39 @@ Permisos  → effective_permission_codes()
 
 Ver [docs/EMAIL_CONFIGURATION.md](docs/EMAIL_CONFIGURATION.md).
 
+## Persistencia Neon por ambiente
+
+Topología canónica:
+
+```text
+Neon project: ph_torre_delta
+├─ main  → PROD
+│  └─ database: ph_torre_delta
+│     └─ schema: ph_torre_delta
+└─ dev   → DEV
+   └─ database: ph_torre_delta
+      └─ schema: ph_torre_delta
+```
+
+Contrato de infraestructura:
+
+```text
+DATABASE_URL=<connection string de la branch correspondiente>
+DATABASE_SCHEMA=ph_torre_delta
+```
+
+Reglas obligatorias:
+
+- todas las tablas, secuencias, índices, constraints y `alembic_version` de la aplicación deben vivir bajo `ph_torre_delta`;
+- `public` no es schema de aplicación;
+- `flujos_de_aprobacion` es legacy y no se usa como fallback;
+- DEV y PROD se inicializan **desde cero** con Alembic;
+- no se mueven, copian ni renombran tablas desde schemas previos;
+- el estado Alembic de un schema legacy no se reutiliza ni se oculta con `alembic stamp`;
+- la misma cadena de migraciones produce la estructura física de DEV y PROD; solo cambia `DATABASE_URL`/branch.
+
+Ver [Feature 012](specs/012-neon-schema-isolation/spec.md).
+
 ## Migraciones Alembic
 
 Cadena vigente:
@@ -280,14 +314,16 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
+Para una instalación limpia, `alembic upgrade head` debe crear el modelo vigente dentro de `ph_torre_delta`, incluida `ph_torre_delta.alembic_version`.
+
 Si PostgreSQL referencia una revisión inexistente en la rama, primero se debe sincronizar la rama/migraciones correctas; no ocultar el problema con `alembic stamp`.
 
 ## Desarrollo local
 
 ```powershell
 git fetch origin
-git switch agent/consolidate-users-organigram-in-access
-git pull origin agent/consolidate-users-organigram-in-access
+git switch feature/neon-ph-torre-delta-schema
+git pull origin feature/neon-ph-torre-delta-schema
 
 docker compose up -d --build
 ```
@@ -312,6 +348,8 @@ npm ci
 npm run build
 ```
 
+Para Feature 012 validar además con `information_schema` que las tablas de aplicación y `alembic_version` existen solo bajo `ph_torre_delta` y que no aparecieron tablas nuevas en `public`.
+
 Para cambios de Accesos validar manualmente:
 
 ```text
@@ -328,7 +366,7 @@ Accesos → Salir
 ```text
 frontend/   React + Vite
 backend/    FastAPI + SQLAlchemy + Alembic
-PostgreSQL  persistencia
+Neon        PostgreSQL persistencia DEV/PROD
 ```
 
 Componentes relevantes:
@@ -343,7 +381,7 @@ frontend/src/config-readonly.js
 frontend/src/classification-admin.js
 ```
 
-FastAPI mantiene routers, schemas, servicios y modelos separados. El frontend puede usar bridges legacy de forma temporal, pero esos bridges no reemplazan la autorización backend.
+FastAPI mantiene routers, schemas, servicios y modelos separados. SQLAlchemy y Alembic deben resolver el schema de aplicación desde configuración central. El frontend puede usar bridges legacy de forma temporal, pero esos bridges no reemplazan la autorización backend.
 
 ## Documentación
 
@@ -358,7 +396,8 @@ Autoridad documental:
 7. [docs/](docs/README.md)
 8. código legacy cuando exista discrepancia documentada
 
-Feature vigente para la consolidación: [specs/011-access-console-consolidation/spec.md](specs/011-access-console-consolidation/spec.md).
+Feature vigente de persistencia: [specs/012-neon-schema-isolation/spec.md](specs/012-neon-schema-isolation/spec.md).  
+Feature vigente para consolidación de Accesos: [specs/011-access-console-consolidation/spec.md](specs/011-access-console-consolidation/spec.md).
 
 ## Deuda explícita
 
@@ -368,6 +407,7 @@ Permanecen temporalmente sin ser arquitectura objetivo:
 - `AccessProfile` y `BOARD_CODES`;
 - `/api/users` legacy;
 - vistas internas `people` / `organization` no navegables;
-- `main.jsx`, `domain-normalization.js` y bridges Vite.
+- `main.jsx`, `domain-normalization.js` y bridges Vite;
+- schemas/tablas legacy fuera de `ph_torre_delta`, mientras no sean consultados por runtime.
 
-La compatibilidad legacy no debe reintroducir Usuarios/Organigrama como pantallas independientes ni `expense_type` / `expense_subcategory` como contrato nuevo.
+La compatibilidad legacy no debe reintroducir Usuarios/Organigrama como pantallas independientes, `expense_type` / `expense_subcategory` como contrato nuevo ni schemas anteriores como fuente de verdad.
