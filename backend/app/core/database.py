@@ -13,11 +13,16 @@ DATABASE_URL = settings.database_url
 if DATABASE_URL.startswith('postgresql://'):
     DATABASE_URL = DATABASE_URL.replace('postgresql://', 'postgresql+psycopg://', 1)
 
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    pool_recycle=300,
-)
+engine_options = {
+    'pool_pre_ping': True,
+    'pool_recycle': 300,
+}
+if DATABASE_URL.startswith('postgresql+psycopg://'):
+    engine_options['connect_args'] = {
+        'options': f'-csearch_path={settings.database_schema},public'
+    }
+
+engine = create_engine(DATABASE_URL, **engine_options)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
