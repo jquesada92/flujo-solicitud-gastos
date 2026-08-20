@@ -141,6 +141,22 @@ Cadena:
 0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006
 ```
 
+## F-009-10 — Asignación visible solo para Categorías activas
+
+La pantalla **Áreas y categorías** mantiene dos contextos distintos:
+
+1. **Maestro de Categorías**: muestra activas e inactivas para poder administrar/reactivar el catálogo.
+2. **Categorías por área**: muestra únicamente Categorías con `active=true`.
+
+Reglas observables:
+
+- una Categoría inactiva no aparece como fila asignable;
+- el contador de la tarjeta considera únicamente Categorías activas;
+- cambiar un checkbox no persiste inmediatamente; habilita **Guardar** para esa fila;
+- la relación se crea/elimina únicamente al pulsar **Guardar**;
+- desactivar una Categoría no borra sus relaciones existentes ni altera solicitudes históricas;
+- si se necesita modificar una relación de una Categoría inactiva desde la UI, primero debe reactivarse en el Maestro de Categorías.
+
 ## Seguridad
 
 - `config:manage` system-only;
