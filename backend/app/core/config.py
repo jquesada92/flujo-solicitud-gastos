@@ -1,8 +1,13 @@
 from functools import lru_cache
 from pathlib import Path
+import re
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+_DATABASE_SCHEMA_PATTERN = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+_RESERVED_DATABASE_SCHEMAS = {'public', 'pg_catalog', 'information_schema'}
 
 
 class Settings(BaseSettings):
@@ -16,6 +21,7 @@ class Settings(BaseSettings):
     environment: str = 'development'
     render: bool = False
     database_url: str
+    database_schema: str = 'administracion'
 
     secret_key: str = 'development-only-change-me'
     analytics_hash_key: str = ''
@@ -70,6 +76,20 @@ class Settings(BaseSettings):
             for origin in self.cors_allowed_origins.split(',')
             if origin.strip()
         ]
+
+    @field_validator('database_schema')
+    @classmethod
+    def validate_database_schema(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized or not _DATABASE_SCHEMA_PATTERN.fullmatch(normalized):
+            raise ValueError(
+                'DATABASE_SCHEMA debe ser un identificador PostgreSQL simple '
+                '(letras, números y guion bajo; no puede iniciar con número)'
+            )
+        lowered = normalized.lower()
+        if lowered in _RESERVED_DATABASE_SCHEMAS or lowered.startswith('pg_'):
+            raise ValueError('DATABASE_SCHEMA debe ser un schema dedicado de la aplicación, no un schema del sistema')
+        return normalized
 
     @field_validator('email_mode')
     @classmethod
