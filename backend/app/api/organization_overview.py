@@ -48,7 +48,7 @@ def group_overview(
     db: Session = Depends(get_db),
     _: User = Depends(require_permission('requests:read')),
 ):
-    """Read-only organization snapshot shown on the authenticated home page."""
+    """Read-only team snapshot for the Seguimiento de usuarios screen."""
     groups = list(db.scalars(
         select(UserGroup)
         .where(UserGroup.active.is_(True))
