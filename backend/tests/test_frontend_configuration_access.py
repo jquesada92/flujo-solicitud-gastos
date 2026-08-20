@@ -119,12 +119,14 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn('.classification-save-assignment:not(:disabled)', action_css)
         self.assertIn('/src/action-state.css', index)
 
-    def test_role_master_list_shows_name_without_permission_code_summary(self):
+    def test_role_master_list_uses_clean_single_surface_rows(self):
         css = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.css').read_text(encoding='utf-8')
-        self.assertIn(
-            '.iam-page-nav:has(.iam-tabs button:nth-child(3).active)+.iam-grid>.iam-card:first-child .iam-list-main small{display:none}',
-            css,
-        )
+        role_scope = '.iam-page-nav:has(.iam-tabs button:nth-child(3).active)+.iam-grid>.iam-card:first-child'
+        self.assertIn(f'{role_scope} .iam-list-main small{{display:none}}', css)
+        self.assertIn(f'{role_scope} .iam-list-item>.iam-button:first-child', css)
+        self.assertIn('border:0;background:transparent;padding:0;border-radius:0;box-shadow:none;text-align:left', css)
+        self.assertIn(f'{role_scope} .iam-list-item{{align-items:center;padding:14px}}', css)
+        self.assertIn(f'{role_scope} .iam-system{{margin-left:auto}}', css)
 
 
 if __name__ == '__main__':
