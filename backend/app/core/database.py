@@ -19,17 +19,14 @@ class Base(DeclarativeBase):
     metadata = MetaData(schema=APPLICATION_SCHEMA)
 
 
-connect_args: dict[str, object] = {}
-if IS_POSTGRESQL:
-    # Defense in depth: even unqualified SQL issued by dependencies resolves
-    # only inside the application schema instead of falling back to public.
-    connect_args['options'] = f'-csearch_path={settings.database_schema}'
-
+# Do not send PostgreSQL `options=-csearch_path=...` in the startup packet.
+# Neon pooled endpoints reject that startup parameter. Application tables are
+# schema-qualified through Base.metadata, so runtime ORM access remains isolated
+# from public without relying on a connection-level search_path.
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
     pool_recycle=300,
-    connect_args=connect_args,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
