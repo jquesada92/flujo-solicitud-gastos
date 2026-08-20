@@ -35,8 +35,12 @@
 - [x] el bridge de Accesos no usa `replaceRequired()` con un bloque multilinea literal para el guard de inyección.
 - [x] la consola de **Accesos** conserva visible la navegación estándar de la aplicación.
 - [x] navegar desde la barra estándar fuera de **Accesos** cierra la consola IAM sin requerir un botón **Volver** independiente.
-- [x] **Actualizar** se integra con las pestañas internas de la consola y no aparece como acción aislada en el encabezado.
+- [x] la acción de refresco se presenta como **Recargar** y se integra con las pestañas internas.
 - [x] la consola IAM reutiliza el ancho, espaciado, tarjetas y jerarquía visual del shell principal.
+- [x] la columna de navegación IAM reserva ancho suficiente y nombres/correos largos no cortan badges **Activo/SISTEMA**.
+- [x] **Guardar cambios** de Roles permanece deshabilitado mientras nombre, descripción y permisos coincidan con persistencia.
+- [x] los botones de persistencia deshabilitados usan estado gris de bajo énfasis.
+- [x] los botones con cambios pendientes conocidos por el componente usan un brillo/acento leve de la paleta existente.
 - [x] la pantalla canónica separa Maestro de Áreas, Maestro de Categorías y **Categorías por área**.
 - [x] **Categorías por área** muestra solo categorías activas.
 - [x] categorías inactivas siguen visibles en el Maestro de Categorías para poder reactivarlas.
@@ -47,6 +51,8 @@
 - [ ] validar manualmente menú de usuario con `areas:manage`.
 - [ ] validar manualmente usuario ordinario sin Configuración.
 - [ ] validar manualmente navegación desde Accesos hacia Inicio/Solicitudes/Facturas/Configuración usando la barra estándar.
+- [ ] validar manualmente que emails largos no recorten el estado del usuario en Accesos.
+- [ ] validar manualmente estados gris/pendiente de Guardar en Roles y Categorías por área.
 - [ ] validar manualmente que una categoría desactivada desaparece de **Categorías por área** y reaparece al reactivarla conservando su relación previa.
 
 ## Migración
@@ -62,7 +68,7 @@
 ## Pruebas
 
 - [x] `test_iam_api.py` cubre system-only config y `areas:manage` ordinario.
-- [x] `test_frontend_configuration_access.py` protege separación de menú, robustez del bridge, checkbox IAM e integración de navegación de Accesos.
+- [x] `test_frontend_configuration_access.py` protege separación de menú, robustez del bridge, checkbox IAM, integración de navegación, overflow de listas y estado dirty de Roles.
 - [x] `test_frontend_classification_admin_contract.py` protege catálogo global, guardado por fila y visibilidad solo de categorías activas en asignación.
 - [x] `test_migrations.py` protege `0006`.
 - [ ] suite backend completa ejecutada localmente en head final.
