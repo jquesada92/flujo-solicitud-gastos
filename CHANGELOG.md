@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-08-19 — Asignación Área-Categoría muestra solo categorías activas
+
+### Changed
+- **Categorías por área** muestra únicamente categorías activas y su contador usa esa misma población visible.
+- el Maestro de Categorías conserva activas e inactivas para permitir mantenimiento y reactivación.
+- los cambios de asignación continúan siendo staged por fila y solo persisten al pulsar **Guardar**.
+
+### Behavior
+- desactivar una categoría no elimina sus relaciones persistidas ni modifica solicitudes históricas; la categoría deja de aparecer en la tarjeta de asignación hasta ser reactivada.
+- si no existen categorías activas, la tarjeta muestra un estado vacío explícito.
+
+### Testing / Docs
+- `test_frontend_classification_admin_contract.py` protege el filtro `active=true`, el contador y el guardado explícito.
+- Feature 009, su checklist y `docs/CLASSIFICATION_MODEL.md` documentan la regla visible.
+
+---
+
 ## 2026-08-18 — Notificaciones de Cargo y permisos efectivos
 
 ### Added
@@ -157,7 +174,6 @@
 
 ### Added
 - `pending_action_service.py`, `my_actions.py`, `home-dashboard.jsx` y modal contextual.
-
 ### Changed
 - Filas de Acciones pendientes abren modal; **Ver todas** abre Solicitudes.
 - KPIs superiores dejan de ser botones.
