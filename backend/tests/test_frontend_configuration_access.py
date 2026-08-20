@@ -119,6 +119,13 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn('.classification-save-assignment:not(:disabled)', action_css)
         self.assertIn('/src/action-state.css', index)
 
+    def test_role_master_list_shows_name_without_permission_code_summary(self):
+        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.css').read_text(encoding='utf-8')
+        self.assertIn(
+            '.iam-page-nav:has(.iam-tabs button:nth-child(3).active)+.iam-grid>.iam-card:first-child .iam-list-main small{display:none}',
+            css,
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
