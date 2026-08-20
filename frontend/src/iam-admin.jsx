@@ -77,6 +77,17 @@ function RolesPanel({ permissions, roles, reload, setError }) {
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState({ name: "", description: "", permission_codes: [] });
   const selected = roles.find((item) => item.id === selectedId) || null;
+  const roleDirty = useMemo(() => {
+    if (!selected) return Boolean(form.name.trim() || form.description.trim() || form.permission_codes.length);
+    const currentPermissions = [...form.permission_codes].map(String).sort();
+    const savedPermissions = [...(selected.permission_codes || [])].map(String).sort();
+    return (
+      form.name !== selected.name
+      || form.description !== (selected.description || "")
+      || JSON.stringify(currentPermissions) !== JSON.stringify(savedPermissions)
+    );
+  }, [form, selected]);
+  const canPersistRole = roleDirty && form.name.trim().length >= 2;
 
   useEffect(() => {
     if (selected) {
@@ -101,6 +112,7 @@ function RolesPanel({ permissions, roles, reload, setError }) {
 
   const save = async (event) => {
     event.preventDefault();
+    if (!canPersistRole) return;
     setError("");
     try {
       const body = JSON.stringify({ ...form, active: selected?.active ?? true });
@@ -152,7 +164,7 @@ function RolesPanel({ permissions, roles, reload, setError }) {
             <label>Descripción<textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
             <div><strong>Permisos del rol</strong><p className="iam-muted">Los permisos son capacidades del producto; el rol define la combinación que necesita la organización.</p></div>
             <CheckList items={permissions.filter((item) => item.active)} selected={form.permission_codes} getValue={(item) => item.code} onToggle={togglePermission} render={(item) => <PermissionLabel permission={item} />} />
-            <button className="iam-button primary">{selected ? "Guardar cambios" : "Crear rol"}</button>
+            <button className={`iam-button primary iam-persist-action ${canPersistRole ? "pending" : ""}`} disabled={!canPersistRole}>{selected ? "Guardar cambios" : "Crear rol"}</button>
           </form>
         )}
       </section>
@@ -376,7 +388,7 @@ function IamConsole() {
   }, []);
 
   if (loading) return <div className="iam-overlay"><main className="iam-shell"><div className="iam-loading">Cargando configuración de accesos…</div></main></div>;
-  return <div className="iam-overlay"><main className="iam-shell"><header className="iam-header"><p className="iam-eyebrow">CONFIGURACIÓN · ACCESOS</p><h1>Usuarios, grupos, cargos, roles y permisos</h1><p className="iam-muted">Los permisos efectivos pueden heredarse por grupo o por cargo, además de roles/permisos directos. La estructura y sus nombres son datos configurables.</p></header>{error && <div className="iam-notice error">{error}</div>}<div className="iam-page-nav"><nav className="iam-tabs">{[["users","Usuarios"],["groups","Grupos"],["roles","Roles"],["permissions","Permisos"],["positions","Cargos"]].map(([value,label]) => <button className={tab === value ? "active" : ""} key={value} onClick={() => setTab(value)}>{label}</button>)}</nav><button className="iam-button iam-refresh" onClick={() => reload().catch((e) => setError(e.message))}>↻ Actualizar</button></div>{tab === "users" && <UsersPanel {...data} reload={reload} setError={setError} />}{tab === "groups" && <GroupsPanel {...data} reload={reload} setError={setError} />}{tab === "roles" && <RolesPanel {...data} reload={reload} setError={setError} />}{tab === "permissions" && <PermissionsPanel permissions={data.permissions} />}{tab === "positions" && <PositionsPanel positions={data.positions} roles={data.roles} reload={reload} setError={setError} />}</main></div>;
+  return <div className="iam-overlay"><main className="iam-shell"><header className="iam-header"><p className="iam-eyebrow">CONFIGURACIÓN · ACCESOS</p><h1>Usuarios, grupos, cargos, roles y permisos</h1><p className="iam-muted">Los permisos efectivos pueden heredarse por grupo o por cargo, además de roles/permisos directos. La estructura y sus nombres son datos configurables.</p></header>{error && <div className="iam-notice error">{error}</div>}<div className="iam-page-nav"><nav className="iam-tabs">{[["users","Usuarios"],["groups","Grupos"],["roles","Roles"],["permissions","Permisos"],["positions","Cargos"]].map(([value,label]) => <button className={tab === value ? "active" : ""} key={value} onClick={() => setTab(value)}>{label}</button>)}</nav><button className="iam-button iam-refresh" onClick={() => reload().catch((e) => setError(e.message))}>↻ Recargar</button></div>{tab === "users" && <UsersPanel {...data} reload={reload} setError={setError} />}{tab === "groups" && <GroupsPanel {...data} reload={reload} setError={setError} />}{tab === "roles" && <RolesPanel {...data} reload={reload} setError={setError} />}{tab === "permissions" && <PermissionsPanel permissions={data.permissions} />}{tab === "positions" && <PositionsPanel positions={data.positions} roles={data.roles} reload={reload} setError={setError} />}</main></div>;
 }
 
 let mounted = false;
