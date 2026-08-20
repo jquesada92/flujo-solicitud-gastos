@@ -49,7 +49,19 @@ class DatabaseSchemaContractTests(unittest.TestCase):
         self.assertIn('version_table_schema=database_schema', env_source)
         self.assertIn("config.attributes['database_schema'] = database_schema", env_source)
         self.assertIn('CREATE SCHEMA IF NOT EXISTS', env_source)
-        self.assertIn('SET search_path TO', env_source)
+        self.assertIn("connect_args['options'] = f'-csearch_path={database_schema}'", env_source)
+
+    def test_alembic_schema_setup_commits_before_migration_transaction(self):
+        env_source = (REPO_ROOT / 'backend' / 'alembic' / 'env.py').read_text(encoding='utf-8')
+        create_schema_position = env_source.index('CREATE SCHEMA IF NOT EXISTS')
+        setup_commit_position = env_source.index('connection.commit()', create_schema_position)
+        configure_position = env_source.index('context.configure(', setup_commit_position)
+        begin_position = env_source.index('with context.begin_transaction():', configure_position)
+
+        self.assertLess(create_schema_position, setup_commit_position)
+        self.assertLess(setup_commit_position, configure_position)
+        self.assertLess(configure_position, begin_position)
+        self.assertNotIn('SET search_path TO', env_source)
 
     def test_env_examples_declare_administracion(self):
         backend_env = (REPO_ROOT / 'backend' / '.env.example').read_text(encoding='utf-8')
