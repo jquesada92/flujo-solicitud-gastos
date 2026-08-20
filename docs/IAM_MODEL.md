@@ -2,7 +2,14 @@
 
 ## Objetivo
 
-Permitir que cada organización configure acceso sin hardcodear nombres, cargos o correos y distinguir **permisos IAM**, **capacidades system-only**, **capacidades por recurso**, **delegaciones** y **tareas contextuales**.
+Permitir que cada organización configure acceso sin hardcodear nombres, cargos o correos y distinguir claramente:
+
+- permisos IAM;
+- capacidades system-only;
+- lectura de Configuración;
+- capacidades por recurso;
+- delegaciones;
+- tareas contextuales.
 
 ## Modelo
 
@@ -32,7 +39,7 @@ position_roles
 system_accounts
 ```
 
-La delegación de cierre se persiste aparte en `expense_closure_delegations` porque pertenece a una solicitud concreta, no a la organización global.
+La delegación de cierre se persiste aparte en `expense_closure_delegations` porque pertenece a una solicitud concreta.
 
 ## Permisos IAM vigentes
 
@@ -40,11 +47,12 @@ La delegación de cierre se persiste aparte en `expense_closure_delegations` por
 requests:read     baseline de consulta
 requests:create   crear nuevas solicitudes
 requests:approve  aprobar/votar/enviar a revisión
-areas:manage      administrar Áreas/Categorías
+areas:manage      administrar Área + Categoría
+config:read       consultar Configuración
 config:manage     administración técnica system-only
 ```
 
-`requests:close` permanece físicamente como registro **legacy inactivo** después de Alembic `0005`. No autoriza runtime ni debe configurarse para conseguir cierre/factura.
+`requests:close` permanece físicamente como registro legacy inactivo. No autoriza runtime ni debe configurarse para conseguir cierre/factura.
 
 Para usuario activo ordinario:
 
@@ -58,25 +66,47 @@ effective_permissions =
   - {config:manage}
 ```
 
-`requests:read` es baseline. `config:manage` es system-only: una asignación histórica/directa/heredada a un usuario ordinario no lo hace efectivo.
+`requests:read` es baseline. `config:manage` es system-only. `config:read` y `areas:manage` sí pueden heredarse por las vías IAM ordinarias.
 
-## Configuración técnica vs Áreas
+## Configuración
 
 ### `config:manage`
 
 Reservado a cuentas persistidas en `system_accounts`.
 
-Gobierna la frontera técnica:
+Gobierna mutaciones de administración técnica. La superficie IAM canónica es:
+
+```text
+Configuración → Accesos
+```
+
+**Usuarios/Personas y Organigrama no son pantallas administrativas independientes.**
+
+Accesos concentra:
 
 ```text
 Usuarios
-Organigrama
-Accesos / IAM
-Reglas
-Auditoría técnica
+Grupos
+Roles
+Permisos
+Cargos/Posiciones
+Asignaciones
+Permisos efectivos/fuentes
 ```
 
-No debe usarse como permiso empresarial general.
+### `config:read`
+
+Permiso de lectura configurable.
+
+```text
+config:read
+→ Accesos solo lectura
+→ Áreas solo lectura salvo areas:manage
+→ Reglas solo lectura
+→ Auditoría solo lectura
+```
+
+No concede mutaciones y no se convierte en `config:manage`.
 
 ### `areas:manage`
 
@@ -93,35 +123,40 @@ Gobierna:
 
 ```text
 Áreas
-Categorías asociadas
+Categorías
 activación/desactivación
 relaciones Área ↔ Categoría
 ```
 
-Alembic `0006` crea el Rol neutral `Gestor de áreas` con `areas:manage`, pero **no lo asigna por nombre** a ningún Grupo/Cargo.
-
-Una configuración de cliente puede ser, por ejemplo:
-
-```text
-Grupo Administración → Gestor de áreas
-Grupo Junta Directiva → Gestor de áreas
-```
-
-Los nombres son datos persistidos, no condiciones runtime.
+Alembic `0006` crea `Gestor de áreas`. Alembic `0007` crea `Visor de configuración`. Ninguna migración debe autorizar por nombres organizacionales.
 
 ## Grupo y Cargo
 
 Cargo/Posición puede heredar Roles, pero su nombre no autoriza.
 
 ```text
-Cargo Tesorero → Rol Aprobador → requests:approve
+Cargo X → Rol Aprobador → requests:approve
+Grupo Y → Rol Visor de configuración → config:read
 ```
 
-Grupo y Cargo son fuentes independientes y acumulativas. Prohibido autorizar con comparaciones de nombres.
+Grupo y Cargo son fuentes independientes y acumulativas.
+
+## Accesos como única fuente de administración
+
+Toda creación/configuración de usuarios e IAM debe realizarse dentro de Accesos.
+
+No debe requerirse una pantalla separada para:
+
+- crear usuarios;
+- activar/inactivar usuarios;
+- asignar Cargos;
+- asignar Grupos;
+- asignar Roles/Permisos;
+- visualizar permisos efectivos.
+
+Vistas legacy `people` / `organization` pueden permanecer internamente de forma temporal, pero no son navegables ni autoridad.
 
 ## Notificaciones de Cargo y permisos efectivos
-
-La comunicación al usuario también debe usar el IAM canónico.
 
 ### Creación de usuario
 
@@ -132,20 +167,18 @@ Cargo(s) activos
 Permisos efectivos
 ```
 
-Los permisos se obtienen de `effective_permission_codes()` y se presentan con nombre legible + código.
-
 ### Cambio de Cargo
 
-Cuando cambia realmente el conjunto `position_ids` de un usuario activo:
+Cuando cambia realmente `position_ids` de un usuario activo:
 
 1. se aplican los nuevos `UserPosition`;
 2. se recalculan permisos efectivos;
 3. se envía **Actualización de cargo y permisos**;
-4. si falla la entrega, la transacción se revierte y la API devuelve 502.
+4. si falla la entrega obligatoria, la transacción se revierte.
 
 Guardar el mismo conjunto de Cargos no genera notificación duplicada.
 
-Estas notificaciones no usan `UserRole`, `title` ni `can_*` como fuente de verdad.
+Las fuentes de verdad son `UserPosition → Position` y `effective_permission_codes()`.
 
 ## Fuentes visibles
 
@@ -154,12 +187,12 @@ Estas notificaciones no usan `UserRole`, `title` ni `can_*` como fuente de verda
 ```text
 Acceso base del producto
 Asignación directa
-Rol directo: Comprador
-Grupo Junta Directiva → Aprobador
-Cargo Tesorero → Aprobador
+Rol directo
+Grupo → Rol
+Cargo → Rol
 ```
 
-Una delegación de cierre no aparece como permiso efectivo porque **no es un permiso IAM**; se presenta en el contexto de la solicitud.
+Una delegación de cierre no aparece como permiso efectivo porque no es IAM global.
 
 ## Capacidades por recurso
 
@@ -183,22 +216,20 @@ can_close =
   AND (requester OR system_accounts OR active_closure_delegate)
 ```
 
-### Administración de delegación
+### Delegación
 
 ```text
 can_delegate_close = requester original
 ```
 
-Solo el solicitante crea/cambia/revoca la delegación. El Administrador del sistema ya posee la excepción administrativa y no necesita una delegación.
-
 Por tanto:
 
 - `requests:create` no permite corregir/cancelar/cerrar solicitudes ajenas;
 - `requests:approve` no permite editar ni cerrar solicitudes ajenas;
-- `config:manage` no permite sustituir al solicitante;
-- `requests:close` legacy no concede nada en runtime;
-- Grupo/Rol/Cargo no amplían estas reglas por recurso;
-- frontend consume `can_cancel`, `can_correct`, `can_close`, `can_delegate_close`; backend siempre revalida.
+- `config:read` no concede mutaciones;
+- `config:manage` no sustituye automáticamente al solicitante en reglas ordinarias;
+- `requests:close` legacy no concede autoridad;
+- frontend consume `can_*` por recurso y backend revalida.
 
 ## Tareas contextuales
 
@@ -211,35 +242,14 @@ CLOSE_REQUEST
 
 No son permisos IAM.
 
-### `APPROVAL_DECISION`
-
 ```text
-requests:approve + Approval.PENDING asignado + PENDING_APPROVAL
+APPROVAL_DECISION = requests:approve + Approval.PENDING + PENDING_APPROVAL
+QUOTATION_VOTE    = requests:approve + invitación vigente + QUOTATION_VOTING + sin voto
+CORRECT_REQUEST   = NEEDS_REVISION + requester actual
+CLOSE_REQUEST     = APPROVED + (requester OR active_closure_delegate)
 ```
-
-### `QUOTATION_VOTE`
-
-```text
-requests:approve + invitación vigente + QUOTATION_VOTING + sin voto
-```
-
-### `CORRECT_REQUEST`
-
-```text
-NEEDS_REVISION + requested_by == current_user.email
-```
-
-### `CLOSE_REQUEST`
-
-```text
-APPROVED + (requester original OR active_closure_delegate)
-```
-
-El Administrador del sistema conserva facultad administrativa desde la lista, pero no recibe todas las solicitudes aprobadas como tareas personales.
 
 ## Enviar a revisión
-
-Es una decisión dentro de una aprobación asignada, no un permiso nuevo:
 
 ```text
 requests:approve
@@ -259,70 +269,60 @@ No concede `can_correct` al aprobador.
 
 ## `TECHNICAL_ADMIN`
 
-Identidad persistida en `system_accounts` y expuesta para UX como `is_system_account`.
+Se identifica mediante `system_accounts`.
 
 ### Producción
 
-IAM máximo:
-
 ```text
 config:manage
+config:read
 areas:manage
 requests:read
 ```
 
-No participa en aprobación/votación. Excepciones administrativas por recurso:
-
-```text
-can_cancel
-can_correct
-can_close
-```
-
-No administra delegaciones ordinarias en nombre del solicitante.
+No participa en aprobación/votación. Conserva excepciones administrativas por recurso para cancelar, corregir y gestionar cierre/factura.
 
 ### No producción
 
-`ENVIRONMENT != production` obtiene todos los permisos IAM activos para pruebas E2E además de capacidades administrativas por recurso.
+Puede recibir todos los permisos activos para pruebas E2E según política de ambiente.
 
-## Consola autoritativa
+## Navegación de Accesos
 
-**Configuración → Accesos** administra IAM canónico y solo está disponible al System Admin.
+La consola se monta temporalmente mediante `#access-management`.
 
-Un usuario ordinario con `areas:manage` ve **Configuración → Áreas** pero no Usuarios/Organigrama/Accesos.
+La navegación superior debe seguir funcionando y cerrar la consola en el mismo clic al ir a otra pantalla.
 
-`AccessProfile`, `users.title`, `can_*`, `BOARD_CODES` y `requests:close` legacy son compatibilidad/deuda y no autoridad runtime.
-
-## Migraciones
+Implementación transitoria:
 
 ```text
-0004 → position_roles + importación legacy de Cargo/Perfil a IAM
-0005 → expense_closure_delegations + requests:close inactivo/legacy
-0006 → areas:manage + Rol Gestor de áreas + config:manage system-only documentado
+frontend/src/access-navigation-bridge.js
 ```
 
-Cadena completa actual termina en `20260818_0006`.
+Casos mínimos:
 
-Feature 010 no requiere migración; reutiliza `UserPosition`, `Position` y el resolver IAM vigente.
+```text
+Accesos → Inicio
+Accesos → Solicitudes
+Accesos → Facturas
+Accesos → Auditoría
+Accesos → Configuración → otra pantalla
+Accesos → Salir
+```
 
-## Pruebas mínimas
+Abrir/cerrar únicamente el dropdown Configuración no abandona Accesos.
 
-- permiso directo / Rol directo / Grupo→Rol / Cargo→Rol;
-- Cargo inactivo y fuentes efectivas;
-- `areas:manage` para usuario ordinario sin acceso IAM técnico;
-- `config:manage` legacy ignorado para usuario ordinario;
-- `is_system_account` explícito en sesión;
-- invitación incluye Cargo(s) y permisos efectivos;
-- cambio real de Cargo recalcula/notifica permisos;
-- guardar mismo Cargo no duplica correo;
-- fallo del correo de Cargo revierte la actualización;
-- política técnica producción/no-producción;
-- `can_cancel` requester/Admin;
-- `can_correct` requester/Admin;
-- `CORRECT_REQUEST` solo solicitante;
-- `can_close` requester/Admin/delegado;
-- `requests:close` legacy no autoriza tercero;
-- solo solicitante administra delegación;
-- revocación elimina autoridad;
-- `CLOSE_REQUEST` requester/delegado;
-- una sola delegación activa por solicitud.
+## Prohibiciones
+
+No autorizar por:
+
+- `UserRole`;
+- `can_*` legacy;
+- `BOARD_CODES`;
+- email fijo;
+- ID mágico;
+- nombre/código de Rol, Grupo o Cargo;
+- conceptos inmobiliarios.
+
+## Compatibilidad
+
+Pueden permanecer temporalmente `UserRole`, `AccessProfile`, flags `can_*`, `title`, `/api/users`, vistas `people` / `organization` y bridges Vite. No son arquitectura objetivo ni fuente de verdad.
