@@ -1,6 +1,6 @@
 # Prompt maestro de reconstrucción
 
-> Constitución vigente: **2.9.0**.
+> Constitución vigente: **2.10.0**.
 
 Reconstruye una aplicación web lista para producción llamada **Flujo de Control de Gastos**, destinada a solicitar, evaluar, aprobar, votar, dar seguimiento, devolver a revisión, corregir, cancelar, cerrar y documentar gastos con trazabilidad y evidencia verificable.
 
@@ -493,7 +493,45 @@ Cuando cambia realmente `position_ids`, recalcula `effective_permission_codes()`
 - response models explícitos;
 - tests HTTP para autorización y contratos críticos.
 
-## 19. Alembic
+## 19. Persistencia Neon y schema obligatorio
+
+Usa esta topología exacta:
+
+```text
+Neon project: ph_torre_delta
+├─ main  → PROD
+│  └─ database: ph_torre_delta
+│     └─ schema: ph_torre_delta
+└─ dev   → DEV
+   └─ database: ph_torre_delta
+      └─ schema: ph_torre_delta
+```
+
+Configuración central:
+
+```text
+DATABASE_URL=<connection string del branch correspondiente>
+DATABASE_SCHEMA=ph_torre_delta
+```
+
+Reglas no negociables:
+
+- **todas** las tablas de aplicación, secuencias, índices, constraints y `alembic_version` deben vivir en `ph_torre_delta`;
+- `public` no es schema de aplicación;
+- `flujos_de_aprobacion` es legacy y nunca es fallback de runtime;
+- DEV y PROD se crean desde cero ejecutando Alembic sobre el schema objetivo vacío;
+- no muevas, copies, clones ni renombres tablas desde `public`, `flujos_de_aprobacion` u otro schema;
+- no migres datos legacy como parte de esta reconstrucción;
+- no uses `alembic stamp` para reutilizar el estado de un schema anterior;
+- SQLAlchemy debe resolver el schema desde configuración central, no con prefijos dispersos por el código;
+- Alembic debe crear/verificar el schema, usarlo como schema efectivo y almacenar allí su tabla de versión;
+- DEV y PROD deben tener la misma estructura física; solo cambia `DATABASE_URL`/branch.
+
+Si coexisten `ph_torre_delta`, `public` y `flujos_de_aprobacion`, la aplicación debe operar exclusivamente sobre `ph_torre_delta`.
+
+Feature normativa: `specs/012-neon-schema-isolation/`.
+
+## 20. Alembic
 
 Cadena vigente:
 
@@ -517,9 +555,11 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
+Una instalación limpia debe poder ejecutar la cadena completa sobre `ph_torre_delta` vacío y terminar con `ph_torre_delta.alembic_version == head`.
+
 Si PostgreSQL contiene una revisión que la rama no conoce, sincroniza la rama/migración correcta. No uses `stamp` para esconder una incompatibilidad física del esquema.
 
-## 20. Frontend modular y deuda legacy
+## 21. Frontend modular y deuda legacy
 
 Componentes relevantes:
 
@@ -537,7 +577,7 @@ Pueden permanecer temporalmente `main.jsx`, `domain-normalization.js`, vistas in
 
 Los bridges deben ser fail-fast y tolerantes a whitespace/LF/CRLF cuando transformen código legacy.
 
-## 21. Definition of Done
+## 22. Definition of Done
 
 Todo cambio funcional/técnico relevante debe sincronizar:
 
@@ -560,6 +600,18 @@ alembic heads
 alembic current
 python -m unittest discover -s tests -v
 npm run build
+```
+
+Para Feature 012 valida además:
+
+```text
+main = PROD
+dev = DEV
+database = ph_torre_delta
+schema = ph_torre_delta
+ph_torre_delta.alembic_version = head
+cero tablas de aplicación nuevas en public
+cero dependencia runtime de flujos_de_aprobacion
 ```
 
 Para Feature 011 valida manualmente:
