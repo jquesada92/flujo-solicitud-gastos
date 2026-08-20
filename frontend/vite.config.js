@@ -111,8 +111,14 @@ function replaceAuditMenuVisibility(source) {
 function replaceConfigurationAccess(source) {
   let next = replaceRequired(
     source,
+    'const canCreate = user.role === "ADMIN" || user.can_request,',
+    'const isSystemAdmin = user.is_system_account === true,\n    permissionCodes = user.permission_codes || [],\n    canCreate = permissionCodes.includes("requests:create"),',
+    "request creation capability",
+  );
+  next = replaceRequired(
+    next,
     'canConfigure = user.role === "ADMIN" || user.can_configure,',
-    'isSystemAdmin = user.is_system_account === true,\n    permissionCodes = user.permission_codes || [],\n    canReadConfiguration = isSystemAdmin || permissionCodes.includes("config:read"),\n    canManageAreas = isSystemAdmin || permissionCodes.includes("areas:manage"),\n    canConfigure = isSystemAdmin,',
+    'canReadConfiguration = isSystemAdmin || permissionCodes.includes("config:read"),\n    canManageAreas = isSystemAdmin || permissionCodes.includes("areas:manage"),\n    canConfigure = isSystemAdmin,',
     "configuration capabilities",
   );
   next = replaceRequired(
