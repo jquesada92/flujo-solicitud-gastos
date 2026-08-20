@@ -77,6 +77,29 @@ expense_category
 
 La consolidación no autoriza por nombres como Presidente, Tesorero, Junta Directiva, Administración u otros. Cargos, Grupos, Roles y niveles de acceso continúan definidos como datos persistidos.
 
+## F-011-07 — Navegación global desde Accesos
+
+Mientras la consola de **Accesos** esté abierta, la barra superior del producto continúa siendo funcional.
+
+Desde Accesos deben responder normalmente:
+
+```text
+Inicio
+Solicitudes
+Facturas
+Auditoría
+Configuración
+Salir
+```
+
+Al seleccionar una pantalla de destino distinta de Accesos, la consola IAM debe cerrarse y la navegación del shell principal debe continuar en el mismo clic.
+
+Esta regla también aplica cuando el destino solicitado ya era la pestaña subyacente activa antes de abrir Accesos. Por ejemplo: si Accesos se abrió desde Inicio, pulsar **Inicio** debe cerrar Accesos aunque el estado React subyacente ya sea `home`.
+
+Abrir/cerrar el menú **Configuración** por sí solo no cierra Accesos; seleccionar una opción navegable dentro de ese menú sí debe cerrarlo.
+
+La implementación no puede depender únicamente del cambio de estado React del shell, porque la consola de Accesos se monta mediante `#access-management` y debe retirar ese hash explícitamente al abandonar la consola.
+
 ## Seguridad
 
 - `config:manage` continúa siendo system-only;
