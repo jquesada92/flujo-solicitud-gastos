@@ -68,10 +68,13 @@ function PermissionLabel({ permission }) {
   return <><strong>{permission.name}</strong><small>{permission.code}</small>{permission.description && <small>{permission.description}</small>}</>;
 }
 
-function RolesPanel({ permissions, roles, reload, setError }) {
+function RolesPanel({ permissions, roles, onRoleSaved, setError }) {
   const [selectedId, setSelectedId] = useState(null);
   const [form, setForm] = useState({ name: "", description: "", permission_codes: [] });
   const selected = roles.find((item) => item.id === selectedId) || null;
+  const displayRoleName = (role) => (
+    selectedId === role.id && form.name.trim() ? form.name.trim() : role.name
+  );
   const roleDirty = useMemo(() => {
     if (!selected) return Boolean(form.name.trim() || form.description.trim() || form.permission_codes.length);
     return (
@@ -104,17 +107,17 @@ function RolesPanel({ permissions, roles, reload, setError }) {
     try {
       const saved = await iamApi(selected ? `/api/iam/roles/${selected.id}` : "/api/iam/roles", {
         method: selected ? "PATCH" : "POST",
-        body: JSON.stringify({ ...form, active: selected?.active ?? true }),
+        body: JSON.stringify({ ...form, name: form.name.trim(), active: selected?.active ?? true }),
       });
+      onRoleSaved(saved);
       setSelectedId(saved.id);
-      await reload();
     } catch (error) { setError(error.message); }
   };
 
   const toggleActive = async (role) => {
     try {
-      await iamApi(`/api/iam/roles/${role.id}`, { method: "PATCH", body: JSON.stringify({ active: !role.active }) });
-      await reload();
+      const saved = await iamApi(`/api/iam/roles/${role.id}`, { method: "PATCH", body: JSON.stringify({ active: !role.active }) });
+      onRoleSaved(saved);
     } catch (error) { setError(error.message); }
   };
 
@@ -122,12 +125,12 @@ function RolesPanel({ permissions, roles, reload, setError }) {
     <section className="iam-card">
       <div className="iam-toolbar"><h2>Roles</h2><button className="iam-button" onClick={() => setSelectedId(null)}>+ Nuevo</button></div>
       <div className="iam-list">{roles.map((role) => <div className={`iam-list-item ${selectedId === role.id ? "selected" : ""}`} key={role.id}>
-        <button className="iam-button" style={{ textAlign: "left", flex: 1 }} onClick={() => setSelectedId(role.id)}><span className="iam-list-main"><strong>{selectedId === role.id && form.name ? form.name : role.name}</strong><small>{role.permission_codes.join(" · ") || "Sin permisos"}</small></span></button>
+        <button className="iam-button" style={{ textAlign: "left", flex: 1 }} onClick={() => setSelectedId(role.id)}><span className="iam-list-main"><strong>{displayRoleName(role)}</strong><small>{role.permission_codes.join(" · ") || "Sin permisos"}</small></span></button>
         {role.system_managed ? <span className="iam-system">SISTEMA</span> : <button className="iam-button" onClick={() => toggleActive(role)}>{role.active ? "Activo" : "Inactivo"}</button>}
       </div>)}</div>
     </section>
     <section className="iam-card">
-      <h2>{selected ? `Editar ${form.name || selected.name}` : "Crear rol"}</h2>
+      <h2>{selected ? `Editar ${form.name.trim() || selected.name}` : "Crear rol"}</h2>
       {selected?.system_managed ? <div className="iam-notice">Este rol técnico es administrado por el sistema.</div> : <form className="iam-form" onSubmit={save}>
         <label>Nombre<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required minLength={2} /></label>
         <label>Descripción<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
@@ -316,6 +319,17 @@ function IamConsole() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const upsertRole = (savedRole) => {
+    setData((current) => {
+      const exists = current.roles.some((item) => item.id === savedRole.id);
+      const roles = exists
+        ? current.roles.map((item) => item.id === savedRole.id ? savedRole : item)
+        : [...current.roles, savedRole];
+      roles.sort((left, right) => left.name.localeCompare(right.name, "es", { sensitivity: "base" }));
+      return { ...current, roles };
+    });
+  };
+
   const reload = async () => {
     setError("");
     const me = await iamApi("/api/iam/me/permissions");
@@ -353,7 +367,7 @@ function IamConsole() {
     <div className="iam-page-nav"><nav className="iam-tabs">{tabs.map(([value, label]) => <button className={tab === value ? "active" : ""} key={value} onClick={() => setTab(value)}>{label}</button>)}</nav><button className="iam-button iam-refresh" onClick={() => reload().catch((e) => setError(e.message))}>↻ Recargar</button></div>
     {tab === "users" && <UsersPanel {...data} reload={reload} setError={setError} />}
     {tab === "groups" && <GroupsPanel {...data} reload={reload} setError={setError} />}
-    {tab === "roles" && <RolesPanel {...data} reload={reload} setError={setError} />}
+    {tab === "roles" && <RolesPanel {...data} onRoleSaved={upsertRole} setError={setError} />}
     {tab === "permissions" && <PermissionsPanel permissions={data.permissions} />}
   </main></div>;
 }
