@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     environment: str = 'development'
     render: bool = False
     database_url: str
+    database_schema: str = 'public'
 
     secret_key: str = 'development-only-change-me'
     analytics_hash_key: str = ''
@@ -70,6 +71,14 @@ class Settings(BaseSettings):
             for origin in self.cors_allowed_origins.split(',')
             if origin.strip()
         ]
+
+    @field_validator('database_schema')
+    @classmethod
+    def validate_database_schema(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized or not normalized.replace('_', '').isalnum() or normalized[0].isdigit():
+            raise ValueError('DATABASE_SCHEMA debe ser un identificador PostgreSQL simple')
+        return normalized
 
     @field_validator('email_mode')
     @classmethod
