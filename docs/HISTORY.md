@@ -1,5 +1,61 @@
 # Historial funcional y técnico
 
+## 2026-08-20 — Neon adopta `ph_torre_delta` como schema único de aplicación
+
+### Contexto
+
+El proyecto Neon ya utiliza una base llamada `ph_torre_delta`, pero coexistían schemas previos como `flujos_de_aprobacion` y el schema estándar `public`. La intención del producto no es mover tablas existentes entre schemas, sino volver a crear la estructura vigente desde cero bajo un namespace canónico y reproducible.
+
+### Decisión técnica
+
+Se adopta Feature 012 y Constitución **2.10.0**:
+
+```text
+Neon project: ph_torre_delta
+├─ main  → PROD
+│  └─ database: ph_torre_delta
+│     └─ schema: ph_torre_delta
+└─ dev   → DEV
+   └─ database: ph_torre_delta
+      └─ schema: ph_torre_delta
+```
+
+La configuración central debe exponer:
+
+```text
+DATABASE_URL=<branch correspondiente>
+DATABASE_SCHEMA=ph_torre_delta
+```
+
+SQLAlchemy y Alembic deben resolver el schema de forma centralizada. Todas las tablas, secuencias, índices, constraints y `alembic_version` de la instalación vigente pertenecen a `ph_torre_delta`.
+
+### Instalación limpia
+
+DEV y PROD se inicializan mediante la misma cadena Alembic sobre un schema `ph_torre_delta` vacío.
+
+No forma parte de esta decisión:
+
+- mover tablas desde `flujos_de_aprobacion`;
+- copiar datos legacy;
+- renombrar schemas;
+- reutilizar `alembic_version` de otro schema;
+- usar `alembic stamp` para saltar la creación física.
+
+Los schemas legacy pueden coexistir temporalmente, pero no son fuente de verdad ni fallback de runtime. Su eliminación futura será una operación separada y explícita.
+
+### Gobierno documental
+
+El cambio sincroniza:
+
+- Constitución 2.10.0;
+- Feature 012 (`spec.md`, `plan.md`, checklist);
+- README;
+- prompt maestro;
+- HISTORY;
+- CHANGELOG.
+
+---
+
 ## 2026-08-19 — Usuarios y Organigrama se consolidan en Accesos
 
 ### Problema observado
@@ -348,5 +404,6 @@ Los nombres organizacionales son datos configurables, nunca condiciones de autor
 - vistas internas `people` / `organization` pueden permanecer temporalmente, pero no son navegables ni autoridad.
 - `main.jsx` sigue monolítico en partes; Vite mantiene bridges transitorios.
 - `expense_type` / `expense_subcategory` pueden existir como aliases transitorios, pero la persistencia/contrato vigente es `expense_area` / `expense_category`.
+- schemas/tablas legacy fuera de `ph_torre_delta` pueden coexistir temporalmente, pero no son fuente de verdad ni fallback de runtime.
 - fórmula completa de quorum/mayoría APPROVED/REJECTED y empate MULTI_QUOTE siguen como deuda separada.
 - edición estructural de opciones MULTI_QUOTE y outbox/retry persistente de correo siguen pendientes.
