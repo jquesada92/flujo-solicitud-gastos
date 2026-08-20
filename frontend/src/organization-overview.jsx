@@ -49,7 +49,7 @@ export default function OrganizationOverview({ refreshKey }) {
         </header>
         {group.members.length ? <div className="organization-members">
           {group.members.map((member) => <div className="organization-member" key={member.id}>
-            <div className="organization-member-person"><strong>{member.name}</strong><small>{member.email}</small></div>
+            <div className="organization-member-person"><strong>{member.name}</strong></div>
             <div className="organization-member-roles">
               {member.roles.length ? member.roles.map((role) => <span key={role}>{role}</span>) : <span className="empty">Sin rol asignado</span>}
             </div>
