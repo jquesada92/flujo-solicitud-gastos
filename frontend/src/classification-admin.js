@@ -74,8 +74,12 @@ function assignmentChanged(category) {
   return assignmentDraft(category) !== persistedAssignment(category);
 }
 
+function visibleAssignmentCategories() {
+  return state.categories.filter((category) => category.active);
+}
+
 function hasAssignmentChanges() {
-  return state.categories.some(assignmentChanged);
+  return visibleAssignmentCategories().some(assignmentChanged);
 }
 
 async function refreshCatalogs({ resetAssignments = true } = {}) {
@@ -241,8 +245,8 @@ function buildAssignmentsTable() {
   thead.appendChild(headRow);
 
   const tbody = node('tbody');
-  state.categories.forEach((category) => {
-    const tr = node('tr', category.active ? '' : 'catalog-inactive');
+  visibleAssignmentCategories().forEach((category) => {
+    const tr = node('tr');
     const nameCell = node('td');
     nameCell.appendChild(node('strong', '', category.name));
 
@@ -250,9 +254,8 @@ function buildAssignmentsTable() {
     const checkbox = node('input');
     checkbox.type = 'checkbox';
     checkbox.setAttribute('aria-label', `Asignar ${category.name}`);
-    const persisted = persistedAssignment(category);
     checkbox.checked = assignmentDraft(category);
-    checkbox.disabled = state.loading || Boolean(state.savingAssignmentId) || (!category.active && !persisted);
+    checkbox.disabled = state.loading || Boolean(state.savingAssignmentId);
     checkbox.addEventListener('change', () => {
       state.assignmentDrafts[String(category.id)] = checkbox.checked;
       state.message = null;
@@ -288,7 +291,7 @@ function buildAssignmentsCard() {
   card.append(
     node('p', 'eyebrow', 'ASIGNACIÓN DE CATEGORÍAS'),
     node('h2', '', 'Categorías por área'),
-    node('p', 'muted', 'Selecciona un área y define qué categorías puede utilizar. Los cambios se guardan por fila, siguiendo el mismo patrón de configuración de perfiles de acceso.'),
+    node('p', 'muted', 'Selecciona un área y define qué categorías activas puede utilizar. Los cambios se guardan por fila, siguiendo el mismo patrón de configuración de perfiles de acceso.'),
   );
 
   const toolbar = node('div', 'classification-assignment-toolbar');
@@ -320,11 +323,12 @@ function buildAssignmentsCard() {
   toolbar.appendChild(selector);
 
   if (state.areas.length) {
-    const dirtyCount = state.categories.filter(assignmentChanged).length;
+    const activeCategories = visibleAssignmentCategories();
+    const dirtyCount = activeCategories.filter(assignmentChanged).length;
     toolbar.appendChild(node(
       'span',
       'filter-count classification-assignment-count',
-      dirtyCount ? `${dirtyCount} cambio(s) sin guardar` : `${state.categories.length} categoría(s)`,
+      dirtyCount ? `${dirtyCount} cambio(s) sin guardar` : `${activeCategories.length} categoría(s)`,
     ));
   }
   card.appendChild(toolbar);
@@ -335,6 +339,10 @@ function buildAssignmentsCard() {
   }
   if (!state.categories.length) {
     card.appendChild(node('p', 'muted', 'Crea al menos una categoría en el catálogo general.'));
+    return card;
+  }
+  if (!visibleAssignmentCategories().length) {
+    card.appendChild(node('p', 'muted', 'No hay categorías activas disponibles para asignar.'));
     return card;
   }
 
