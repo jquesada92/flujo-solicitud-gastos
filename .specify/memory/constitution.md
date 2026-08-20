@@ -1,8 +1,8 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.9.0  
-**Vigente desde:** 2026-08-19
+**Versión:** 2.10.0  
+**Vigente desde:** 2026-08-20
 
 ## 1. Evolucionar el producto existente
 
@@ -479,7 +479,47 @@ Cuando cambia realmente `position_ids`, se recalculan permisos efectivos y se en
 
 Las fuentes de verdad son `UserPosition → Position` y `effective_permission_codes()`.
 
-## 20. Arquitectura FastAPI y migraciones
+## 20. Persistencia Neon y aislamiento obligatorio de schema
+
+La topología de persistencia canónica es:
+
+```text
+Neon project: ph_torre_delta
+├─ main  → PROD
+│  └─ database: ph_torre_delta
+│     └─ schema: ph_torre_delta
+└─ dev   → DEV
+   └─ database: ph_torre_delta
+      └─ schema: ph_torre_delta
+```
+
+La aplicación usa configuración central:
+
+```text
+DATABASE_URL=<branch correspondiente>
+DATABASE_SCHEMA=ph_torre_delta
+```
+
+Reglas constitucionales:
+
+1. toda tabla, secuencia, índice, constraint y tabla de versión Alembic de la aplicación pertenece a `ph_torre_delta`;
+2. `public` no es schema de aplicación;
+3. `flujos_de_aprobacion` y otros schemas previos son legacy y no son fuente de verdad ni fallback de runtime;
+4. DEV y PROD se crean desde cero mediante la cadena Alembic vigente sobre `ph_torre_delta` vacío;
+5. esta estrategia no mueve, copia, clona, renombra ni migra tablas/datos desde schemas anteriores;
+6. `alembic_version` debe existir dentro de `ph_torre_delta` y no reutilizar el estado de un schema legacy;
+7. no se usa `alembic stamp` para fingir que una instalación limpia ya fue creada;
+8. SQLAlchemy debe resolver el schema de forma centralizada, no con prefijos dispersos en queries de negocio;
+9. Alembic debe crear/verificar el schema objetivo, ejecutarse dentro de él y comparar el schema correcto;
+10. DEV y PROD deben ser estructuralmente equivalentes; solo cambia la `DATABASE_URL`/branch y la política de datos por ambiente.
+
+La coexistencia temporal de schemas legacy es aceptable únicamente si el runtime y Alembic del producto vigente operan exclusivamente sobre `ph_torre_delta`.
+
+La eliminación futura de schemas legacy es una operación separada, explícita y destructiva; nunca forma parte implícita de una inicialización.
+
+Feature normativa: `specs/012-neon-schema-isolation/`.
+
+## 21. Arquitectura FastAPI y migraciones
 
 - `APIRouter` por dominio/capacidad;
 - modelos SQLAlchemy fuera de routers;
@@ -490,7 +530,8 @@ Las fuentes de verdad son `UserPosition → Position` y `effective_permission_co
 - `lifespan` sin migraciones de esquema;
 - Alembic antes de levantar ASGI;
 - response models explícitos;
-- pruebas HTTP para autorización y contratos críticos.
+- pruebas HTTP para autorización y contratos críticos;
+- schema PostgreSQL resuelto centralmente mediante Settings/SQLAlchemy/Alembic.
 
 Cadena vigente:
 
@@ -509,7 +550,9 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
-## 21. Compatibilidad y deuda explícita
+Una instalación limpia debe terminar con `ph_torre_delta.alembic_version == head`.
+
+## 22. Compatibilidad y deuda explícita
 
 Pueden permanecer temporalmente:
 
@@ -519,11 +562,12 @@ Pueden permanecer temporalmente:
 - `BOARD_CODES`;
 - `/api/users` legacy;
 - vistas internas `people` / `organization` no navegables;
-- `main.jsx`, `domain-normalization.js` y bridges Vite.
+- `main.jsx`, `domain-normalization.js` y bridges Vite;
+- schemas/tablas legacy fuera de `ph_torre_delta`, siempre que runtime no los consulte.
 
 Esa compatibilidad no es autoridad runtime ni arquitectura objetivo.
 
-## 22. Definition of Done
+## 23. Definition of Done
 
 Antes de considerar terminado un cambio relevante:
 
@@ -536,6 +580,9 @@ Antes de considerar terminado un cambio relevante:
 7. verificar migraciones (`alembic heads`, `alembic current`, `alembic upgrade head` cuando aplique);
 8. ejecutar tests backend relevantes;
 9. ejecutar `npm run build`;
-10. validar manualmente UX crítica cuando exista un bridge o integración legacy.
+10. validar manualmente UX crítica cuando exista un bridge o integración legacy;
+11. para cambios de persistencia, validar con `information_schema` que las tablas de aplicación y `alembic_version` estén bajo `ph_torre_delta` y que no se hayan creado tablas de aplicación nuevas en `public`.
+
+Para Feature 012, DEV (`dev`) y PROD (`main`) deben producir la misma estructura física desde una instalación limpia sin migrar datos desde schemas legacy.
 
 Para Feature 011, la validación manual debe incluir navegación desde Accesos hacia Inicio, Solicitudes, Facturas, Auditoría, otra opción de Configuración y Salir.
