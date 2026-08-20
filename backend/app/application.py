@@ -18,6 +18,7 @@ from app.api import (
     iam_users,
     legacy_position_notifications,
     my_actions,
+    organization_overview,
     position_access,
     quotation_actions,
     request_actions,
@@ -111,6 +112,7 @@ def create_app() -> FastAPI:
     app.include_router(my_actions.router, prefix='/api/expenses', tags=['My Request Actions'])
     app.include_router(tracking.router, prefix='/api/expenses', tags=['Request Tracking'])
     app.include_router(expenses.router, prefix='/api/expenses', tags=['Expenses (legacy compatibility)'])
+    app.include_router(organization_overview.router, prefix='/api/organization', tags=['Organization Overview'])
     app.include_router(approvals.router, prefix='/api/approvals', tags=['Approvals'])
     app.include_router(
         rules.router,
