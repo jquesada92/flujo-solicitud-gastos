@@ -36,6 +36,25 @@ SQLAlchemy es síncrono; rutas con I/O bloqueante usan `def` para el threadpool 
 
 `ENVIRONMENT=production` gobierna la segregación funcional. `RENDER=true` puede influir en hardening del runtime, pero no sustituye `ENVIRONMENT=production` para autorización.
 
+Persistencia PostgreSQL:
+
+```text
+DATABASE_URL=<conexión a database ph_torre_delta>
+DATABASE_SCHEMA=administracion
+```
+
+`DATABASE_SCHEMA` se valida como identificador PostgreSQL seguro. `public`, `information_schema` y schemas `pg_*` no son valores válidos para la aplicación.
+
+## SQLAlchemy y schema
+
+Para PostgreSQL:
+
+- `Base.metadata` usa `MetaData(schema=DATABASE_SCHEMA)`;
+- la conexión restringe `search_path` al schema configurado;
+- consultas ORM quedan dirigidas a `administracion` sin prefijos hardcodeados en cada servicio.
+
+Para SQLite de unit tests, el metadata permanece sin schema.
+
 ## IAM
 
 Fuentes configurables:
@@ -59,23 +78,21 @@ config:read
 config:manage  # system-only
 ```
 
-`requests:close` queda como registro legacy inactivo desde `0005`.
+`requests:close` permanece como registro legacy **inactivo**. No autoriza cierre/factura.
 
 ### `config:manage`
 
-`iam_service.SYSTEM_ONLY_PERMISSION_CODES` contiene `config:manage`.
-
-Para usuarios ordinarios una asignación de ese código no produce permiso efectivo.
+`iam_service.SYSTEM_ONLY_PERMISSION_CODES` contiene `config:manage`. Para usuarios ordinarios una asignación de ese código no produce permiso efectivo.
 
 ### `config:read`
 
 Permite GET/HEAD de Configuración según los routers autorizados, pero no satisface mutaciones.
 
-El frontend usa este permiso para Accesos/Áreas/Reglas/Auditoría en modo solo lectura.
-
 ### `areas:manage`
 
 Protege mutaciones de `/api/areas` y relaciones Área ↔ Categoría.
+
+La baseline limpia crea `area-manager` y `configuration-viewer` como roles reutilizables, sin asignarlos a Cargos/Grupos por nombre.
 
 ## Accesos como superficie única
 
@@ -86,8 +103,6 @@ Configuración → Accesos
 ```
 
 Usuarios/Personas y Organigrama no son pantallas independientes de la arquitectura objetivo.
-
-Las APIs IAM permanecen; la consolidación es de superficie y navegación, no una eliminación del modelo persistido.
 
 ## Cuenta técnica
 
@@ -156,8 +171,6 @@ requester → CORRECT_REQUEST
 
 ## Invariant SIMPLE/MULTI_QUOTE
 
-Corrección no cambia el tipo:
-
 ```text
 SIMPLE      → SIMPLE
 MULTI_QUOTE → MULTI_QUOTE
@@ -174,7 +187,7 @@ expense_category
 
 Pydantic puede aceptar aliases legacy temporalmente para rollout, pero serialización/persistencia canónica usa los nombres nuevos.
 
-Alembic `0008` renombra las columnas físicas de `expenses`.
+La baseline `20260820_0001_initial_schema.py` crea las columnas canónicas directamente. No existe una migración vigente de renombre de columnas históricas.
 
 ## Frontend modular / bridges legacy
 
@@ -198,8 +211,6 @@ Accesos se monta con `#access-management`.
 
 `access-navigation-bridge.js` se carga antes de `main.jsx` y escucha la topbar en capture phase para retirar el hash antes de que React procese el destino.
 
-Debe cubrir incluso el caso donde el destino ya sea la pestaña subyacente activa.
-
 Abrir/cerrar únicamente el dropdown Configuración no abandona Accesos; seleccionar una opción navegable sí.
 
 ## Response models
@@ -211,23 +222,26 @@ permission_codes
 is_system_account
 ```
 
-Los aliases `can_*` de sesión pueden permanecer temporalmente, pero no son autoridad backend.
+Los aliases `can_*` de sesión pueden permanecer temporalmente, pero no son autoridad backend. `ExpenseOut` expone capacidades por recurso.
 
-`ExpenseOut` expone capacidades por recurso.
+## Alembic: baseline limpia
 
-## Alembic
-
-Cadena vigente:
+La historia vigente contiene una sola raíz:
 
 ```text
-0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007 → 0008
+20260820_0001_initial_schema
 ```
 
-```text
-0006 → areas:manage
-0007 → config:read
-0008 → expense_area / expense_category
-```
+La cadena histórica `0000 → 0008` fue retirada de la rama operativa al reiniciar la base.
+
+`backend/alembic/env.py`:
+
+- crea `administracion` si falta;
+- establece `search_path` al schema configurado;
+- usa `version_table_schema=DATABASE_SCHEMA`;
+- restringe discovery/autogenerate al mismo schema.
+
+La baseline aborta si `administracion` ya contiene tablas de aplicación. No mueve, copia, renombra ni backfillea datos antiguos.
 
 El entrypoint ejecuta:
 
@@ -237,7 +251,7 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
-Una base con `alembic_version` apuntando a una revisión inexistente debe resolverse sincronizando la cadena correcta, no ocultando el problema con `stamp`.
+Una vez desplegada `20260820_0001`, cualquier cambio físico posterior requiere una nueva revisión Alembic.
 
 ## Testing
 
@@ -248,8 +262,10 @@ Contratos mínimos:
 - `config:manage` system-only;
 - `areas:manage` aislado;
 - capacidades por recurso;
-- migraciones 0000→0008;
+- única baseline `20260820_0001`;
+- `DATABASE_SCHEMA=administracion` y rechazo de schemas de sistema;
 - `expense_area` / `expense_category` en API/ORM/DB;
+- `alembic_version` bajo `administracion` en PostgreSQL;
+- ausencia de tablas de aplicación nuevas en `public`;
 - build Vite;
-- navegación de topbar desde Accesos;
-- `test_access_navigation_bridge.py`.
+- navegación de topbar desde Accesos.

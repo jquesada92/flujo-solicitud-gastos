@@ -36,26 +36,24 @@ expense_subcategory
 
 son **legacy** y solo pueden existir como aliases de compatibilidad transitoria. No deben volver a introducirse como contrato nuevo.
 
-## Migración 0008
+## Persistencia desde la baseline limpia
 
-Alembic:
-
-```text
-20260819_0008_expense_area_category_columns.py
-```
-
-renombra en PostgreSQL:
+La historia vigente comienza en:
 
 ```text
-expenses.expense_type        → expenses.expense_area
-expenses.expense_subcategory → expenses.expense_category
+20260820_0001_initial_schema.py
 ```
 
-y renombra el índice correspondiente de Área sin perder valores históricos.
+La baseline crea directamente:
 
-El downgrade existe para reversibilidad técnica, pero el estado funcional vigente usa `expense_area` / `expense_category`.
+```text
+expenses.expense_area
+expenses.expense_category
+```
 
-No se debe hacer `alembic stamp` para fingir compatibilidad cuando la base física no coincide con el código activo.
+No existe en la cadena vigente una migración que renombre `expense_type` o `expense_subcategory`, porque la nueva base se crea desde cero y no preserva filas de una instalación anterior.
+
+Las referencias históricas a la antigua revisión `0008` describen una etapa previa al reset de Feature 012 y no deben reconstruirse.
 
 ## Área
 
@@ -109,9 +107,9 @@ Al crear una solicitud:
 1. el usuario selecciona un **Área**;
 2. el sistema muestra las **Categorías** habilitadas para esa Área;
 3. el usuario selecciona una Categoría;
-4. la solicitud conserva ambos valores para análisis histórico.
+4. la solicitud conserva ambos valores para análisis histórico del nuevo ciclo de datos.
 
-Si posteriormente se desactiva una relación Área-Categoría, las solicitudes históricas no se modifican.
+Si posteriormente se desactiva una relación Área-Categoría, las solicitudes existentes en la nueva base no se modifican.
 
 ## Administración del catálogo
 
@@ -132,9 +130,7 @@ Permiso directo
 
 El Administrador del sistema también posee `areas:manage` según la política de `system_accounts`.
 
-`config:manage` no es necesario para administrar este catálogo.
-
-`config:read` permite inspeccionar la configuración sin mutarla.
+`config:manage` no es necesario para administrar este catálogo. `config:read` permite inspeccionar la configuración sin mutarla.
 
 ### Categorías por área
 
@@ -153,7 +149,7 @@ Categorías por área
 Desactivar una Categoría:
 
 - no elimina relaciones `expense_area_categories`;
-- no altera solicitudes históricas;
+- no altera solicitudes existentes;
 - la retira temporalmente de la tarjeta de asignación;
 - permite reactivarla desde el Maestro.
 
@@ -177,6 +173,8 @@ Las lecturas activas necesarias para clasificar solicitudes permanecen disponibl
 
 ## Persistencia de catálogos
 
+Dentro de `ph_torre_delta.administracion`:
+
 Catálogo global:
 
 ```text
@@ -189,7 +187,7 @@ Relación configurable:
 expense_area_categories
 ```
 
-Pueden existir tablas/routers legacy de clasificación durante la migración del MVP, pero no definen el contrato nuevo.
+Pueden existir tablas/routers legacy de clasificación en el código durante la modularización, pero no definen el contrato físico nuevo ni justifican importar datos previos.
 
 ## Frontend legacy
 
@@ -217,4 +215,4 @@ La jerarquía funcional vigente es:
 
 No usar Subárea ni Subcategoría para este nivel.
 
-Una futura Subcategoría solo se introduce si existe una necesidad real de tercer nivel y mediante una nueva especificación/migración.
+Una futura Subcategoría solo se introduce si existe una necesidad real de tercer nivel y mediante una nueva especificación y una nueva revisión Alembic posterior a `20260820_0001`.

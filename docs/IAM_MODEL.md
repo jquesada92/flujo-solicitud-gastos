@@ -22,7 +22,7 @@ Usuario → Grupo ─────────→ Rol → Permiso
        ↘ capacidades/delegaciones por recurso
 ```
 
-Persistencia IAM:
+Persistencia IAM bajo `ph_torre_delta.administracion`:
 
 ```text
 permissions
@@ -52,7 +52,7 @@ config:read       consultar Configuración
 config:manage     administración técnica system-only
 ```
 
-`requests:close` permanece físicamente como registro legacy inactivo. No autoriza runtime ni debe configurarse para conseguir cierre/factura.
+`requests:close` se crea en la baseline únicamente como registro legacy **inactivo**. No autoriza runtime ni debe configurarse para conseguir cierre/factura.
 
 Para usuario activo ordinario:
 
@@ -82,21 +82,9 @@ Configuración → Accesos
 
 **Usuarios/Personas y Organigrama no son pantallas administrativas independientes.**
 
-Accesos concentra:
-
-```text
-Usuarios
-Grupos
-Roles
-Permisos
-Cargos/Posiciones
-Asignaciones
-Permisos efectivos/fuentes
-```
+Accesos concentra Usuarios, Grupos, Roles, Permisos, Cargos/Posiciones, asignaciones y permisos efectivos/fuentes.
 
 ### `config:read`
-
-Permiso de lectura configurable.
 
 ```text
 config:read
@@ -110,7 +98,9 @@ No concede mutaciones y no se convierte en `config:manage`.
 
 ### `areas:manage`
 
-Permiso organizacional configurable. Puede llegar por:
+Permiso organizacional configurable que gobierna Áreas, Categorías, activación/desactivación y relaciones Área ↔ Categoría.
+
+Puede llegar por:
 
 ```text
 Permiso directo
@@ -119,16 +109,41 @@ Grupo → Rol
 Cargo → Rol
 ```
 
-Gobierna:
+## Semillas de la baseline limpia
+
+La historia operativa de base comienza en:
 
 ```text
-Áreas
-Categorías
-activación/desactivación
-relaciones Área ↔ Categoría
+20260820_0001_initial_schema
 ```
 
-Alembic `0006` crea `Gestor de áreas`. Alembic `0007` crea `Visor de configuración`. Ninguna migración debe autorizar por nombres organizacionales.
+La baseline crea, sin importar datos previos, los roles reutilizables mínimos:
+
+```text
+system-administrator
+area-manager
+configuration-viewer
+```
+
+Asignaciones iniciales de capacidades:
+
+```text
+system-administrator
+→ requests:read
+→ areas:manage
+→ config:read
+→ config:manage
+
+area-manager
+→ areas:manage
+
+configuration-viewer
+→ config:read
+```
+
+No asigna estos roles a Cargos, Grupos o Usuarios organizacionales por nombre. `bootstrap_admin.py` crea/reconcilia posteriormente la cuenta técnica protegida.
+
+Las antiguas revisiones `0006`/`0007` son historia previa al reset físico y ya no forman parte del despliegue vigente.
 
 ## Grupo y Cargo
 
@@ -196,29 +211,15 @@ Una delegación de cierre no aparece como permiso efectivo porque no es IAM glob
 
 ## Capacidades por recurso
 
-### Cancelación
-
 ```text
 can_cancel = estado cancelable AND (requester OR system_accounts)
-```
 
-### Corrección
-
-```text
 can_correct = estado corregible AND (requester OR system_accounts)
-```
 
-### Cierre/factura
-
-```text
 can_close =
   status ∈ {APPROVED, CLOSED}
   AND (requester OR system_accounts OR active_closure_delegate)
-```
 
-### Delegación
-
-```text
 can_delegate_close = requester original
 ```
 
@@ -298,19 +299,6 @@ Implementación transitoria:
 frontend/src/access-navigation-bridge.js
 ```
 
-Casos mínimos:
-
-```text
-Accesos → Inicio
-Accesos → Solicitudes
-Accesos → Facturas
-Accesos → Auditoría
-Accesos → Configuración → otra pantalla
-Accesos → Salir
-```
-
-Abrir/cerrar únicamente el dropdown Configuración no abandona Accesos.
-
 ## Prohibiciones
 
 No autorizar por:
@@ -326,3 +314,5 @@ No autorizar por:
 ## Compatibilidad
 
 Pueden permanecer temporalmente `UserRole`, `AccessProfile`, flags `can_*`, `title`, `/api/users`, vistas `people` / `organization` y bridges Vite. No son arquitectura objetivo ni fuente de verdad.
+
+La compatibilidad de código no justifica importar una base anterior. La instalación vigente nace desde `20260820_0001` en `ph_torre_delta.administracion`.
