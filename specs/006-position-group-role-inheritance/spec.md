@@ -1,13 +1,11 @@
 # Especificación funcional — Herencia de permisos por Cargo y Grupo
 
 **Feature:** 006  
-**Constitución:** 2.5.0
+**Constitución vigente:** 2.9.0
 
 ## Objetivo
 
-Permitir que una organización configure acceso por estructura organizacional sin hardcodear nombres de cargos o grupos.
-
-Un usuario puede heredar permisos mediante:
+Permitir que una organización configure acceso por estructura organizacional sin hardcodear nombres de Cargos o Grupos.
 
 ```text
 Usuario → Cargo/Posición → Rol → Permiso
@@ -16,159 +14,94 @@ Usuario → Rol directo    → Permiso
 Usuario → Permiso directo
 ```
 
-Los caminos son acumulativos.
+Los caminos son acumulativos, sujetos a políticas system-only como `config:manage`.
 
-## Historia principal
+## F-006-01 — Cargo puede heredar Roles
 
-**Como administrador de accesos**, quiero poder asignar Roles a Cargos y a Grupos, para que todos los usuarios asociados hereden automáticamente los permisos correspondientes sin tener que configurar cada usuario individualmente.
+Cada Cargo/Posición activo puede tener cero o más Roles activos.
 
-## Reglas funcionales
+El sistema nunca autoriza con comparaciones de nombres de Cargo.
 
-### F-006-01 — Cargo puede heredar Roles
+## F-006-02 — Grupo puede heredar Roles
 
-Cada Cargo/Posición configurable puede tener cero o más Roles activos.
+Grupo → Rol → Permiso continúa siendo canónico.
 
-Ejemplo de datos de una organización:
+## F-006-03 — Rol reutilizable
 
-```text
-Rol: Aprobador
-  requests:approve
+Un mismo Rol puede asociarse a múltiples Cargos, Grupos y Usuarios sin duplicar la definición del permiso.
 
-Cargo: Presidente      → Aprobador
-Cargo: Vicepresidente  → Aprobador
-Cargo: Tesorero        → Aprobador
-```
+## F-006-04 — Unión de permisos efectivos
 
-El sistema NO debe contener condiciones runtime como:
+Para usuario activo ordinario:
 
 ```text
-if cargo in ['PRESIDENTE', 'TESORERO']:
-    permitir_aprobar()
-```
-
-La autorización existe porque la relación persistida `Cargo → Rol → Permiso` existe.
-
-### F-006-02 — Grupo puede heredar Roles
-
-La capacidad existente Grupo → Rol → Permiso continúa siendo canónica.
-
-Ejemplo:
-
-```text
-Grupo: Junta Directiva
-  miembros:
-    - Usuario A
-    - Usuario B
-    - Usuario C
-  roles:
-    - Aprobador
-```
-
-Todos los miembros activos heredan los permisos del Rol Aprobador.
-
-### F-006-03 — Mismo Rol reutilizable
-
-Un Rol puede asociarse simultáneamente a múltiples Cargos y Grupos.
-
-No debe ser necesario crear `Aprobador Presidente`, `Aprobador Tesorero`, etc. si todos comparten la misma combinación de permisos.
-
-### F-006-04 — Unión de permisos efectivos
-
-Para usuario activo no técnico:
-
-```text
-effective = baseline
+effective = {requests:read}
           ∪ permisos directos
           ∪ roles directos
           ∪ roles por grupos activos
           ∪ roles por cargos activos
+          - permisos system-only no aplicables
 ```
 
-No existe DENY individual en esta versión; las fuentes ALLOW se acumulan.
+Actualmente `config:manage` es system-only; `config:read` y `areas:manage` sí pueden heredarse por estas fuentes.
 
-### F-006-05 — Cargo inactivo
+## F-006-05 — Inactivos
 
-Un Cargo inactivo no concede permisos aunque el usuario conserve históricamente la asignación.
+Cargo inactivo o Rol inactivo no concede permisos.
 
-Un Rol inactivo tampoco concede permisos.
+## F-006-06 — Poblaciones de workflow
 
-### F-006-06 — Poblaciones de workflow
+`users_with_permission(permission_code)` usa las mismas fuentes efectivas.
 
-`users_with_permission(permission_code)` debe usar exactamente las mismas fuentes efectivas.
+Un usuario con `requests:approve` por Cargo/Grupo es elegible salvo exclusiones intrínsecas, como solicitante propio o cuenta técnica en producción.
 
-Por tanto, un usuario que recibe `requests:approve` por Cargo o Grupo debe aparecer en la población de aprobadores/votantes, salvo exclusiones propias del workflow, por ejemplo:
+## F-006-07 — Origen visible
 
-- ser el solicitante de la misma solicitud;
-- ser cuenta técnica en producción.
-
-### F-006-07 — Origen visible
-
-La UI de permisos efectivos debe poder indicar el origen, por ejemplo:
+Accesos puede explicar:
 
 ```text
-requests:approve
-  Cargo Tesorero → Aprobador
-
-requests:create
-  Grupo Compras → Solicitante
+Cargo Tesorero → Aprobador
+Grupo Junta Directiva → Aprobador
+Rol directo: Comprador
+Asignación directa
 ```
 
-### F-006-08 — Configuración gráfica
+Los nombres son ejemplos de datos, no reglas.
 
-En **Configuración → Accesos → Cargos** se puede:
+## F-006-08 — Configuración gráfica vigente
 
-- crear/renombrar/activar/inactivar Cargos;
-- seleccionar un Cargo;
-- asignar/quitar Roles heredados.
+En **Configuración → Accesos**:
 
-En **Configuración → Accesos → Grupos** se conserva la administración de miembros y Roles heredados.
+- pestaña **Cargos** administra Roles heredados;
+- pestaña **Grupos** administra Roles + Miembros;
+- pestaña **Usuarios** administra Cargos, Grupos, Roles/permisos directos;
+- permisos efectivos muestran sus fuentes.
 
-En **Usuarios**, la asignación de Cargos y Grupos continúa siendo configurable.
+La palabra **Usuarios** aquí identifica una pestaña interna de Accesos, no una pantalla independiente del menú Configuración. Feature 011 retiró la pantalla independiente de Usuarios/Organigrama.
 
-### F-006-09 — Cuenta técnica
+## F-006-09 — Cuenta técnica
 
-La cuenta protegida `system_accounts` no obtiene permisos financieros productivos por pertenecer accidentalmente a un Cargo/Grupo/Rol.
+La política de `system_accounts` prevalece sobre asignaciones organizacionales accidentales.
 
-La política ambiental de cuenta técnica prevalece sobre cualquier asignación organizacional.
+Producción no adquiere permisos financieros por Cargo/Grupo/Rol.
 
-## Migración de configuración existente
+## Migración 0004
 
-La migración `20260818_0004` crea `position_roles` y convierte una sola vez la configuración legacy existente:
+`20260818_0004_position_role_inheritance.py` crea `position_roles` y migra una sola vez configuración legacy hacia IAM canónico.
 
-```text
-access_profiles.can_*
-users.title
-```
+Runtime posterior no consulta `can_approve`, `BOARD_CODES` o nombres de Cargo para decidir autorización.
 
-hacia datos IAM canónicos:
+## Relación con features posteriores
 
-```text
-Position
-Role
-RolePermission
-PositionRole
-UserPosition
-```
-
-Esta lectura de legacy es exclusivamente una migración de compatibilidad. Después del upgrade, runtime no debe consultar `can_approve`, `BOARD_CODES` ni nombres de Cargo para resolver permisos.
-
-## Resultado esperado para el caso de aprobación
-
-Si Tesorero y Vicepresidente tienen un Cargo asociado a un Rol que contiene:
-
-```text
-requests:approve
-```
-
-ambos son aprobadores efectivos.
-
-Si uno de ellos crea una solicitud MULTI_QUOTE, el solicitante se excluye de su propia ronda y el otro continúa siendo elegible.
+- Feature 009: `areas:manage`, `config:read`, `config:manage` system-only.
+- Feature 010: notificaciones de Cargo/permisos efectivos.
+- Feature 011: Accesos como superficie única de administración de Usuarios/IAM.
 
 ## Fuera de alcance
 
-- permisos DENY explícitos;
+- DENY explícito por usuario;
 - jerarquía Cargo padre/hijo;
 - grupos anidados;
 - scopes multi-tenant;
-- autorización por nombre de cargo;
-- mantener la pantalla legacy `AccessProfile` como fuente autoritativa.
+- autorización por nombre de Cargo;
+- AccessProfile legacy como fuente autoritativa.

@@ -2,55 +2,37 @@
 
 ## Objetivo
 
-Separar tres capacidades distintas:
+Separar claramente lectura, gestión de Área/Categoría y administración técnica, manteniendo **Accesos** como única superficie de identidades e IAM.
 
 ```text
-config:read    → consultar toda la configuración sin modificarla
-areas:manage   → administrar únicamente Áreas y Categorías
-config:manage  → administración técnica completa del sistema
+config:read    → consultar Configuración sin modificarla
+areas:manage   → administrar Área + Categoría
+config:manage  → administración técnica system-only
 ```
 
-La identidad o el acceso **no depende de nombres concretos de la organización**. Los nombres de Grupos, Cargos y Roles son datos persistidos en PostgreSQL.
+Los nombres de Grupos, Cargos y Roles son datos persistidos en PostgreSQL. Nunca autorizan por sí mismos.
 
-## Fronteras
+## Navegación canónica
 
 ### Administrador del sistema
 
 Se identifica exclusivamente mediante `system_accounts`.
 
-Puede acceder y modificar:
-
 ```text
 Configuración
-├─ Usuarios
-├─ Organigrama
 ├─ Accesos
 ├─ Áreas
 ├─ Reglas
 └─ Auditoría / configuración técnica
 ```
 
-Su capacidad técnica es `config:manage`. Este permiso es **system-only**: una asignación IAM ordinaria no lo hace efectivo para un usuario que no pertenece a `system_accounts`.
+**Usuarios/Personas y Organigrama no son entradas independientes.**
 
-En producción su IAM máximo incluye:
-
-```text
-requests:read
-areas:manage
-config:manage
-```
-
-Las excepciones de cancelación/corrección/cierre siguen siendo capacidades por recurso y no amplían el IAM financiero.
+Toda creación/configuración de usuarios, estructura IAM y cargos se realiza dentro de **Accesos**.
 
 ### Visor de configuración
 
-Un usuario ordinario puede recibir:
-
-```text
-config:read
-```
-
-por cualquiera de las vías IAM canónicas:
+Un usuario ordinario puede recibir `config:read` por:
 
 ```text
 permiso directo
@@ -59,83 +41,116 @@ Grupo → Rol
 Cargo → Rol
 ```
 
-Puede consultar todas las pantallas:
+Su navegación es:
 
 ```text
 Configuración
-├─ Usuarios
-├─ Organigrama
-├─ Accesos
-├─ Áreas
-├─ Reglas
-└─ Auditoría
+├─ Accesos     (solo lectura)
+├─ Áreas       (solo lectura, salvo areas:manage)
+├─ Reglas      (solo lectura)
+└─ Auditoría   (solo lectura)
 ```
 
-pero no puede crear, modificar, activar, desactivar, asignar, eliminar ni regenerar credenciales.
-
-La separación se aplica en dos niveles:
-
-1. El frontend muestra las vistas en modo **SOLO LECTURA** y elimina/deshabilita controles de mutación.
-2. FastAPI sigue siendo la autoridad final: `config:read` solo puede satisfacer guards de configuración en `GET`/`HEAD`. Cualquier `POST`, `PUT`, `PATCH` o `DELETE` continúa requiriendo el permiso de escritura correspondiente.
+No se reintroducen Usuarios/Personas ni Organigrama para el modo de lectura.
 
 ### Gestor de Áreas
 
-Un usuario ordinario puede recibir:
+Un usuario con `areas:manage` sin `config:read` obtiene:
 
 ```text
-areas:manage
+Configuración
+└─ Áreas
 ```
 
-por cualquiera de las vías IAM canónicas.
+Puede mutar Área + Categoría, pero no obtiene administración IAM, Reglas ni Auditoría técnica.
 
-Su ámbito editable queda limitado a Áreas/Categorías. Este permiso no concede administración de Usuarios, Organigrama, Accesos, Reglas ni Auditoría técnica.
+## Accesos como fuente única
 
-## Configurar colectivos como Administración o Junta Directiva
+`Configuración → Accesos` administra:
 
-Esos nombres son datos del cliente y nunca se comparan en runtime.
+- Usuarios;
+- creación, activación e inactivación;
+- datos básicos necesarios para acceso;
+- Grupos y miembros;
+- Roles;
+- Permisos;
+- Cargos/Posiciones;
+- Cargos asignados a Usuarios;
+- Roles heredados por Grupo;
+- Roles heredados por Cargo;
+- Roles directos;
+- Permisos directos;
+- permisos efectivos y su origen.
 
-Alembic `0007` crea un Rol neutral:
+No debe requerirse otra pantalla para completar estas operaciones.
+
+Código legacy de `people` y `organization` puede permanecer internamente mientras se complete la migración, pero:
+
+- no aparece en navegación normal;
+- no es autoridad de configuración;
+- no duplica lógica nueva;
+- debe poder retirarse posteriormente sin pérdida funcional.
+
+## Fronteras de permisos
+
+### `config:manage`
+
+Es **system-only**. Una asignación directa, por Rol, Grupo o Cargo no lo hace efectivo para un usuario que no esté en `system_accounts`.
+
+### `config:read`
+
+Permite lectura de configuración, no mutaciones.
+
+Regla central:
 
 ```text
-Visor de configuración
-└─ config:read
+GET / HEAD + config:read   → permitido en recursos de Configuración
+POST/PUT/PATCH/DELETE      → requiere permiso de escritura correspondiente
 ```
 
-La migración realiza un **bootstrap estructural único** para el despliegue PH actual. En vez de copiar acceso a personas concretas:
+`config:read` no implica `config:manage` ni `areas:manage`.
 
-- los Cargos que actualmente heredan `requests:approve` reciben el Rol `Visor de configuración` mediante `position_roles`;
-- los Grupos que actualmente heredan `requests:approve` reciben el mismo Rol mediante `group_roles`;
-- únicamente cuando la aprobación fue asignada directamente al usuario se usa una asignación directa del Rol como fallback.
+### `areas:manage`
 
-Así, cuando cambia la persona que ocupa un Cargo de la estructura vigente, `config:read` sigue al Cargo y no al nombre de la persona. El bootstrap no compara nombres de Cargo, Grupo, Rol ni usuario.
+Protege mutaciones de `/api/areas` y de relaciones Área ↔ Categoría.
 
-Después de la migración, `requests:approve` y `config:read` son capacidades independientes. Crear un Cargo/Grupo aprobador nuevo **no** concede automáticamente visibilidad de Configuración; el Administrador decide esa relación desde IAM.
+Puede heredarse por Rol/Grupo/Cargo o asignarse directamente.
+
+## Bootstrap neutral
+
+Alembic `0006` crea:
+
+```text
+Gestor de áreas → areas:manage
+```
+
+Alembic `0007` crea:
+
+```text
+Visor de configuración → config:read
+```
+
+El bootstrap de `0007` se basa en relaciones IAM existentes y no compara nombres concretos de Cargos, Grupos, Roles o Usuarios.
+
+Después de la migración, `requests:approve` y `config:read` son capacidades independientes. Crear un nuevo aprobador no concede automáticamente visibilidad de Configuración.
 
 ## API
 
-### Lectura de configuración
+### IAM / Accesos
 
-Un actor con `config:read` puede ejecutar lecturas de IAM, Usuarios, Organigrama, Reglas y Auditoría que históricamente estaban detrás de `config:manage`.
+El backend expone lecturas de Usuarios, Grupos, Roles, Permisos y Cargos para actores autorizados. Las mutaciones requieren `config:manage` y la política de `system_accounts`.
 
-La regla central es:
+Para `config:read`, la experiencia es solo lectura.
 
-```text
-GET / HEAD + config:read   → permitido
-mutación + config:read     → 403
-mutación + config:manage   → permitido según el endpoint
-```
+### Área + Categoría
 
-### Áreas
-
-La lectura activa se mantiene disponible para usuarios autenticados cuando es necesaria para solicitudes.
-
-`include_inactive=true` revela elementos inactivos a actores que puedan inspeccionar configuración (`config:read`, `config:manage` o `areas:manage`).
-
-Las mutaciones siguen exigiendo `areas:manage`:
+API canónica:
 
 ```text
+GET    /api/areas
 POST   /api/areas
 PATCH  /api/areas/{id}
+GET    /api/areas/categories
 POST   /api/areas/categories
 PATCH  /api/areas/categories/{id}
 POST   /api/areas/{id}/categories
@@ -143,71 +158,89 @@ POST   /api/areas/{id}/categories/{category_id}
 DELETE /api/areas/{id}/categories/{category_id}
 ```
 
+Las lecturas activas necesarias para solicitudes permanecen disponibles a usuarios autenticados. Los elementos inactivos pueden inspeccionarse por actores con visibilidad/configuración adecuada; las mutaciones requieren `areas:manage`.
+
 ## Sesión / frontend
 
-`/api/auth/login` y `/api/auth/me` exponen los permisos efectivos en `permission_codes`.
-
-Para compatibilidad temporal con el shell React legacy, `can_configure=true` significa que el usuario puede **ver** Configuración cuando tiene `config:read` o `config:manage`. Este flag no autoriza mutaciones; el backend siempre vuelve a comprobar los permisos canónicos.
-
-El bridge de Vite separa explícitamente:
+`/api/auth/login` y `/api/auth/me` exponen:
 
 ```text
-canReadConfiguration → config:read o System Admin
-canConfigure         → System Admin / config:manage
-canManageAreas       → areas:manage o System Admin
+permission_codes
+is_system_account
 ```
 
-`config-readonly.js` detecta:
+El bridge de Vite separa:
 
 ```text
-config:read presente
-config:manage ausente
+canReadConfiguration → isSystemAdmin OR config:read
+canConfigure         → isSystemAdmin
+canManageAreas       → isSystemAdmin OR areas:manage
 ```
 
-y activa la experiencia de solo lectura. También intercepta el botón **Accesos** para mostrar un visor de Usuarios, Grupos, Roles, Permisos y Cargos sin controles de edición.
+`config-readonly.js` activa la experiencia de solo lectura cuando existe `config:read` sin administración técnica.
+
+`iam-admin.jsx` representa la consola editable de Accesos para System Admin.
+
+## Navegación desde Accesos
+
+Accesos se monta temporalmente mediante:
+
+```text
+#access-management
+```
+
+La topbar debe permanecer funcional.
+
+Desde Accesos deben funcionar:
+
+```text
+Inicio
+Solicitudes
+Facturas
+Auditoría
+Configuración
+Salir
+```
+
+Al seleccionar un destino distinto de Accesos:
+
+1. se elimina `#access-management`;
+2. se desmonta la consola IAM;
+3. continúa la navegación del shell principal en el mismo clic.
+
+Esto también aplica cuando el destino ya coincide con la pestaña React subyacente.
+
+Abrir/cerrar únicamente el dropdown **Configuración** no abandona Accesos; seleccionar una opción navegable dentro de ese menú sí.
+
+Implementación transitoria:
+
+```text
+frontend/src/access-navigation-bridge.js
+```
+
+Debe cargarse antes de `main.jsx`.
 
 ## Migraciones
 
-### 0006 — Gestión de Áreas
-
 ```text
-20260818_0006_area_management_permission.py
+0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007 → 0008
 ```
 
-Crea `areas:manage` y el Rol neutral `Gestor de áreas`.
-
-### 0007 — Lectura de Configuración
-
-```text
-20260819_0007_configuration_read_access.py
-```
-
-Responsabilidades:
-
-- crear/upsert `config:read`;
-- crear `configuration-viewer / Visor de configuración`;
-- asociar `config:read` al Rol;
-- hacer bootstrap estructural sobre Cargos/Grupos que actualmente heredan `requests:approve`;
-- usar asignación directa solamente como fallback para aprobadores directos;
-- excluir cuentas técnicas de ese fallback;
-- no comparar nombres organizacionales en runtime ni en el bootstrap.
-
-Cadena:
-
-```text
-0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007
-```
+- `0006`: `areas:manage` + Gestor de áreas.
+- `0007`: `config:read` + Visor de configuración.
+- `0008`: columnas físicas `expense_area` / `expense_category`.
 
 ## Pruebas de aceptación
 
 Debe demostrarse que:
 
-- System Admin puede ver y editar todas las pantallas de Configuración;
-- usuario con `config:read` puede ver Usuarios, Organigrama, Accesos, Áreas, Reglas y Auditoría;
-- usuario con `config:read` recibe 403 al intentar mutaciones de configuración;
-- el frontend de `config:read` no presenta controles efectivos de edición;
-- `config:read` no concede `config:manage`;
-- `config:manage` continúa siendo system-only;
-- usuario con `areas:manage` puede administrar Áreas sin obtener administración técnica completa;
-- los nombres de Junta Directiva, Administración u otros colectivos no son autoridad runtime;
-- `npm run build` y la suite backend continúan exitosos.
+- System Admin ve **Accesos** y no ve Usuarios/Personas ni Organigrama como entradas independientes;
+- creación/edición de usuarios sigue disponible dentro de Accesos;
+- `config:read` puede consultar Accesos en modo solo lectura;
+- `config:read` recibe 403 al intentar mutaciones;
+- `areas:manage` administra Área + Categoría sin obtener IAM completo;
+- `config:manage` continúa system-only;
+- nombres organizacionales no participan en autorización;
+- desde Accesos funcionan Inicio, Solicitudes, Facturas, Auditoría, Configuración y Salir;
+- el caso de destino igual a la pestaña subyacente también cierra Accesos;
+- `npm run build` y suite backend continúan exitosos.

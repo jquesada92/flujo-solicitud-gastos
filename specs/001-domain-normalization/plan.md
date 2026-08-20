@@ -1,132 +1,162 @@
 # Technical Plan — 001 Domain Normalization
 
+**Constitución vigente:** 2.9.0
+
 ## Contexto
 
-Stack existente:
+Stack vigente:
 
-- React + Vite en Vercel;
-- FastAPI + SQLAlchemy en Docker/Render;
-- PostgreSQL/Neon;
-- Brevo HTTPS API;
-- almacenamiento privado en disco persistente de Render.
+- React + Vite;
+- FastAPI + SQLAlchemy + Alembic;
+- PostgreSQL;
+- Vercel/Render para producción;
+- Brevo en producción y SMTP local.
 
-La feature debe evolucionar el repositorio existente sin crear una aplicación paralela.
+La feature evoluciona el repositorio existente; no crea una aplicación paralela.
 
-## Cambios de dominio
+## Usuarios
 
-### Usuarios
+La entidad canónica continúa siendo `User`.
 
-La entidad técnica canónica continúa siendo `User` y el API continúa bajo `/api/users`. El cambio principal es de terminología funcional: Persona/Personas → Usuario/Usuarios.
+Terminología visible:
+
+```text
+Persona/Personas → Usuario/Usuarios
+```
+
+Evolución vigente por Feature 011:
+
+```text
+Configuración → Accesos → Usuarios
+```
+
+No existe un módulo Usuarios independiente en navegación.
+
+## Área + Categoría
 
 ### Área
 
-`ExpenseArea` representa la dimensión organizacional. Por compatibilidad temporal continúa mapeada a la tabla física legacy `expense_categories`.
+Dimensión organizacional asociada al gasto.
 
 ### Categoría
 
-Se introduce un catálogo global independiente `expense_category_catalog`.
+Catálogo global independiente.
 
-### Relación Área-Categoría
+### Relación
 
-Se introduce `expense_area_categories` con unicidad por `(area_id, category_id)`.
+`expense_area_categories` mantiene N:M con unicidad por `(area_id, category_id)`.
 
-La tabla legacy `expense_subcategories` permanece temporalmente sincronizada como puente para no invalidar datos y validaciones históricas del MVP.
+## Contrato de solicitud
+
+Estado vigente después de Alembic `0008`:
+
+```text
+expense_area
+expense_category
+```
+
+Los nombres físicos `expense_type` / `expense_subcategory` ya no son el estado objetivo ni el estado actual de `expenses`; solo pueden aparecer como aliases/código legacy transitorio.
 
 ## API
 
-Contrato principal:
+Contrato canónico de catálogos:
 
-- `GET /api/areas`
-- `POST /api/areas`
-- `PATCH /api/areas/{area_id}`
-- `GET /api/areas/categories`
-- `POST /api/areas/categories`
-- `PATCH /api/areas/categories/{category_id}`
-- `POST /api/areas/{area_id}/categories`
-- `POST /api/areas/{area_id}/categories/{category_id}`
-- `DELETE /api/areas/{area_id}/categories/{category_id}`
+```text
+GET    /api/areas
+POST   /api/areas
+PATCH  /api/areas/{area_id}
+GET    /api/areas/categories
+POST   /api/areas/categories
+PATCH  /api/areas/categories/{category_id}
+POST   /api/areas/{area_id}/categories
+POST   /api/areas/{area_id}/categories/{category_id}
+DELETE /api/areas/{area_id}/categories/{category_id}
+```
 
-Los endpoints legacy `/api/categories` solo pueden existir mediante compatibilidad temporal del frontend; no son el contrato canónico.
+Contratos nuevos de solicitudes usan `expense_area` / `expense_category`.
 
 ## Frontend
 
-Mientras `frontend/src/main.jsx` siga siendo monolítico, `domain-normalization.js` funciona como capa de transición para:
+Mientras el shell siga parcialmente legacy:
 
-- redirigir contratos legacy hacia `/api/areas`;
-- adaptar `categories` del Área hacia estructuras que el frontend legacy todavía espera;
-- transformar Subárea/Subcategoría a Categoría en texto visible;
-- transformar Persona/Personas a Usuario/Usuarios.
-
-Esta capa es temporal y debe eliminarse cuando `main.jsx` sea modularizado y consuma los contratos canónicos directamente.
+- `domain-normalization.js` puede adaptar contratos/textos legacy;
+- `classification-admin.js` maneja la experiencia canónica de Área + Categoría;
+- nuevo código no debe introducir `expense_type` / `expense_subcategory` como contrato;
+- Usuarios se gestionan desde `iam-admin.jsx`/Accesos, no desde una pantalla Persona/Usuario separada.
 
 ## Dominio inmobiliario
 
-El código activo no debe depender de:
+Código activo no debe depender de:
 
-- `Apartment`;
-- `UserApartment`;
-- `ApartmentChangeEvent`;
-- `OwnershipRole`;
-- `PersonType`;
-- `apartment_number`;
-- endpoints `/apartments`.
+```text
+Apartment
+UserApartment
+ApartmentChangeEvent
+OwnershipRole
+PersonType
+apartment_number
+```
 
-La eliminación física de tablas/columnas legacy se ejecuta mediante una migración destructiva separada y backup-gated. No debe ejecutarse automáticamente al arrancar FastAPI.
+La eliminación física destructiva de cualquier residuo se ejecuta mediante migración/procedimiento separado y backup-gated.
 
-## Migración y compatibilidad
+## Migraciones y evolución
 
-Fase actual:
+Evolución relevante:
 
-1. cambiar contratos y dominio activo;
-2. preservar datos físicos legacy cuando son necesarios para compatibilidad;
-3. validar funcionamiento;
-4. realizar backup antes de limpieza destructiva;
-5. retirar nombres/tablas legacy en una feature posterior con migración versionada.
+```text
+0003 → reparación de request_type MULTI_QUOTE
+0004 → position_roles / IAM por Cargo
+0005 → delegación de cierre
+0006 → areas:manage
+0007 → config:read
+0008 → expense_area / expense_category físicos
+```
 
-No se permite asumir que recrear una tabla en `downgrade()` recupera sus datos.
+No hacer `stamp` para ocultar incompatibilidad de esquema.
 
 ## Seguridad
 
-- Backend sigue siendo autoridad final.
-- La capa de terminología del frontend no puede conceder permisos.
-- Descargas/documentos siguen protegidos por backend.
-- No introducir secretos en Vite ni logs.
+- backend sigue siendo autoridad final;
+- terminología frontend no concede permisos;
+- `areas:manage` protege escrituras del catálogo;
+- `config:read` solo lectura;
+- `config:manage` system-only;
+- ningún nombre organizacional autoriza por sí mismo.
 
 ## Testing
 
-CI debe ejecutar:
+Gates actuales:
 
 ```text
-python -m compileall -q app
+cd backend
+alembic heads
+alembic current
 python -m unittest discover -s tests -v
+
+cd ../frontend
 npm ci
 npm run build
-Docker build backend
-Docker build frontend
 ```
 
-Además, una migración destructiva posterior deberá probar restauración/rollback operativo, no solo estructura.
+Contratos específicos de `expense_area` / `expense_category` y clasificación deben permanecer verdes.
 
-## Documentación obligatoria de la feature
+## Documentación
 
-La implementación debe mantener sincronizados:
+Mantener sincronizados:
 
-- `.specify/memory/constitution.md`;
-- este `spec.md`;
-- este `plan.md`;
-- `checklists/acceptance.md`;
-- `README.md`;
-- `PROMPT_RECONSTRUCCION.md`;
-- `docs/CLASSIFICATION_MODEL.md`;
-- `docs/TERMINOLOGY.md`;
-- `docs/HISTORY.md`;
-- `CHANGELOG.md`.
+- Constitución;
+- spec/plan/checklist de Feature 001 cuando cambie el dominio;
+- Feature 009/011 cuando cambien configuración/navegación;
+- README;
+- prompt maestro;
+- CLASSIFICATION_MODEL;
+- TERMINOLOGY;
+- HISTORY;
+- CHANGELOG.
 
-## Riesgos conocidos
+## Deuda vigente
 
-- `main.jsx` todavía contiene terminología y contratos legacy internamente.
-- nombres físicos de clasificación todavía reflejan el modelo anterior.
-- `domain-normalization.js` es una solución de transición, no arquitectura final.
-- el modelo de autorización aún requiere una feature separada para ser completamente DB-driven.
-
-Estos riesgos deben permanecer visibles en documentación hasta que se retiren realmente del código.
+- `domain-normalization.js` es transitorio;
+- `main.jsx` conserva código legacy;
+- puede existir compatibilidad interna con nombres antiguos, pero no como contrato canónico;
+- limpieza destructiva residual se mantiene separada y explícita.

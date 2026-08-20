@@ -1,189 +1,170 @@
 # Changelog
 
+## 2026-08-19 — Feature 011: Accesos como única superficie de Usuarios/IAM
+
+### Changed
+- **Usuarios/Personas** y **Organigrama** dejan de ser entradas independientes de Configuración.
+- **Configuración → Accesos** pasa a ser la única superficie para Usuarios, Grupos, Roles, Permisos, Cargos/Posiciones, asignaciones y permisos efectivos.
+- actores con `config:read` consultan la misma experiencia de Accesos en modo solo lectura.
+- `areas:manage` continúa separado y `config:manage` permanece system-only.
+- Constitución actualizada a **2.9.0**.
+
+### Fixed
+- la topbar vuelve a navegar correctamente mientras `#access-management` está activo.
+- `frontend/src/access-navigation-bridge.js` elimina el hash en capture phase antes de que el shell procese Inicio/Solicitudes/Facturas/Auditoría/Salir u otra pantalla de Configuración.
+- el caso donde el destino ya era la pestaña React subyacente también cierra Accesos.
+- abrir/cerrar únicamente el dropdown **Configuración** no abandona la consola.
+
+### Testing
+- se agrega `backend/tests/test_access_navigation_bridge.py`.
+- la validación manual de navegación completa en Docker permanece como gate explícito hasta ejecutarse localmente.
+
+### Documentation
+- Feature 011, Constitución, README, prompt maestro, CONFIGURATION_ACCESS, IAM_MODEL, CLASSIFICATION_MODEL, TERMINOLOGY, FASTAPI_ARCHITECTURE, índice docs, política documental e HISTORY quedan sincronizados.
+
+---
+
+## 2026-08-19 — Contrato canónico `expense_area` / `expense_category`
+
+### Changed
+- el contrato nuevo de solicitud, API, ORM y persistencia usa `expense_area` y `expense_category`.
+- `expense_type` / `expense_subcategory` quedan únicamente como aliases legacy de compatibilidad.
+- la rama de Feature 011 se sincroniza con `main` antes de continuar.
+
+### Migrations
+- Alembic `20260819_0008_expense_area_category_columns.py` renombra las columnas físicas de `expenses` preservando datos existentes.
+- cadena vigente: `0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007 → 0008`.
+- una revisión Alembic ausente debe resolverse sincronizando la cadena correcta, no ocultándose con `stamp`.
+
+---
+
+## 2026-08-19 — Configuración de solo lectura (`config:read`)
+
+### Added
+- permiso `config:read` y Rol neutral **Visor de configuración** mediante migración `0007`.
+
+### Changed
+- `config:read` permite consultar Configuración sin conceder mutaciones.
+- `config:manage` sigue reservado a `system_accounts`.
+- `areas:manage` sigue siendo el permiso dedicado para mutar Área + Categoría.
+
+---
+
 ## 2026-08-19 — Consola de Accesos integrada al shell principal
 
 ### Changed
-- **Configuración → Accesos** deja de cubrir la barra superior estándar y conserva visible la navegación principal del producto.
-- navegar desde Inicio/Solicitudes/Facturas/Configuración cierra la consola IAM y respeta la navegación normal de la aplicación.
-- se retira el botón independiente **Volver**; la salida se realiza mediante la navegación estándar.
-- la acción de refresco pasa a llamarse **Recargar** para no confundirse con una acción de persistencia y permanece integrada con las pestañas internas de Usuarios/Grupos/Roles/Permisos/Cargos.
-- ancho, espaciado, jerarquía del encabezado y tarjetas de IAM se alinean con el layout principal.
-- la columna de navegación IAM aumenta su ancho útil y aplica truncado seguro para que nombres/correos largos no recorten los badges **Activo/SISTEMA**.
-- `action-state.css` normaliza botones de persistencia deshabilitados en gris y aplica un brillo/acento leve cuando el componente conoce cambios pendientes.
-- **Guardar cambios** de Roles ahora calcula estado `dirty` real y permanece deshabilitado mientras nombre, descripción y permisos coincidan con persistencia.
+- Accesos conserva visible la navegación principal del producto.
+- se retira el botón independiente **Volver**; la salida se realiza mediante navegación estándar.
+- la acción de refresco pasa a llamarse **Recargar**.
+- layout, tarjetas, listas y badges de IAM se alinean con el shell principal.
+- **Guardar cambios** de Roles calcula estado `dirty` real.
 
 ### Testing
-- `test_frontend_configuration_access.py` protege visibilidad de la topbar, cierre por navegación estándar, ausencia de **Volver**, ubicación integrada de **Recargar**, overflow de la lista y estados visuales/dirty de persistencia.
+- `test_frontend_configuration_access.py` protege topbar, Recargar, overflow y estado de persistencia.
 
 ---
 
 ## 2026-08-19 — Asignación Área-Categoría muestra solo categorías activas
 
 ### Changed
-- **Categorías por área** muestra únicamente categorías activas y su contador usa esa misma población visible.
-- el Maestro de Categorías conserva activas e inactivas para permitir mantenimiento y reactivación.
-- los cambios de asignación continúan siendo staged por fila y solo persisten al pulsar **Guardar**.
+- **Categorías por área** muestra únicamente categorías activas.
+- el Maestro de Categorías conserva activas e inactivas para mantenimiento/reactivación.
+- cambios de asignación se persisten solo al pulsar **Guardar**.
 
 ### Behavior
-- desactivar una categoría no elimina sus relaciones persistidas ni modifica solicitudes históricas; la categoría deja de aparecer en la tarjeta de asignación hasta ser reactivada.
-- si no existen categorías activas, la tarjeta muestra un estado vacío explícito.
+- desactivar una categoría no elimina relaciones persistidas ni modifica solicitudes históricas.
 
 ### Testing / Docs
-- `test_frontend_classification_admin_contract.py` protege el filtro `active=true`, el contador y el guardado explícito.
-- Feature 009, su checklist y `docs/CLASSIFICATION_MODEL.md` documentan la regla visible.
+- `test_frontend_classification_admin_contract.py` protege filtro, contador y guardado explícito.
 
 ---
 
 ## 2026-08-18 — Notificaciones de Cargo y permisos efectivos
 
 ### Added
-- `send_user_access_updated()` para notificar cambios reales de Cargo.
-- resumen IAM reutilizable de Cargo(s) + permisos efectivos en `iam_users.py`.
+- `send_user_access_updated()` para cambios reales de Cargo.
+- resumen IAM reutilizable de Cargo(s) + permisos efectivos.
 - Feature 010 y `test_user_access_notifications.py`.
 
 ### Changed
-- la invitación inicial con contraseña temporal ahora incluye Cargo(s) y permisos efectivos.
-- el cambio real de `position_ids` recalcula permisos efectivos y envía **Actualización de cargo y permisos**.
-- guardar el mismo conjunto de Cargos no envía correo duplicado.
-- los correos usan `effective_permission_codes()` y `UserPosition → Position`; no usan `UserRole`, `title` ni `can_*` legacy.
+- invitación inicial incluye Cargo(s) y permisos efectivos.
+- cambio real de `position_ids` recalcula y notifica.
+- guardar el mismo Cargo no duplica correo.
+- fuentes: `effective_permission_codes()` y `UserPosition → Position`.
 
 ### Reliability
-- si falla la invitación inicial, la creación no se confirma, conservando el comportamiento vigente.
-- si falla la notificación de cambio de Cargo, la transacción se revierte y el endpoint devuelve 502.
-- no se añade una migración Alembic; la cadena permanece hasta `0006`.
-
-### Testing
-- invitación incluye Cargo/permisos heredados.
-- cambio Vocal → Tesorero recalcula y notifica `requests:approve`.
-- guardar el mismo Cargo no duplica correo.
-- fallo de transporte revierte el cambio.
-- plantillas texto/HTML contienen Cargo y códigos de permiso.
+- fallo de notificación obligatoria revierte la transacción.
 
 ---
 
 ## 2026-08-18 — Configuración técnica system-only y Gestión de Áreas delegable
 
 ### Added
-- permiso atómico `areas:manage`.
-- Rol neutral `area-manager / Gestor de áreas`.
-- `UserOut.is_system_account` para UX basada en identidad persistida.
-- Alembic `20260818_0006_area_management_permission.py`.
-- Feature 009 y `docs/CONFIGURATION_ACCESS.md`.
-- `test_frontend_configuration_access.py`.
+- `areas:manage`.
+- Rol neutral **Gestor de áreas**.
+- `UserOut.is_system_account`.
+- Alembic `0006`.
 
 ### Changed
-- `config:manage` pasa a ser una capacidad **system-only**: usuarios ordinarios no la reciben efectivamente por permiso directo, Rol, Grupo o Cargo.
-- producción del System Admin queda `requests:read + areas:manage + config:manage`.
-- `/api/areas` usa `areas:manage` para mutaciones y consulta de inactivos.
-- menú de Configuración usa `is_system_account` para Usuarios/Organigrama/Accesos/Reglas/Auditoría y `areas:manage` para Áreas.
-- `iam-admin.jsx` solo inyecta **Accesos** en menú marcado como System Admin.
-- Constitución actualizada a **2.8.0**.
+- `config:manage` pasa a system-only.
+- `/api/areas` usa `areas:manage` para mutaciones.
+- nombres de Grupos/Cargos no participan en autorización.
+- Constitución **2.8.0**.
 
 ### Fixed
-- El bridge temporal de Vite que protege la inyección de **Accesos** deja de depender de una coincidencia multilinea literal de `iam-admin.jsx`.
-- `protectAccessMenuInjection()` usa una regex estructural tolerante a whitespace y LF/CRLF, exige exactamente una coincidencia y conserva fail-fast ante código ambiguo.
-- Se corrige el build local de Vite 8.2.1 que fallaba con `Legacy main.jsx extraction could not find: system-only access menu injection`; el rerun local permanece como gate de aceptación hasta confirmación del desarrollador.
-
-### Security
-- asignaciones legacy de `config:manage` a usuarios ordinarios dejan de producir permiso efectivo.
-- nombres de Grupos/Cargos como Administración o Junta Directiva no participan en autorización.
-- `0006` no asigna automáticamente `Gestor de áreas` a ningún nombre organizacional.
-- el bridge remueve cualquier botón **Accesos** de un menú no marcado `data-system-admin=true`.
-
-### Migrations
-- Cadena actual: `0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006`.
-- `0006` crea/activa `areas:manage`, crea el Rol neutral y actualiza la descripción técnica de `config:manage` como administración técnica.
-
-### Testing
-- usuario ordinario con `areas:manage` puede administrar Áreas y sigue bloqueado de IAM técnico.
-- usuario ordinario con `config:manage` legacy sigue bloqueado.
-- login/`/auth/me` distinguen `is_system_account`.
-- contratos frontend protegen separación de menú y Accesos system-only.
-- `test_frontend_configuration_access.py` verifica que el bridge use `matchAll`, `\s*`, unicidad y no vuelva a `replaceRequired()` para el guard de inyección.
+- hardening del bridge Vite de Accesos con regex estructural tolerante a whitespace/LF/CRLF y fail-fast por unicidad.
 
 ---
 
 ## 2026-08-18 — Cierre/factura por solicitante, Admin o delegación
 
 ### Added
-- `ExpenseClosureDelegation` en `backend/app/models/closure.py`.
-- `closure_service.py` con autorización por recurso y administración de delegación.
-- `closure_delegation.py` con GET/PUT/DELETE por solicitud.
-- `ClosureDelegationContextOut` y schemas asociados.
-- `ExpenseOut.can_close` y `ExpenseOut.can_delegate_close`.
-- `frontend/src/closure-delegation.jsx` con selección/cambio/revocación.
-- Alembic `20260818_0005_closure_delegation.py`.
-- `test_closure_delegation.py` y `test_frontend_closure_contract.py`.
-- Feature 008 y `docs/CLOSURE_DELEGATION.md`.
+- `ExpenseClosureDelegation`.
+- `closure_service.py` y API GET/PUT/DELETE por solicitud.
+- `ExpenseOut.can_close` y `can_delegate_close`.
+- `frontend/src/closure-delegation.jsx`.
+- Alembic `0005`.
+- Feature 008 y pruebas asociadas.
 
 ### Changed
-- Cerrar, adjuntar factura y corregir/reemplazar factura pasan a autorización por solicitud:
-  ```text
-  solicitante original
-  OR Administrador del sistema
-  OR delegado activo de esa solicitud
-  ```
-- `financial_actions.py` deja `require_permission('requests:close')` y revalida con `current_user + can_manage_closure()`.
-- `CLOSE_REQUEST` se asigna al solicitante o delegado activo de una solicitud `APPROVED`.
-- El Administrador del sistema conserva facultad administrativa desde Solicitudes, pero no recibe todos los cierres como tareas personales.
-- La delegación solo se ofrece en `APPROVED`/`CLOSED`.
-- La tabla usa `x.can_close` y `x.can_delegate_close` en lugar de la capacidad global legacy.
-- Constitución actualizada a **2.7.0**.
+- cierre/factura pasa a autorización por recurso:
 
-### Fixed
-- El bridge temporal de Vite para **Delegar cierre/factura** ya no depende de saltos de línea o indentación exactos de `main.jsx`; usa un ancla regex tolerante a LF/CRLF y exige exactamente una coincidencia para evitar transformaciones ambiguas.
+```text
+solicitante original
+OR Administrador del sistema
+OR delegado activo
+```
 
-### Security / Audit
-- Solo el solicitante original puede crear/cambiar/revocar delegación.
-- Una sola delegación activa por solicitud mediante índice parcial.
-- Cambiar/revocar conserva fila histórica con actor/timestamp.
-- Un tercero con `requests:close` legacy no puede cerrar una solicitud ajena.
-- El delegado debe estar activo, ser distinto del solicitante y no ser `system_accounts`.
-
-### Migrations
-- Cadena hasta Feature 008: `0000 → 0001 → 0002 → 0003 → 0004 → 0005`.
-- `0005` crea `expense_closure_delegations` y marca `requests:close` inactivo/legacy sin borrar asignaciones históricas.
-
-### Testing
-- Requester/Admin/delegado positivos.
-- `requests:close` legacy sin delegación negativo.
-- revocación retira autoridad.
-- Dashboard entrega `CLOSE_REQUEST` al requester/delegado.
-- contratos frontend protegen `x.can_close` / `x.can_delegate_close` y la tolerancia de formato del bridge de delegación.
+- `requests:close` deja de ser autoridad runtime.
+- Constitución **2.7.0**.
 
 ---
 
 ## 2026-08-18 — Propiedad de corrección y Enviar a revisión
 
 ### Added
-- `ExpenseOut.can_correct` como capacidad por solicitud.
+- `ExpenseOut.can_correct`.
 - Feature 007.
 
 ### Changed
-- **Corregir / reenviar** solo para solicitante original o `system_accounts`.
-- Un aprobador usa **Enviar a revisión** con comentario; no edita solicitud ajena.
-- `REVISION_REQUESTED` interrumpe inmediatamente: `NEEDS_REVISION`, pares PENDING/WAITING → `EXPIRED`, solicitante → `CORRECT_REQUEST`.
+- corregir/reenviar solo para solicitante original o `system_accounts`.
+- aprobador usa **Enviar a revisión** con comentario.
+- `REVISION_REQUESTED` interrumpe inmediatamente y genera `CORRECT_REQUEST` para solicitante.
 - Constitución **2.6.0**.
-
-### Security
-- `/resubmit` devuelve 403 a terceros aunque tengan `requests:create`, `requests:approve`, `config:manage`, Rol/Grupo/Cargo.
 
 ---
 
 ## 2026-08-18 — Permisos heredados por Cargo y Grupo
 
 ### Added
-- `position_roles`, `PositionRole`, API/UI de Roles heredados por Cargo.
-- `users_with_permission()` reconoce Cargo→Rol además de Grupo/directos.
-- Migración `0004` importa una sola vez perfiles/títulos legacy a IAM canónico.
+- `position_roles`, API/UI de Roles heredados por Cargo.
+- `users_with_permission()` reconoce Cargo→Rol.
+- migración `0004` importa configuración legacy a IAM.
 - Feature 006.
 
 ### Changed
-- Modelo IAM permite Grupo→Rol→Permiso y Cargo→Rol→Permiso sin autorizar por nombres.
+- Grupo→Rol→Permiso y Cargo→Rol→Permiso sin autorización por nombres.
 - Constitución **2.5.0**.
-
-### Fixed
-- Brecha donde Tesorero/Vicepresidente aparecían como aprobadores legacy pero no tenían `requests:approve` canónico.
 
 ---
 
@@ -191,10 +172,10 @@
 
 ### Added
 - `pending_action_service.py`, `my_actions.py`, `home-dashboard.jsx` y modal contextual.
+
 ### Changed
-- Filas de Acciones pendientes abren modal; **Ver todas** abre Solicitudes.
-- KPIs superiores dejan de ser botones.
-- Todo usuario activo recibe baseline `requests:read` para seguimiento compartido.
+- filas de Acciones pendientes son interactivas; KPIs superiores son informativos.
+- todo usuario activo recibe baseline `requests:read`.
 
 ---
 
@@ -204,20 +185,19 @@
 - `tracking.py`, `cancellation_actions.py`, `ExpenseOut.can_cancel`.
 
 ### Changed
-- Todos los usuarios activos pueden consultar solicitudes ajenas.
-- Cancelación solo requester/Admin del sistema en estados cancelables.
+- usuarios activos pueden consultar solicitudes ajenas.
+- cancelación solo requester/Admin del sistema.
 
 ---
 
 ## 2026-08-17 — Corrección MULTI_QUOTE preserva tipo y evidencia
 
 ### Added
-- `expense-form.jsx`, `revision_actions.py`, migración `0003`, regresiones de corrección.
+- `expense-form.jsx`, `revision_actions.py`, migración `0003`.
 
 ### Fixed
 - `SIMPLE → SIMPLE` y `MULTI_QUOTE → MULTI_QUOTE` durante corrección.
-- Pestaña de creación ya no decide el editor.
-- Ronda MULTI_QUOTE corregida reinicia votos/invitaciones con nuevo `flow_id` y conserva soportes.
+- ronda corregida reinicia votos/invitaciones con nuevo `flow_id` y conserva soportes.
 
 ---
 
@@ -226,20 +206,19 @@
 ### Changed
 - Producción: Brevo HTTPS API en Render.
 - Local: Gmail/Workspace SMTP.
-- Docker local usa `PUBLIC_URL=http://localhost:3000`.
 
 ### Added
-- `python -m scripts.test_email` y documentación de diagnóstico.
+- `python -m scripts.test_email`.
 
 ---
 
 ## 2026-08-17 — IAM configurable + FastAPI hardening
 
 ### Added
-- Pydantic Settings, Argon2 con compatibilidad PBKDF2, application factory, Alembic `0000/0001/0002`, system accounts, consola IAM, TestClient y hardening Docker.
+- Pydantic Settings, Argon2/PBKDF2 compatibility, application factory, Alembic `0000/0001/0002`, system accounts, consola IAM y TestClient.
 
 ### Changed
-- autorización runtime por permisos efectivos/políticas, no `UserRole`/`can_*`.
+- autorización runtime por permisos efectivos/políticas.
 - producción y no-producción separadas por `ENVIRONMENT`.
 
 ---
@@ -247,19 +226,24 @@
 ## 2026-08-17 — Normalización de dominio
 
 ### Changed
-- clasificación canónica Área + Categoría.
-- Usuario/Grupo/Rol/Permiso/Cargo como terminología neutral.
+- clasificación funcional Área + Categoría.
+- terminología neutral Usuario/Grupo/Rol/Permiso/Cargo.
 
 ### Removed / Retired
-- dominio inmobiliario activo (`Apartment`, `UserApartment`, `OwnershipRole`, etc.).
-- Persona/Personas como nombre del módulo y Subárea como segundo nivel funcional.
+- dominio inmobiliario activo.
+- Persona/Personas como módulo canónico.
+- Subárea como segundo nivel funcional.
 
 ---
 
 ## Compatibility / Technical debt
 
-Permanecen temporalmente sin autoridad runtime: `UserRole`, `can_*`, `AccessProfile`, `BOARD_CODES`, `users.title`, `/api/users` legacy, `requests:close` inactivo, `main.jsx`, `domain-normalization.js` y bridges Vite.
+Permanecen temporalmente sin autoridad o arquitectura objetivo:
 
-La UI IAM puede todavía mostrar referencias legacy a `config:manage`; runtime las ignora para usuarios ordinarios hasta retirar esa deuda visual.
+- `UserRole`, `can_*`, `AccessProfile`, `BOARD_CODES`, `users.title`, `/api/users` legacy;
+- `requests:close` inactivo;
+- vistas internas `people` / `organization` no navegables;
+- `expense_type` / `expense_subcategory` como aliases transitorios;
+- `main.jsx`, `domain-normalization.js` y bridges Vite.
 
 Pendientes separados: fórmula completa de mayoría APPROVED/REJECTED, empate MULTI_QUOTE, edición estructural de opciones y outbox/retry persistente.

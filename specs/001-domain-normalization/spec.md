@@ -1,127 +1,158 @@
 # Feature Specification — Normalización de dominio y clasificación
 
 **Feature:** 001-domain-normalization  
-**Estado:** Implementada en branch, pendiente de merge  
-**Fecha:** 2026-08-17
+**Constitución vigente:** 2.9.0  
+**Estado:** Implementada y evolucionada por features posteriores.
 
 ## Objetivo
 
-Convertir el producto en una aplicación organizacional neutral retirando el dominio inmobiliario activo, normalizando la terminología de cuentas a **Usuario/Usuarios** y estableciendo **Área + Categoría** como modelo canónico de clasificación de gastos.
-
-## Problema
-
-El MVP mezclaba conceptos específicos de propiedad horizontal y una clasificación ambigua basada en Categoría/Subcategoría. Esto limitaba la reutilización en empresas y generaba ambigüedad entre unidad organizacional y naturaleza del gasto.
+Mantener el producto neutral respecto al tipo de organización, retirar dominio inmobiliario activo y establecer **Área + Categoría** como clasificación canónica.
 
 ## Modelo funcional canónico
 
 ### Usuario
 
-Cuenta que interactúa con el sistema. La interfaz debe utilizar Usuario/Usuarios, no Persona/Personas como nombre del módulo de cuentas.
+Cuenta que interactúa con el sistema. Usar Usuario/Usuarios, no Persona/Personas.
+
+La administración vigente de Usuarios no es una pantalla independiente: vive dentro de **Configuración → Accesos** conforme a Feature 011.
 
 ### Área
 
-Unidad, departamento o función organizacional asociada al gasto.
+Unidad/departamento/función organizacional asociada al gasto.
 
-Ejemplos: Administración, Operaciones, IT, Mantenimiento, Marketing.
+Campo canónico:
+
+```text
+expense_area
+```
 
 ### Categoría
 
 Naturaleza del bien o servicio adquirido.
 
-Ejemplos: Equipos, Servicios / Consultoría, Insumos, Software / Licencias, Mobiliario.
+Campo canónico:
 
-Área y Categoría son catálogos independientes. Una Categoría puede habilitarse para múltiples Áreas.
+```text
+expense_category
+```
+
+Área y Categoría son catálogos independientes con relación N:M.
 
 ## Historias de usuario
 
 ### US-001 — Clasificar una solicitud
 
-Como usuario que crea una solicitud, quiero seleccionar un Área y una Categoría válida para esa Área, para que el gasto pueda analizarse tanto por responsable organizacional como por naturaleza del gasto.
+Como usuario que crea una solicitud, quiero seleccionar un Área y una Categoría válida para esa Área.
 
 ### US-002 — Reutilizar categorías
 
-Como usuario con permiso de configuración, quiero reutilizar una misma Categoría en varias Áreas, para evitar duplicados lógicos como `Equipos IT`, `Equipos Administración` y `Equipos Operaciones`.
+Como gestor autorizado, quiero reutilizar una misma Categoría en varias Áreas sin duplicar su identidad lógica.
 
-### US-003 — Administrar usuarios
+### US-003 — Terminología neutral de cuentas
 
-Como administrador autorizado, quiero que el módulo se denomine Usuarios y no Personas, para que el lenguaje funcional coincida con el modelo de cuentas y sea neutral respecto al dominio.
+Como administrador autorizado, quiero que el producto use Usuario/Usuarios y administre esas cuentas desde Accesos.
 
 ### US-004 — Preservar historia
 
-Como auditor, quiero que solicitudes históricas conserven su clasificación original aunque cambien catálogos o relaciones, para poder reconstruir correctamente el expediente.
+Como auditor, quiero que solicitudes históricas conserven su clasificación aunque cambien catálogos/relaciones.
 
 ### US-005 — Producto neutral
 
-Como organización usuaria, quiero que el núcleo del producto no dependa de apartamentos, propietarios, copropietarios, residentes o arrendatarios, para poder utilizar el sistema en distintos tipos de organización.
+Como organización usuaria, quiero que el núcleo no dependa de apartamentos, propietarios, residentes o arrendatarios.
 
 ## Requisitos funcionales
 
 ### FR-001
-La UI debe mostrar los campos `Área` y `Categoría` en el formulario de solicitudes.
+
+La UI muestra **Área** y **Categoría** en el formulario de solicitudes.
 
 ### FR-002
-La UI no debe mostrar `Subárea` para el segundo selector.
+
+No usa Subárea/Subcategoría para el segundo nivel funcional vigente.
 
 ### FR-003
-La UI no debe utilizar `Persona/Personas` como nombre del módulo de cuentas; debe utilizar `Usuario/Usuarios`.
+
+No usa Persona/Personas como módulo de cuentas. La superficie vigente es **Accesos → Usuarios**.
 
 ### FR-004
-Área y Categoría deben ser catálogos independientes.
+
+Área y Categoría son catálogos independientes.
 
 ### FR-005
-Debe existir una relación configurable N:M entre Área y Categoría.
+
+Existe relación configurable N:M entre Área y Categoría.
 
 ### FR-006
-Una misma Categoría puede estar vinculada a múltiples Áreas sin duplicar su identidad lógica.
+
+Una Categoría puede estar vinculada a múltiples Áreas sin duplicados lógicos.
 
 ### FR-007
-Al seleccionar un Área, el formulario debe ofrecer únicamente las Categorías habilitadas para esa Área.
+
+Al seleccionar Área, el formulario ofrece únicamente Categorías habilitadas y activas para esa Área.
 
 ### FR-008
-Desactivar o desvincular una Categoría no debe modificar solicitudes históricas.
+
+Desactivar/desvincular una Categoría no modifica solicitudes históricas.
 
 ### FR-009
-Los conceptos `Apartment`, `UserApartment`, `ApartmentChangeEvent`, `OwnershipRole`, `PersonType`, `apartment_number` y endpoints de apartamentos no deben formar parte del dominio activo.
+
+`Apartment`, `UserApartment`, `ApartmentChangeEvent`, `OwnershipRole`, `PersonType`, `apartment_number` y endpoints inmobiliarios no forman parte del dominio activo.
 
 ### FR-010
-La eliminación física de estructuras legacy inmobiliarias debe permanecer separada de la inicialización normal de la aplicación y requerir respaldo previo.
+
+Cualquier limpieza destructiva legacy permanece separada del startup y exige backup/procedimiento explícito.
 
 ### FR-011
-El backend sigue siendo autoridad de autorización; los cambios de terminología del frontend no pueden alterar permisos.
+
+Backend sigue siendo autoridad de autorización.
 
 ### FR-012
-Los documentos de proyecto deben actualizarse conjuntamente con los cambios de dominio conforme a la constitución.
 
-## Compatibilidad histórica
+Documentación se sincroniza conforme a Constitución y `docs/DOCUMENTATION_POLICY.md`.
 
-Durante la transición se permite mantener nombres físicos legacy si eliminarlos inmediatamente aumenta el riesgo de pérdida de datos:
+## Persistencia canónica actual
 
-- `expenses.expense_type` representa Área;
-- `expenses.expense_subcategory` representa Categoría;
-- `expense_categories` funciona como almacenamiento legacy de Áreas;
-- `expense_subcategories` funciona temporalmente como puente Área-Categoría.
+Alembic `0008` completó la transición física de los campos de solicitud:
 
-Los contratos nuevos deben expresar Área + Categoría aunque internamente exista compatibilidad temporal.
+```text
+expenses.expense_area
+expenses.expense_category
+```
 
-## Fuera de alcance de esta feature
+Por tanto, la afirmación histórica de que `expenses.expense_type` / `expenses.expense_subcategory` eran los nombres físicos vigentes **ya no aplica**.
+
+Pueden existir aliases/código legacy de compatibilidad, pero nuevo código/API/ORM/documentación usa `expense_area` / `expense_category`.
+
+Catálogos/relaciones:
+
+```text
+expense_category_catalog
+expense_area_categories
+```
+
+Las tablas/rutas legacy que permanezcan son deuda de transición, no dominio canónico.
+
+## Relación con features posteriores
+
+- Feature 002: IAM configurable.
+- Feature 006: Cargo/Grupo → Rol → Permiso.
+- Feature 009: `areas:manage`, `config:read`, frontera técnica.
+- Feature 011: Usuarios/Organigrama se consolidan dentro de Accesos y `expense_area` / `expense_category` quedan reafirmados como contrato actual.
+
+## Fuera de alcance
 
 - tercer nivel de Subcategoría;
-- rediseño completo de autorización dinámica;
-- reglas finales de quórum para votación de cotizaciones;
-- migración completa de todos los nombres físicos legacy;
-- eliminación automática de datos de producción sin backup.
+- multi-tenancy;
+- eliminación automática destructiva sin backup;
+- retiro total de todos los bridges legacy dentro de esta feature.
 
-## Criterios de aceptación resumidos
+## Criterios resumidos
 
-La feature se acepta cuando:
-
-1. el formulario muestra Área + Categoría;
-2. una Categoría puede relacionarse con varias Áreas;
-3. la UI usa Usuario/Usuarios;
-4. el backend no depende activamente del dominio inmobiliario retirado;
-5. los datos históricos conservan sus códigos;
-6. existe procedimiento separado de limpieza destructiva;
-7. backend regression tests pasan;
-8. frontend build pasa;
-9. imágenes Docker construyen;
-10. constitución, especificación, plan, README, prompt maestro, historia, changelog y terminología están sincronizados.
+1. formulario usa Área + Categoría;
+2. Categoría puede relacionarse con varias Áreas;
+3. lenguaje de cuentas usa Usuario/Usuarios dentro de Accesos;
+4. dominio activo no depende de conceptos inmobiliarios;
+5. historia se conserva;
+6. persistencia/API nuevas usan `expense_area` / `expense_category`;
+7. backend/tests/build validan el contrato;
+8. documentación permanece sincronizada.

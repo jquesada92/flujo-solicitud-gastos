@@ -1,84 +1,75 @@
 # Criterios de aceptación — Herencia de permisos por Cargo y Grupo
 
 **Feature:** 006  
-**Constitución:** 2.5.0
+**Constitución vigente:** 2.9.0
 
 ## Modelo IAM
 
-- [x] Existe `position_roles` con unicidad `(position_id, role_id)`.
+- [x] existe `position_roles` con unicidad `(position_id, role_id)`.
 - [x] Cargo/Posición puede asociarse a múltiples Roles.
-- [x] Un mismo Rol puede asociarse a múltiples Cargos y Grupos.
-- [x] No existe autorización runtime por nombre/código específico de Cargo.
+- [x] un mismo Rol puede asociarse a múltiples Cargos y Grupos.
+- [x] no existe autorización runtime por nombre/código específico de Cargo.
 
 ## Resolución efectiva
 
-- [x] Permiso directo sigue siendo fuente válida.
-- [x] Rol directo sigue siendo fuente válida.
-- [x] Grupo → Rol → Permiso sigue siendo fuente válida.
-- [x] Cargo → Rol → Permiso es nueva fuente válida.
-- [x] Las fuentes se unen de forma aditiva.
-- [x] Cargo inactivo no concede permisos.
-- [x] Rol inactivo no concede permisos.
-- [x] `requests:read` sigue siendo baseline universal para usuario activo.
+- [x] permiso directo es fuente válida.
+- [x] Rol directo es fuente válida.
+- [x] Grupo → Rol → Permiso es fuente válida.
+- [x] Cargo → Rol → Permiso es fuente válida.
+- [x] fuentes se acumulan.
+- [x] Cargo/Role inactivo no concede permisos.
+- [x] `requests:read` es baseline para usuario activo.
+- [x] `config:manage` se filtra para usuarios ordinarios por política system-only.
+- [x] `config:read` y `areas:manage` pueden heredarse por las fuentes IAM ordinarias.
 
 ## Workflow
 
 - [x] `users_with_permission()` incorpora herencia por Cargo.
-- [x] Un usuario con `requests:approve` por Cargo aparece como aprobador/votante elegible.
-- [x] Un usuario con `requests:approve` por Grupo aparece como aprobador/votante elegible.
-- [x] La cuenta técnica de producción sigue excluida de permisos financieros aunque tenga asignaciones organizacionales accidentales.
-- [x] El solicitante sigue pudiendo excluirse de su propia ronda como regla intrínseca del workflow.
+- [x] aprobador por Cargo/Grupo es elegible según reglas del workflow.
+- [x] cuenta técnica de producción respeta exclusiones financieras.
+- [x] solicitante puede excluirse de su propia ronda.
 
-## API/UI
+## API / Accesos
 
 - [x] GET de Cargos devuelve `role_ids`.
-- [x] Se puede asignar un Rol a un Cargo desde API canónica.
-- [x] Se puede quitar un Rol de un Cargo desde API canónica.
-- [x] No se puede asignar un Rol técnico `system_managed` a un Cargo.
-- [x] Configuración → Accesos → Cargos permite seleccionar Roles heredados.
-- [x] Configuración → Accesos → Grupos mantiene Roles + Miembros.
-- [x] Usuarios explica que sus Cargos pueden heredar Roles.
-- [x] Permisos efectivos muestra el origen `Cargo <nombre> → <rol>`.
+- [x] se puede asignar/quitar Rol de Cargo desde API canónica.
+- [x] no se puede asignar Rol técnico `system_managed` de forma impropia.
+- [x] **Accesos → Cargos** permite Roles heredados.
+- [x] **Accesos → Grupos** mantiene Roles + Miembros.
+- [x] **Accesos → Usuarios** administra Cargos del usuario.
+- [x] Usuarios es una pestaña interna de Accesos, no una pantalla independiente de Configuración.
+- [x] permisos efectivos muestran origen `Cargo <nombre> → <rol>`.
 
 ## Migración
 
-- [x] Alembic head pasa a `20260818_0004`.
 - [x] `0004` crea `position_roles`.
-- [x] `0004` importa una sola vez la configuración legacy de `access_profiles/users.title`.
-- [x] La importación traduce `can_approve` a `requests:approve` a través de un Rol, no como autoridad runtime.
-- [x] La migración reutiliza Cargos/Roles equivalentes si ya existen.
-- [x] La migración excluye `system_accounts` de asignaciones organizacionales migradas.
-- [ ] Smoke test de `0004` ejecutado contra PostgreSQL/Neon de preview o copia antes de producción.
-
-## Caso productivo reportado
-
-- [ ] Tesorero muestra `requests:approve` como permiso efectivo después del deploy.
-- [ ] Vicepresidente muestra `requests:approve` como permiso efectivo después del deploy.
-- [ ] Si Tesorero crea MULTI_QUOTE, Vicepresidente queda elegible para votar.
-- [ ] Si Vicepresidente crea MULTI_QUOTE, Tesorero queda elegible para votar.
-- [ ] Ya no aparece “No existe otro usuario activo con permiso de aprobación” cuando existe al menos otro aprobador efectivo.
+- [x] `0004` importa configuración legacy una sola vez.
+- [x] importación traduce flags legacy a Roles/Permisos, no a reglas runtime por nombre.
+- [x] migración excluye `system_accounts` de asignaciones organizacionales migradas.
+- [x] cadena global del proyecto continúa hasta `0008`.
+- [ ] ejecutar smoke Alembic contra PostgreSQL final.
 
 ## Pruebas automáticas
 
-- [x] Existe `test_position_role_inheritance.py`.
-- [x] Prueba positiva de Cargo → Rol → Permiso.
-- [x] Prueba positiva simultánea de Grupo y Cargo.
-- [x] Prueba negativa de Cargo inactivo.
-- [x] Test de topología exige `0004` como único head.
-- [ ] CI del head final verde.
+- [x] existe `test_position_role_inheritance.py`.
+- [x] prueba Cargo → Rol → Permiso.
+- [x] prueba Grupo + Cargo simultáneos.
+- [x] prueba Cargo inactivo.
+- [ ] suite backend completa ejecutada localmente en head final.
+- [ ] `npm run build` ejecutado localmente en head final.
 
 ## Documentación
 
-- [x] Constitución actualizada a 2.5.0.
-- [x] Spec 006 creada.
-- [x] Plan 006 creado.
-- [x] Acceptance 006 creado.
+- [x] Constitución vigente 2.9.0.
+- [x] Spec 006 alineada con Accesos.
+- [x] Plan 006 alineado con modelo vigente.
+- [x] Acceptance 006 actualizado.
 - [x] README actualizado.
 - [x] PROMPT_RECONSTRUCCION actualizado.
 - [x] IAM_MODEL actualizado.
 - [x] FASTAPI_ARCHITECTURE actualizado.
 - [x] TERMINOLOGY actualizado.
 - [x] docs/README actualizado.
-- [x] HISTORY actualizado preservando el historial previo.
+- [x] HISTORY actualizado.
 - [x] CHANGELOG actualizado.
-- [x] PR #9 actualizado con el contrato final.
+- [x] Feature 011 documenta la consolidación de navegación.

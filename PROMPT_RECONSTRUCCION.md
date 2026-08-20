@@ -1,6 +1,6 @@
 # Prompt maestro de reconstrucción
 
-> Constitución vigente: **2.8.0**.
+> Constitución vigente: **2.9.0**.
 
 Reconstruye una aplicación web lista para producción llamada **Flujo de Control de Gastos**, destinada a solicitar, evaluar, aprobar, votar, dar seguimiento, devolver a revisión, corregir, cancelar, cerrar y documentar gastos con trazabilidad y evidencia verificable.
 
@@ -15,32 +15,33 @@ Respeta, en orden:
 5. este prompt
 6. `README.md`
 7. `docs/`
-8. código existente
+8. código legacy existente
 
 Si existe discrepancia, prevalece el artefacto de mayor prioridad.
 
 ## 1. Producto neutral
 
-Sirve para PH, empresas y otras organizaciones. No reconstruyas como dominio canónico apartamentos, propietarios/copropietarios, residentes/arrendatarios, `Apartment`, `UserApartment`, `ApartmentChangeEvent`, `OwnershipRole`, `PersonType`, `apartment_number` ni endpoints inmobiliarios.
+Debe servir para PH, empresas y otras organizaciones. No reconstruyas como dominio canónico apartamentos, propietarios/copropietarios, residentes/arrendatarios, `Apartment`, `UserApartment`, `OwnershipRole`, `PersonType`, `apartment_number` ni endpoints inmobiliarios.
 
-Nombres como Junta Directiva, Administradora, Presidente, Vicepresidente, Tesorero, Procurement, Finance, IT o CFO son **datos configurables**, nunca condiciones runtime.
+Nombres como Junta Directiva, Administración, Presidente, Vicepresidente, Tesorero, Procurement, Finance, IT o CFO son **datos configurables**, nunca condiciones runtime.
 
 ## 2. Terminología
 
-- **Usuario**: cuenta del sistema.
-- **Grupo**: conjunto configurable de usuarios que hereda Roles.
-- **Rol**: conjunto reutilizable de Permisos.
-- **Permiso**: capacidad IAM atómica.
-- **Cargo/Posición**: estructura configurable que puede heredar Roles; su nombre no autoriza.
-- **Área**: unidad organizacional asociada al gasto.
-- **Categoría**: naturaleza del bien/servicio.
-- **Gestión de Áreas**: configuración organizacional bajo `areas:manage`.
-- **Administración técnica**: funciones system-only bajo `config:manage` + identidad `system_accounts`.
-- **Enviar a revisión**: acción del aprobador que detiene el flujo y devuelve la solicitud con comentario.
-- **Corregir / reenviar**: edición por solicitante original o Administrador del sistema.
-- **Delegación de cierre/factura**: responsabilidad por solicitud que el solicitante concede a un usuario activo y puede cambiar/revocar.
+Usa:
 
-No uses Persona/Personas como módulo de cuentas ni Subárea como Categoría.
+- Usuario
+- Grupo
+- Rol
+- Permiso
+- Cargo/Posición
+- Área
+- Categoría
+- Accesos
+- Enviar a revisión
+- Corregir / reenviar
+- Delegación de cierre/factura
+
+No uses **Persona/Personas** como módulo de cuentas ni **Subárea/Subcategoría** como equivalente de Categoría.
 
 ## 3. IAM configurable
 
@@ -72,19 +73,20 @@ Usuario → Grupo ─────────→ Rol → Permiso
        ↘ capacidades/delegaciones por recurso
 ```
 
-Permisos IAM vigentes:
+Permisos vigentes:
 
 ```text
 requests:read
 requests:create
 requests:approve
 areas:manage
+config:read
 config:manage  # system-only
 ```
 
-`requests:close` puede existir físicamente como registro **legacy inactivo**, pero no autoriza cierre/factura ni debe presentarse como permiso operativo configurable.
+`requests:close` puede existir como registro legacy inactivo, pero no autoriza cierre/factura ni debe aparecer como capacidad operativa configurable.
 
-Para un usuario activo ordinario:
+Para usuario activo ordinario:
 
 ```text
 effective_permissions =
@@ -96,49 +98,117 @@ effective_permissions =
   - {config:manage}
 ```
 
-`requests:read` es baseline no revocable. `config:manage` nunca se vuelve efectivo para un usuario ordinario aunque exista una asignación legacy/directa/heredada.
+`requests:read` es baseline no revocable. `config:manage` nunca se vuelve efectivo para usuario ordinario aunque exista una asignación legacy.
 
-### Grupo y Cargo
+Nunca autorices por `UserRole`, `can_*` legacy, `BOARD_CODES`, emails fijos, IDs mágicos o nombres/códigos de Cargo, Grupo o Rol.
 
-Un mismo Rol puede heredarse por ambos:
+## 4. Configuración y Accesos
+
+**No reconstruyas Usuarios/Personas ni Organigrama como pantallas independientes.**
+
+Navegación canónica:
 
 ```text
-Rol Aprobador
-  requests:approve
+System Admin
+→ Accesos
+→ Áreas
+→ Reglas
+→ Auditoría / demás configuración técnica
 
-Cargo Tesorero        → Aprobador
-Cargo Vicepresidente  → Aprobador
-Grupo Junta Directiva → Aprobador
+Usuario con config:read
+→ Accesos (solo lectura)
+→ Áreas (solo lectura salvo areas:manage)
+→ Reglas (solo lectura)
+→ Auditoría (solo lectura)
+
+Usuario con areas:manage sin config:read
+→ Áreas solamente
 ```
 
-Nunca autorices con `if user.title == 'TESORERO'` ni por nombres/códigos de Cargo, Grupo o Rol.
+### Accesos
+
+`Configuración → Accesos` es la única superficie para:
+
+- crear/activar/inactivar usuarios;
+- datos básicos de acceso;
+- Grupos y miembros;
+- Roles;
+- Permisos;
+- Cargos/Posiciones;
+- asignación de Cargos a Usuarios;
+- Roles heredados por Grupo/Cargo;
+- Roles directos;
+- Permisos directos;
+- permisos efectivos y fuentes.
+
+Código legacy de `people` / `organization` puede existir internamente durante la migración, pero no aparece en navegación normal ni vuelve a ser fuente de verdad.
+
+### Lectura de configuración
+
+`config:read` permite consultar configuración sin mutarla. No concede `config:manage`, no concede `areas:manage` y no permite POST/PUT/PATCH/DELETE por sí solo.
 
 ### Gestión de Áreas
 
-`areas:manage` sí es configurable por Rol/Grupo/Cargo/usuario.
-
-Alembic `0006` crea:
-
-```text
-Rol Gestor de áreas
-  areas:manage
-```
-
-No lo asignes automáticamente a un Grupo/Cargo llamado Administración, Junta Directiva ni a ningún nombre. El Administrador del sistema hace esas asociaciones desde Accesos como datos del cliente.
+`areas:manage` es configurable por Rol/Grupo/Cargo/usuario y protege mutaciones de `/api/areas`.
 
 ### Administración técnica
 
-`config:manage` es system-only y gobierna Usuarios, Organigrama, Accesos/IAM, Reglas y Auditoría técnica.
+`config:manage` es system-only y requiere identidad persistida en `system_accounts`.
 
-El resolver IAM debe ignorar `config:manage` para usuarios que no estén persistidos en `system_accounts`.
+## 5. Navegación global desde Accesos
 
-### Prohibiciones IAM
+La consola IAM se monta actualmente mediante `#access-management`, pero no puede bloquear la navegación global.
 
-No autorices por `UserRole`, `can_*` legacy, `BOARD_CODES`, emails fijos, IDs mágicos ni conceptos inmobiliarios. Los elementos legacy pueden permanecer como compatibilidad/migración, no como autoridad runtime.
+Desde Accesos deben responder normalmente:
 
-## 4. Capacidades por recurso
+```text
+Inicio
+Solicitudes
+Facturas
+Auditoría
+Configuración
+Salir
+```
 
-No toda acción mutable es un permiso global. `GET /api/expenses` expone capacidades calculadas por solicitud y usuario:
+Al seleccionar una pantalla distinta de Accesos, retira explícitamente `#access-management` y continúa la navegación **en el mismo clic**.
+
+La regla también aplica cuando el destino ya era la pestaña React subyacente. Por ejemplo, Accesos se abrió desde Inicio y el usuario vuelve a pulsar Inicio.
+
+Abrir/cerrar solamente el dropdown **Configuración** no cierra Accesos; seleccionar una opción navegable dentro de ese menú sí.
+
+Mientras exista el shell legacy, carga `frontend/src/access-navigation-bridge.js` antes de `main.jsx`.
+
+## 6. Área + Categoría
+
+Contrato canónico de solicitud, API, ORM y base de datos:
+
+```text
+expense_area
+expense_category
+```
+
+No reconstruyas `expense_type` / `expense_subcategory` como nombres vigentes. Solo pueden existir como aliases de compatibilidad temporal.
+
+Área y Categoría son catálogos independientes con relación configurable N:M.
+
+Migración vigente:
+
+```text
+20260819_0008_expense_area_category_columns.py
+```
+
+Debe renombrar físicamente:
+
+```text
+expense_type        → expense_area
+expense_subcategory → expense_category
+```
+
+sin perder datos.
+
+## 7. Capacidades por recurso
+
+`GET /api/expenses` expone:
 
 ```text
 can_cancel
@@ -174,22 +244,25 @@ AND (
 
 ### `can_delegate_close`
 
-Solo el solicitante original administra la delegación de su solicitud. El Administrador del sistema no necesita delegación y no crea delegaciones ordinarias en nombre del solicitante.
+Solo el solicitante original administra la delegación ordinaria.
 
-El backend vuelve a validar siempre las mutaciones aunque el frontend muestre un botón.
+El backend vuelve a validar todas las mutaciones aunque el frontend muestre botones.
 
-## 5. Cuenta técnica / Administrador del sistema
+## 8. Cuenta técnica / Administrador del sistema
 
 La cuenta creada con `ADMIN_*` queda persistida como `TECHNICAL_ADMIN` en `system_accounts`.
 
-`/api/auth/login` y `/api/auth/me` exponen `is_system_account` para UX. Nunca derives esta identidad de `UserRole.ADMIN`, Cargo, email o nombre.
+`/api/auth/login` y `/api/auth/me` exponen `is_system_account` para UX. Nunca derives esa identidad de `UserRole.ADMIN`, Cargo, email o nombre.
 
 ### Producción
 
-Solo `ENVIRONMENT=production` activa segregación funcional. IAM máximo:
+Solo `ENVIRONMENT=production` activa segregación funcional.
+
+IAM máximo:
 
 ```text
 config:manage
+config:read
 areas:manage
 requests:read
 ```
@@ -204,91 +277,28 @@ corregir / reenviar solicitud corregible
 gestionar cierre/factura cuando el estado lo permita
 ```
 
-No recibe automáticamente todas las correcciones/cierres como tareas personales del Dashboard.
-
 ### No producción
 
-`ENVIRONMENT != production` concede todos los permisos IAM activos para testing E2E además de las capacidades administrativas por recurso.
+`ENVIRONMENT != production` puede conceder todos los permisos IAM activos al System Admin para testing E2E.
 
 `RENDER=true` no sustituye `ENVIRONMENT=production`.
 
-## 6. Configuración: frontera técnica vs Áreas
+## 9. Usuario autenticado
 
-UX objetivo:
-
-```text
-System Admin
-→ Usuarios
-→ Organigrama
-→ Accesos
-→ Áreas
-→ Reglas/Auditoría técnica
-
-Usuario ordinario con areas:manage
-→ Áreas solamente
-
-Usuario ordinario sin areas:manage
-→ sin Configuración
-```
-
-Backend:
-
-- IAM/Usuarios/Reglas/Auditoría permanecen bajo `config:manage` system-only;
-- mutaciones de `/api/areas` usan `areas:manage`;
-- `include_inactive` de Área/Categoría requiere `areas:manage`.
-
-Frontend:
-
-```text
-isSystemAdmin = user.is_system_account === true
-canManageAreas = isSystemAdmin OR permission_codes incluye areas:manage
-```
-
-`iam-admin.jsx` solo puede inyectar **Accesos** dentro de un menú marcado como System Admin. Ocultar UI nunca sustituye backend.
-
-## 7. Consola de Accesos
-
-**Configuración → Accesos** está reservada al System Admin y administra Usuarios, Grupos, Roles, Permisos, Cargos/Posiciones, miembros, Roles heredados por Grupo/Cargo, Cargos de Usuario, Roles/permisos directos y permisos efectivos/fuentes.
-
-Para dar Gestión de Áreas a colectivos, asocia el Rol **Gestor de áreas** al Grupo/Cargo que la organización decida. Sus nombres son datos, no reglas.
-
-La delegación de cierre/factura **no pertenece al IAM global**; se administra desde la solicitud.
-
-La pantalla `AccessProfile/can_*` es legacy.
-
-## 8. Usuario autenticado
-
-Expón:
+Expón al menos:
 
 ```text
 permission_codes
 is_system_account
 ```
 
-Los aliases UX legacy (`can_request`, `can_approve`, `can_view`, `can_configure`, `can_close`) pueden existir temporalmente, pero no autorizan backend. `can_close` de sesión no debe confundirse con `ExpenseOut.can_close`, que es por recurso.
+Los aliases UX legacy (`can_request`, `can_approve`, `can_view`, `can_configure`, `can_close`) pueden existir temporalmente, pero no autorizan backend.
 
-`current_user()` recalcula permisos efectivos por request.
+## 10. Dashboard y seguimiento universal
 
-## 9. Dashboard y seguimiento universal
+Todo usuario activo puede abrir Inicio/Dashboard y Solicitudes mediante `requests:read`.
 
-Todo usuario activo puede abrir Inicio/Dashboard y Solicitudes y consultar solicitudes ajenas para seguimiento.
-
-KPIs superiores son informativos, sin `onClick`:
-
-```text
-Acciones que requieren mi atención
-Solicitudes en proceso
-Cerradas en 24 horas
-```
-
-Interacción:
-
-```text
-fila pendiente → modal contextual
-Ver todas      → Solicitudes
-```
-
-Tareas contextuales actuales:
+Tareas contextuales:
 
 ```text
 APPROVAL_DECISION
@@ -298,8 +308,6 @@ CLOSE_REQUEST
 ```
 
 No son permisos IAM.
-
-Reglas:
 
 ```text
 APPROVAL_DECISION
@@ -315,11 +323,7 @@ CLOSE_REQUEST
 = solicitud APPROVED + (solicitante original OR delegado activo)
 ```
 
-El Administrador del sistema puede cerrar desde Solicitudes como excepción, pero no recibe todas las solicitudes aprobadas en su bandeja personal.
-
-Al abrir una fila consulta `GET /api/expenses/{request_id}/my-actions` y revalida las tareas.
-
-## 10. Aprobación y Enviar a revisión
+## 11. Aprobación y Enviar a revisión
 
 Una aprobación contextual ofrece:
 
@@ -329,9 +333,7 @@ Rechazar
 Enviar a revisión
 ```
 
-`REVISION_REQUESTED` es una interrupción inmediata, no una respuesta que espere mayoría. Requiere comentario útil de al menos 3 caracteres.
-
-Una revisión válida:
+`REVISION_REQUESTED` interrumpe la ronda y requiere comentario útil de al menos 3 caracteres.
 
 ```text
 approval actual       → REVISION_REQUESTED
@@ -340,11 +342,9 @@ otros PENDING/WAITING → EXPIRED
 requester              → CORRECT_REQUEST
 ```
 
-Persiste actor/timestamp/comentario y notifica al solicitante. No concede al aprobador capacidad de edición.
+Persiste actor/timestamp/comentario y notifica al solicitante. No concede edición al aprobador.
 
-La ruta autenticada del modal usa `POST /api/expenses/{request_id}/approval-decision` sin exponer tokens bearer de correo.
-
-## 11. Corrección y reenvío
+## 12. Corrección y reenvío
 
 Solo:
 
@@ -354,7 +354,7 @@ OR
 Administrador del sistema en system_accounts
 ```
 
-Un tercero con `requests:create`, `requests:approve` o `config:manage` recibe 403.
+Un tercero con `requests:create`, `requests:approve`, `config:read` o `config:manage` recibe 403.
 
 Estados corregibles:
 
@@ -369,8 +369,6 @@ REJECTED
 
 No corregibles: `CLOSED`, `CANCELLED`.
 
-`PUT /api/expenses/{request_id}/resubmit` usa una regla por recurso, no `require_permission('requests:create')`.
-
 Invariant:
 
 ```text
@@ -378,21 +376,39 @@ SIMPLE      → SIMPLE
 MULTI_QUOTE → MULTI_QUOTE
 ```
 
-La pestaña de creación nunca decide el tipo de una corrección. Una MULTI_QUOTE corregida conserva evidencia/opciones, genera `flow_id` nuevo, invalida ronda anterior y excluye siempre al solicitante original de la nueva población.
-
 `frontend/src/expense-form.jsx` es el formulario canónico.
 
-## 12. Votación MULTI_QUOTE
+## 13. Votación MULTI_QUOTE
 
-Población: `users_with_permission('requests:approve')`, incluyendo permiso directo, Rol directo, Grupo→Rol y Cargo→Rol. Excluye solicitante y aplica política de cuenta técnica.
+Población:
+
+```text
+users_with_permission('requests:approve')
+```
+
+Incluye permiso directo, Rol directo, Grupo→Rol y Cargo→Rol. Excluye solicitante y aplica la política de cuenta técnica.
 
 Las invitaciones persistidas representan el snapshot vigente.
 
-## 13. Cancelación
+## 14. Cancelación
 
-Solo solicitante original o `system_accounts`. Estados cancelables: `QUOTATION_VOTING`, `SUBMITTED`, `PENDING_APPROVAL`, `NEEDS_REVISION`, `APPROVED`. No cancelables: `CLOSED`, `CANCELLED`, `REJECTED`. Exige motivo y auditoría.
+Solo solicitante original o `system_accounts`.
 
-## 14. Cierre, factura y delegación
+Estados cancelables:
+
+```text
+QUOTATION_VOTING
+SUBMITTED
+PENDING_APPROVAL
+NEEDS_REVISION
+APPROVED
+```
+
+No cancelables: `CLOSED`, `CANCELLED`, `REJECTED`.
+
+Exige motivo y auditoría.
+
+## 15. Cierre, factura y delegación
 
 `APPROVED` no equivale a `CLOSED`.
 
@@ -406,173 +422,94 @@ OR
 delegado activo creado por el solicitante para ESA solicitud
 ```
 
-`requests:close` **no** participa en esta autorización.
-
-### Delegación
+`requests:close` no participa.
 
 Persistencia:
 
 ```text
 expense_closure_delegations
-- expense_id
-- delegate_user_id
-- delegated_by_user_id
-- delegated_by_email
-- created_at
-- revoked_at
-- revoked_by_user_id
-- revoked_by_email
 ```
 
 Reglas:
 
-- solo el solicitante original crea/cambia/revoca;
+- solo solicitante original crea/cambia/revoca;
 - una sola delegación activa por solicitud;
 - delegado activo, distinto del solicitante y no `system_accounts`;
-- cambiar delegado revoca/flush primero el anterior;
+- cambiar delegado revoca primero el anterior;
 - historial no se borra;
-- revocar elimina inmediatamente autoridad futura;
-- delegación no se propaga a otras solicitudes.
-
-API:
-
-```text
-GET    /api/expenses/{request_id}/closure-delegation
-PUT    /api/expenses/{request_id}/closure-delegation
-DELETE /api/expenses/{request_id}/closure-delegation
-```
-
-Endpoints financieros:
-
-```text
-POST /api/expenses/{request_id}/close
-PUT  /api/expenses/{request_id}/invoice
-```
-
-usan `current_user + can_manage_closure()`, nunca `require_permission('requests:close')`.
-
-Frontend:
-
-```text
-frontend/src/closure-delegation.jsx
-```
-
-- `APPROVED + x.can_close` → Registrar factura y cerrar.
-- `CLOSED + x.can_close + factura` → Corregir factura.
-- `x.can_delegate_close` → Delegar cierre/factura.
-
-## 15. Área + Categoría
-
-Catálogos independientes con relación configurable N:M. No reconstruyas Subárea como Categoría.
-
-API canónica de configuración: `/api/areas`. Mutaciones e inactivos requieren `areas:manage`; no uses `config:manage` para esta responsabilidad.
+- revocar elimina inmediatamente autoridad futura.
 
 ## 16. Documentos
 
-PDF/JPEG/PNG/WEBP, validación MIME+firma+tamaño+cuota, almacenamiento privado y descarga backend autorizada. Reemplazar factura conserva la anterior (`INVOICE_REPLACED`) y registra `InvoiceChangeEvent` con actor/motivo.
+Permite PDF/JPEG/PNG/WEBP con validación MIME+firma+tamaño+cuota, almacenamiento privado y descarga autorizada por backend.
+
+Reemplazar factura conserva la anterior y registra actor/motivo.
 
 ## 17. Correo por ambiente
 
-Producción: Vercel + Render + Brevo (`EMAIL_MODE=brevo`). Local: Docker/FastAPI + Gmail/Workspace SMTP (`EMAIL_MODE=smtp`). Nunca expongas secretos en frontend/Vercel/repositorio/logs.
+Producción:
+
+```text
+Frontend: Vercel
+Backend: Render
+Correo: Brevo HTTPS API
+EMAIL_MODE=brevo
+```
+
+Local:
+
+```text
+Frontend: localhost
+Backend: FastAPI/Docker
+Correo: Gmail/Workspace SMTP
+EMAIL_MODE=smtp
+```
+
+Nunca expongas secretos en frontend, Vercel, repositorio o logs.
 
 Mantén `python -m scripts.test_email --to destino@example.com` para diagnóstico.
 
 ### Notificaciones IAM obligatorias
 
-Al crear un usuario activo, el correo de invitación con contraseña temporal debe incluir:
+Al crear usuario activo, la invitación con contraseña temporal incluye:
 
 ```text
 Cargo(s) activos
 Permisos efectivos actuales
 ```
 
-Los permisos se calculan después de aplicar todas las asignaciones mediante `effective_permission_codes()` y se muestran con nombre legible + código. Los Cargos se obtienen de `UserPosition → Position`.
-
-Cuando cambia realmente el conjunto `position_ids` de un usuario activo:
-
-```text
-aplicar Cargo nuevo
-→ recalcular permisos efectivos
-→ enviar Actualización de cargo y permisos
-```
-
-Guardar exactamente el mismo conjunto no genera correo duplicado. El correo de cambio de Cargo no contiene contraseña.
-
-La invitación inicial y el cambio de Cargo son operaciones IAM con notificación obligatoria: si falla el transporte, la operación no se confirma; para cambio de Cargo se hace rollback y se devuelve 502.
-
-Nunca construyas estos correos desde `UserRole`, `title` ni `can_*` legacy.
+Cuando cambia realmente `position_ids`, recalcula `effective_permission_codes()` y envía **Actualización de cargo y permisos**. Guardar el mismo Cargo no duplica correo.
 
 ## 18. Arquitectura FastAPI
 
-```text
-app/
-├── api/
-├── core/
-├── models/
-├── schemas/
-├── services/
-├── application.py
-└── main.py
-```
+- `APIRouter` por dominio/capacidad;
+- modelos SQLAlchemy fuera de routers;
+- schemas Pydantic reutilizables;
+- servicios para lógica de negocio;
+- `get_db()` por request;
+- Settings centralizados;
+- `lifespan` sin migraciones;
+- Alembic antes del proceso ASGI;
+- response models explícitos;
+- tests HTTP para autorización y contratos críticos.
 
-Rutas/servicios canónicos relevantes:
-
-```text
-request_actions.py
-revision_actions.py
-cancellation_actions.py
-closure_delegation.py
-quotation_actions.py
-document_actions.py
-financial_actions.py
-my_actions.py
-tracking.py
-areas.py
-position_access.py
-iam.py
-iam_users.py
-
-iam_service.py
-closure_service.py
-pending_action_service.py
-approval_engine.py
-quotation_service.py
-email_service.py
-```
-
-Modelos adicionales:
-
-```text
-models/closure.py → ExpenseClosureDelegation
-```
-
-Mientras `ExpenseTable`/shell continúe legacy en `main.jsx`, Vite puede mantener bridges mínimos para capacidades por recurso, componentes modulares y separación del menú de configuración. Retíralos al modularizar.
-
-## 19. Passwords y sesiones
-
-Argon2 para hashes nuevos, compatibilidad/upgrade PBKDF2 legacy, JWT con expiración absoluta, timeout de inactividad y `session_version` para revocación.
-
-## 20. Alembic / Docker / despliegue
+## 19. Alembic
 
 Cadena vigente:
 
 ```text
-20260817_0000 application baseline
-→ 20260817_0001 IAM foundation
-→ 20260817_0002 system accounts
-→ 20260817_0003 MULTI_QUOTE request_type repair
-→ 20260818_0004 position role inheritance
-→ 20260818_0005 closure delegation
-→ 20260818_0006 area management permission
+0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007 → 0008
 ```
 
-`0005` crea `expense_closure_delegations`, su índice único parcial y marca `requests:close` inactivo/legacy.
+Puntos clave:
 
-`0006` crea/activa `areas:manage`, crea el Rol neutral `Gestor de áreas` y documenta `config:manage` como administración técnica; no asigna acceso por nombres organizacionales.
+```text
+0006 → areas:manage
+0007 → config:read
+0008 → expense_area / expense_category físicos
+```
 
-Feature 010 no requiere migración; reutiliza el modelo IAM existente.
-
-Inicio:
+Contrato de arranque:
 
 ```text
 alembic upgrade head
@@ -580,64 +517,58 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
-Antes de producción: backup/snapshot + smoke PostgreSQL/Neon preview/copia + plan de recuperación.
+Si PostgreSQL contiene una revisión que la rama no conoce, sincroniza la rama/migración correcta. No uses `stamp` para esconder una incompatibilidad física del esquema.
 
-## 21. Testing obligatorio
+## 20. Frontend modular y deuda legacy
 
-Matriz mínima:
-
-- baseline `requests:read`;
-- IAM directo/Rol/Grupo/Cargo;
-- `areas:manage` efectivo para usuario ordinario;
-- usuario `areas:manage` no accede a IAM/Usuarios/Organigrama;
-- `config:manage` legacy asignado a usuario ordinario no es efectivo;
-- `is_system_account` explícito en login/`/auth/me`;
-- invitación de usuario incluye Cargo(s) y permisos efectivos;
-- cambio real de Cargo envía permisos recalculados;
-- guardar mismo Cargo no duplica notificación;
-- fallo de correo de cambio de Cargo revierte la actualización;
-- política técnica producción/no-producción (`read + areas + config` en producción);
-- menú System Admin vs Gestor de áreas vs usuario sin configuración;
-- topología Alembic con `0006` único head;
-- `can_cancel` solicitante/Admin;
-- `can_correct` solicitante/Admin;
-- tercero no corrige ajena;
-- revisión inmediata + comentario + expiración;
-- `CORRECT_REQUEST` solicitante;
-- `can_close` solicitante/Admin/delegado;
-- tercero con `requests:close` legacy NO cierra solicitud ajena;
-- solo solicitante administra delegación;
-- delegado recibe `CLOSE_REQUEST`;
-- revocación elimina autoridad;
-- una sola delegación activa;
-- factura reemplazada conserva versión anterior;
-- frontend usa capacidades por recurso, no `canClose={true}` como autoridad runtime.
-
-GitHub Actions puede estar bloqueado por cuota; en ese caso suite backend + `npm run build` + Docker build/smoke siguen siendo gates locales obligatorios. No declares CI verde si no se ejecutó.
-
-## 22. Deuda legacy permitida solo explícitamente
-
-Puede permanecer temporalmente:
+Componentes relevantes:
 
 ```text
-UserRole
-users.title
-can_*
-AccessProfile
-BOARD_CODES
-/api/users legacy
-main.jsx monolítico
-domain-normalization.js
-bridges Vite
-requests:close como registro inactivo histórico
+frontend/src/expense-form.jsx
+frontend/src/home-dashboard.jsx
+frontend/src/closure-delegation.jsx
+frontend/src/iam-admin.jsx
+frontend/src/access-navigation-bridge.js
+frontend/src/config-readonly.js
+frontend/src/classification-admin.js
 ```
 
-Ninguno autoriza nueva lógica runtime.
+Pueden permanecer temporalmente `main.jsx`, `domain-normalization.js`, vistas internas `people` / `organization` y bridges Vite, pero no son arquitectura objetivo.
 
-La UI IAM puede todavía mostrar referencias legacy a `config:manage`, pero runtime lo filtra para usuarios no-system hasta retirar esa deuda visual.
+Los bridges deben ser fail-fast y tolerantes a whitespace/LF/CRLF cuando transformen código legacy.
 
-Deuda funcional separada: fórmula completa de quorum/mayoría APPROVED/REJECTED, empate MULTI_QUOTE, edición estructural de opciones y outbox/retry persistente.
+## 21. Definition of Done
 
-## 23. Documentación obligatoria
+Todo cambio funcional/técnico relevante debe sincronizar:
 
-Un cambio no termina hasta revisar/actualizar Constitución, spec, plan, checklist, README, este prompt, docs funcionales/técnicos, terminología, HISTORY, CHANGELOG y PR.
+```text
+.specify/memory/constitution.md
+specs/<feature>/spec.md
+specs/<feature>/plan.md
+specs/<feature>/checklists/acceptance.md
+README.md
+PROMPT_RECONSTRUCCION.md
+docs/ afectados
+docs/HISTORY.md
+CHANGELOG.md
+```
+
+Gates mínimos:
+
+```text
+alembic heads
+alembic current
+python -m unittest discover -s tests -v
+npm run build
+```
+
+Para Feature 011 valida manualmente:
+
+```text
+Accesos → Inicio
+Accesos → Solicitudes
+Accesos → Facturas
+Accesos → Auditoría
+Accesos → Configuración → otra pantalla
+Accesos → Salir
+```

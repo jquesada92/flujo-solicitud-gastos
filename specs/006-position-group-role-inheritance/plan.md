@@ -1,11 +1,9 @@
 # Plan técnico — Herencia de permisos por Cargo y Grupo
 
 **Feature:** 006  
-**Constitución:** 2.5.0
+**Constitución vigente:** 2.9.0
 
 ## Modelo persistente
-
-Se agrega:
 
 ```text
 position_roles
@@ -15,7 +13,7 @@ position_roles
 - UNIQUE(position_id, role_id)
 ```
 
-El modelo IAM queda:
+Modelo IAM:
 
 ```text
 UserPosition → Position → PositionRole → Role → RolePermission → Permission
@@ -26,46 +24,34 @@ UserPermission                                      → Permission
 
 ## Resolución efectiva
 
-`iam_service._unrestricted_permission_codes()` incorpora una cuarta fuente organizacional: `position_role_permissions`.
+`effective_permission_codes()` combina:
 
-`effective_permission_codes()` conserva:
+- baseline `requests:read`;
+- permiso directo;
+- Rol directo;
+- Grupo→Rol;
+- Cargo→Rol;
+- política `system_accounts`;
+- exclusión de `config:manage` para usuarios ordinarios.
 
-- baseline universal `requests:read`;
-- política especial de `system_accounts`;
-- unión de fuentes para usuarios operativos.
+`config:read` y `areas:manage` sí pueden llegar por Cargo/Grupo/Rol/directo.
 
 ## Población de workflow
 
-`users_with_permission()` agrega un `SELECT` para:
+`users_with_permission()` reconoce la misma herencia por Cargo y Grupo y respeta exclusiones de workflow/política productiva.
 
-```text
-UserPosition
-→ Position(active)
-→ PositionRole
-→ Role(active)
-→ RolePermission
-→ Permission(active)
-```
+## Fuentes visibles
 
-La unión SQL evita consultar usuario por usuario y mantiene el mismo contrato que la autorización individual.
-
-Para permisos no admitidos por la política productiva de la cuenta técnica, se mantiene la exclusión de `system_accounts`.
-
-## Fuentes de permisos
-
-`permission_sources()` agrega:
+`permission_sources()` explica, entre otras:
 
 ```text
 Cargo <position.name> → <role.name>
+Grupo <group.name> → <role.name>
 ```
-
-Esto permite distinguir claramente la herencia por Cargo de la herencia por Grupo.
 
 ## API
 
-Se agrega `app/api/position_access.py`, registrado antes de `iam.py` genérico.
-
-Rutas:
+`position_access.py` mantiene:
 
 ```text
 GET    /api/iam/positions
@@ -73,71 +59,67 @@ PUT    /api/iam/positions/{position_id}/roles/{role_id}
 DELETE /api/iam/positions/{position_id}/roles/{role_id}
 ```
 
-El GET enriquecido devuelve `role_ids` junto con metadatos del Cargo.
+Mutaciones IAM requieren administración técnica y rechazan Roles técnicos no asignables.
 
-Las mutaciones requieren `config:manage` y rechazan Roles técnicos `system_managed`.
+## UI vigente
 
-## UI
+La consola canónica es **Configuración → Accesos**:
 
-`frontend/src/iam-admin.jsx`:
+- **Cargos** → Roles heredados;
+- **Grupos** → Roles + Miembros;
+- **Usuarios** → Cargos/Grupos/Roles/permisos directos;
+- permisos efectivos → fuentes de herencia.
 
-- `PositionsPanel` permite seleccionar un Cargo;
-- muestra los Roles activos no técnicos;
-- permite asociarlos/desasociarlos;
-- Usuarios explica que el Cargo puede heredar Roles;
-- Permisos efectivos muestra también las fuentes de herencia;
-- Grupos conserva su flujo existente de Roles + Miembros.
+Usuarios es una pestaña interna de Accesos, no una pantalla independiente del menú.
 
 ## Migración 0004
 
 `20260818_0004_position_role_inheritance.py`:
 
 1. crea `position_roles`;
-2. promueve `access_profiles` legacy a `positions` canónicos cuando corresponda;
-3. crea/reutiliza un Rol migrado por perfil;
-4. traduce `can_view`, `can_request`, `can_approve`, `can_configure` a permisos atómicos del Rol;
-5. preserva la compatibilidad histórica de cierre de ADMINISTRADORA como dato migrado, no condición runtime;
-6. crea `PositionRole`;
-7. crea `UserPosition` para usuarios cuyo `users.title` coincidía con el perfil legacy;
-8. excluye cuentas técnicas de la asignación organizacional migrada.
+2. promueve configuración legacy a Cargos/Roles canónicos;
+3. crea/reutiliza Roles equivalentes;
+4. traduce flags legacy a permisos atómicos;
+5. crea `UserPosition` cuando corresponda;
+6. excluye cuentas técnicas de asignaciones organizacionales migradas.
 
-La migración es collision-safe cuando ya existen Cargos/Roles equivalentes.
+## Evolución posterior
 
-## Compatibilidad y retiro de legacy
+Cadena actual continúa:
 
-`AccessProfile`, `users.title`, `can_*` y `BOARD_CODES` pueden permanecer temporalmente físicamente, pero:
+```text
+0004 → 0005 → 0006 → 0007 → 0008
+```
 
-- no participan en runtime authorization;
-- no participan en `users_with_permission()`;
-- no deben ser la pantalla autoritativa para nuevos cambios de acceso.
+- `0006`: `areas:manage`;
+- `0007`: `config:read`;
+- `0008`: `expense_area` / `expense_category` físicos.
 
-La consola canónica es **Configuración → Accesos**.
+## Compatibilidad
+
+`AccessProfile`, `users.title`, `can_*` y `BOARD_CODES` pueden permanecer temporalmente, pero no participan en autorización runtime.
 
 ## Pruebas
 
-`test_position_role_inheritance.py` cubre:
+Mantener pruebas de:
 
-- Cargo → Rol → `requests:approve`;
-- fuente `Cargo Tesorero → Aprobador`;
-- `users_with_permission('requests:approve')` incluye el usuario heredado por Cargo;
-- Grupo y Cargo funcionan simultáneamente;
-- Cargo inactivo deja de conceder permiso.
+- Cargo→Rol→Permiso;
+- Grupo + Cargo simultáneos;
+- fuente visible;
+- Cargo/Role inactivo;
+- `users_with_permission()`;
+- política de cuenta técnica;
+- integración de asignaciones dentro de Accesos.
 
-`test_migrations.py` exige:
+Gates finales del proyecto:
 
 ```text
-0000 → 0001 → 0002 → 0003 → 0004
+alembic heads
+alembic current
+python -m unittest discover -s tests -v
+npm run build
 ```
 
-## Despliegue productivo
+## Despliegue
 
-1. respaldo/snapshot de Neon;
-2. merge a `main` con CI verde;
-3. Render ejecuta `alembic upgrade head` antes de Uvicorn;
-4. verificar que `alembic current` esté en `20260818_0004`;
-5. abrir Configuración → Accesos → Cargos;
-6. verificar Cargos migrados y Roles heredados;
-7. comprobar Permisos efectivos de Tesorero/Vicepresidente;
-8. crear/corregir una MULTI_QUOTE y verificar población de votantes.
-
-No se requiere variable nueva de Vercel/Render para esta feature.
+Verificar Cargos/Roles heredados desde **Configuración → Accesos → Cargos** y permisos efectivos desde **Accesos → Usuarios**.

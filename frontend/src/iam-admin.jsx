@@ -474,8 +474,13 @@ function renderForHash() {
   }
 }
 
+const legacyAccessMenuLabels = new Set(["Personas", "Usuarios", "Organigrama"]);
+
 function injectAccessMenu() {
   document.querySelectorAll(".config-menu-items").forEach((menu) => {
+    menu.querySelectorAll("button").forEach((button) => {
+      if (legacyAccessMenuLabels.has(button.textContent?.trim())) button.remove();
+    });
     if (menu.querySelector('[data-iam-access="true"]')) return;
     const button = document.createElement("button");
     button.type = "button"; button.dataset.iamAccess = "true"; button.textContent = "Accesos";
