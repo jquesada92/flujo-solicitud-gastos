@@ -1,163 +1,182 @@
 # Plan técnico — IAM configurable y hardening FastAPI
 
-> Constitución vigente: **2.3.2**.
+> Constitución vigente: **2.9.0**.  
+> Feature 002 fue evolucionada por Features 003–011; este plan refleja el estado técnico actual.
 
 ## Arquitectura objetivo
 
 ```text
-Frontend React
-  ├─ UI operacional legacy (transición)
-  └─ IAM Console
+Frontend React/Vite
+  ├─ shell legacy en transición
+  ├─ Accesos / IAM
+  ├─ configuración Área + Categoría
+  └─ componentes modulares
        ↓ HTTPS
 FastAPI
-  ├─ api/                 HTTP y dependencias
-  ├─ schemas/             contratos Pydantic
-  ├─ services/            lógica reutilizable
-  ├─ models/              SQLAlchemy
-  └─ core/                Settings, DB, security, rate limit
+  ├─ api/
+  ├─ schemas/
+  ├─ services/
+  ├─ models/
+  └─ core/
        ↓
-PostgreSQL / Neon
+PostgreSQL
 ```
 
 ## Modelo IAM
 
 Tablas canónicas:
 
-- `permissions`
-- `roles`
-- `role_permissions`
-- `user_groups`
-- `group_members`
-- `group_roles`
-- `user_role_assignments`
-- `user_permissions`
-- `positions`
-- `user_positions`
-- `system_accounts`
+```text
+permissions
+roles
+role_permissions
+user_groups
+group_members
+group_roles
+user_role_assignments
+user_permissions
+positions
+user_positions
+position_roles
+system_accounts
+```
 
-`users.role`, `users.title` y `users.can_*` son compatibilidad temporal; no autoridad.
+`UserRole`, `users.title`, `can_*`, `AccessProfile` y `BOARD_CODES` son compatibilidad temporal.
 
 ## Resolución de permisos
 
-`app/services/iam_service.py` resuelve permisos persistidos desde tres fuentes para usuarios operativos:
+Usuario ordinario activo:
 
-1. `user_permissions`;
-2. `user_role_assignments → role_permissions`;
-3. `group_members → group_roles → role_permissions`.
+```text
+{requests:read}
+∪ permiso directo
+∪ Rol directo
+∪ Grupo → Rol → Permiso
+∪ Cargo → Rol → Permiso
+- {config:manage}
+```
 
-La cuenta técnica aplica política por ambiente:
+Permisos actuales:
+
+```text
+requests:read
+requests:create
+requests:approve
+areas:manage
+config:read
+config:manage  # system-only
+```
+
+`requests:close` es legacy inactivo.
+
+## Cuenta técnica
 
 ```text
 ENVIRONMENT=production
-→ {requests:read, config:manage}
+→ requests:read + areas:manage + config:read + config:manage
+→ sin requests:create / requests:approve
+→ capacidades administrativas por recurso para cancel/correct/close
 
 ENVIRONMENT!=production
-→ todos los permisos atómicos activos
+→ todos los permisos atómicos activos para testing E2E
 ```
 
-`require_permission(code)` consulta el servicio IAM. No existe bypass por `UserRole.ADMIN`.
+Identidad siempre desde `system_accounts`.
 
-## API IAM
+## API IAM / Accesos
 
-Base `/api/iam`:
+Base `/api/iam` mantiene:
 
-- `GET /me/permissions`
-- catálogo `GET /permissions`
-- CRUD funcional de roles y grupos;
-- asignación grupo↔rol;
-- asignación grupo↔usuario;
-- roles/permisos directos de usuario;
-- permisos efectivos y sus fuentes;
-- cargos/posiciones.
+- permisos;
+- roles;
+- grupos;
+- miembros;
+- roles de grupos;
+- cargos/posiciones;
+- roles de cargos;
+- usuarios IAM;
+- asignaciones directas;
+- permisos efectivos/fuentes.
 
-Base `/api/iam/users`:
+La superficie canónica es **Configuración → Accesos**.
 
-- listado neutral de usuarios;
-- creación con grupos/roles/permisos/cargos opcionales;
-- actualización de atributos y asignaciones;
-- permisos efectivos y fuentes de herencia por usuario.
+Feature 011 retira Usuarios/Personas y Organigrama como entradas independientes.
 
-## Rutas financieras canónicas
+`config:read` permite consultas de Accesos en modo read-only; mutaciones requieren administración técnica.
 
-Las rutas registradas antes del router legacy garantizan:
+## Rutas de solicitudes
 
-- creación → `request_actions.py` / `requests:create`;
-- corrección/reenvío → `revision_actions.py` / `requests:create`;
-- votación → `quotation_actions.py` / `requests:approve`;
-- cierre/factura → `financial_actions.py` / `requests:close`;
-- documentos → create/read según operación.
+- creación → `request_actions.py` + `requests:create`;
+- corrección/reenvío → `revision_actions.py` + regla por recurso;
+- votación/aprobación → `requests:approve` + asignación contextual;
+- cierre/factura → `financial_actions.py` + `can_manage_closure()`;
+- documentos → autorización por operación;
+- seguimiento → `requests:read` baseline.
 
-La población de aprobadores se resuelve con `users_with_permission('requests:approve')`.
+`requests:close` no protege endpoints financieros.
 
-Las invitaciones de votación almacenadas representan el snapshot de participantes de la ronda actual.
-
-### Invariant posterior de correcciones
-
-La Feature 003 establece:
+## Capacidades por recurso
 
 ```text
-SIMPLE      → corrección → SIMPLE
-MULTI_QUOTE → corrección → MULTI_QUOTE
+can_cancel
+can_correct
+can_close
+can_delegate_close
 ```
 
-Además, la pestaña seleccionada antes de pulsar **Corregir / reenviar** es solo estado de creación y no puede decidir el tipo del editor. El formulario se remonta y deriva el tipo desde la solicitud/evidencia durable.
+El backend las calcula y revalida.
 
-`revision_actions.py` rechaza una conversión real con 409, reinicia una ronda MULTI_QUOTE conservando evidencia y reconoce registros legacy con evidencia múltiple aunque el flag haya quedado en SIMPLE. Ver `specs/003-request-correction-invariants/`.
+## Área + Categoría
 
-## Seguridad de cuenta técnica
+Contratos vigentes:
 
-`system_accounts` identifica cuentas técnicas independientemente del enum legacy.
+```text
+expense_area
+expense_category
+```
 
-- Producción: la política IAM filtra permisos financieros accidentales.
-- No producción: la política concede todos los permisos atómicos activos para pruebas end-to-end.
+`areas.py` es API canónica de catálogos y relaciones. Escrituras usan `areas:manage`.
 
 ## Password hashing
 
-- nuevo: `pwdlib.PasswordHash.recommended()` → Argon2;
-- legacy: PBKDF2 se verifica temporalmente;
-- login correcto PBKDF2 genera y persiste hash Argon2;
-- cambio de contraseña siempre genera Argon2.
+- Argon2 para hashes nuevos;
+- PBKDF2 legacy verificable temporalmente;
+- login exitoso puede migrar hash;
+- cambio de contraseña genera Argon2.
 
 ## Settings
 
-`app/core/config.py` centraliza:
+`app/core/config.py` centraliza DB, JWT/sesión, CORS, rate limits, documentos, correo, bootstrap, timezone y ambiente funcional.
 
-- DB;
-- JWT/sesión;
-- CORS;
-- rate limits;
-- documentos;
-- correo/Brevo/SMTP;
-- bootstrap admin;
-- timezone;
-- ambiente funcional.
-
-Distingue:
-
-- `is_production_environment`: política funcional de producción;
-- `is_production`: validaciones fuertes de producción/runtime alojado.
+`ENVIRONMENT=production` es la señal de segregación funcional.
 
 ## Migraciones y startup
 
-Alembic es la herramienta canónica. La cadena debe permanecer lineal:
+Cadena actual:
 
 ```text
-20260817_0000 application baseline
-        ↓
-20260817_0001 IAM foundation
-        ↓
-20260817_0002 system accounts
-        ↓
-20260817_0003 MULTI_QUOTE request_type repair
+0000 baseline
+ ↓
+0001 IAM foundation
+ ↓
+0002 system accounts
+ ↓
+0003 MULTI_QUOTE repair
+ ↓
+0004 position_roles
+ ↓
+0005 closure delegation
+ ↓
+0006 areas:manage
+ ↓
+0007 config:read
+ ↓
+0008 expense_area / expense_category
 ```
 
-`0000` define el baseline property-free requerido para instalar el producto sobre una base PostgreSQL limpia y utiliza inspección para conservar tablas que ya existen en la base productiva actual.
+`FastAPI.lifespan` no ejecuta DDL/backfills.
 
-`0003` repara filas históricas con `request_type=SIMPLE` cuando existe evidencia durable de flujo múltiple (`QUOTATION_VOTING` o dos/más opciones).
-
-`FastAPI.lifespan` no crea tablas, no ejecuta ALTER TABLE y no hace backfills.
-
-Docker ejecuta:
+Docker:
 
 ```text
 alembic upgrade head
@@ -165,96 +184,80 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
-`scripts` es un paquete Python explícito y el bootstrap se ejecuta como módulo desde `/app`.
+No usar `alembic stamp` para esconder una revisión ausente o esquema incompatible.
 
-Esto mantiene la migración fuera del ciclo de vida FastAPI y funciona en planes de Render sin pre-deploy separado. Para despliegues con múltiples réplicas se debe mover la migración a una etapa única de release/pre-deploy para evitar carreras.
+## Portabilidad Windows → Linux
 
-`tests/test_migrations.py` debe fallar si existe más de un head o se rompe la cadena `0000 → 0001 → 0002 → 0003`.
+- `*.sh` en LF mediante `.gitattributes`;
+- Docker normaliza CRLF defensivamente;
+- bootstrap como módulo desde raíz backend;
+- frontend espera healthcheck backend.
 
-La topología del script no sustituye una ejecución real: antes de producción se requiere snapshot y smoke test contra PostgreSQL/Neon de preview.
+## Frontend actual
 
-### Portabilidad Windows → Linux de scripts de arranque
+Componentes relevantes:
 
-Los entrypoints del contenedor son shell scripts Linux. El repositorio debe forzar `*.sh` a LF mediante `.gitattributes` y la imagen backend debe normalizar de forma defensiva cualquier `\r` antes de ejecutar `start.sh`.
+```text
+frontend/src/iam-admin.jsx
+frontend/src/access-navigation-bridge.js
+frontend/src/config-readonly.js
+frontend/src/classification-admin.js
+frontend/src/expense-form.jsx
+frontend/src/home-dashboard.jsx
+frontend/src/closure-delegation.jsx
+```
 
-El frontend local debe esperar a que el backend pase `/api/health` antes de arrancar Nginx. Así, un error de migración/startup se presenta como fallo del backend y no como un secundario `host not found in upstream "backend"`.
+Mientras `main.jsx` siga parcialmente legacy, `vite.config.js` puede aplicar transforms fail-fast. Bridges no son autoridad de seguridad.
 
-El CI debe cargar la imagen backend y validar tanto el entrypoint shell como `import scripts.bootstrap_admin` con una `DATABASE_URL` de prueba.
+## Navegación de Accesos
 
-## Sync / async
+`#access-management` es una integración transitoria.
 
-SQLAlchemy actual es síncrono. Las nuevas rutas que ejecutan SQLAlchemy y filesystem bloqueante se declaran con `def`, permitiendo que FastAPI las ejecute en threadpool.
-
-No se migra a Async SQLAlchemy en este PR.
-
-## Modelos y routers
-
-Los modelos `ExpenseCategoryCatalog` y `AreaCategoryLink` se movieron de `api/areas.py` a `models/classification.py`.
-
-Nuevos contratos IAM y votación viven en `schemas/`.
-
-`app/main.py` queda como alias de compatibilidad a `app.application`.
-
-## Frontend
-
-Se agrega módulo `iam-admin.jsx` separado del monolito legacy.
-
-La consola se abre desde `Configuración → Accesos` y consume únicamente `/api/iam/*`.
-
-El módulo permite:
-
-- usuarios;
-- grupos;
-- roles;
-- permisos;
-- cargos;
-- membresías/asignaciones;
-- permisos efectivos.
-
-`main.jsx` y `domain-normalization.js` siguen siendo deuda de modularización; no son autoridad de seguridad.
-
-La Feature 003 añade temporalmente `frontend/vite.config.js` para hidratar correcciones MULTI_QUOTE mientras `ExpenseForm` continúe dentro del monolito. El transform deriva tipo desde el draft, fuerza remount al entrar/cambiar corrección y evita heredar la pestaña de creación. No es arquitectura objetivo y debe retirarse con la modularización del formulario.
+`access-navigation-bridge.js` se carga antes de `main.jsx` y limpia el hash en capture phase al navegar fuera de Accesos, incluso cuando el destino ya es la pestaña subyacente activa.
 
 ## Testing
 
-`tests/test_iam_api.py` utiliza:
+Matriz mínima vigente:
 
-- `FastAPI TestClient`;
-- DB SQLite aislada con `StaticPool`;
-- dependency override de `get_db`;
-- tokens reales del backend.
+- permisos efectivos por direct/role/group/position;
+- `config:manage` system-only;
+- `config:read` read-only;
+- `areas:manage` aislado;
+- cuenta técnica prod/no-prod;
+- capacidades por recurso;
+- navegación desde Accesos;
+- clasificación `expense_area` / `expense_category`;
+- migraciones con un solo head hasta `0008`;
+- portabilidad de contenedor.
 
-Matriz IAM mínima:
+Gates:
 
-- system admin no-prod: todos los permisos activos;
-- system admin prod: config/read;
-- system admin prod: close denied incluso con permiso accidental;
-- usuario sin config: IAM admin 403;
-- Grupo→Rol cambia permisos inmediatamente;
-- permiso directo es aditivo;
-- rol system-managed no editable.
+```text
+cd backend
+alembic heads
+alembic current
+python -m unittest discover -s tests -v
 
-`tests/test_multi_quote_revision.py` cubre la semántica posterior de correcciones MULTI_QUOTE, incluido el caso legacy `request_type=SIMPLE` con evidencia múltiple.
-
-`tests/test_migrations.py` valida la topología Alembic hasta `0003` sin afirmar que reemplaza un smoke test de PostgreSQL real.
-
-`tests/test_container_portability.py` protege la política LF/healthcheck, mientras el job Docker de CI valida el entrypoint y la importabilidad real del bootstrap dentro de la imagen.
+cd ../frontend
+npm ci
+npm run build
+```
 
 ## Despliegue
 
-1. Crear backup/snapshot/branch de Neon.
-2. Construir backend actualizado.
-3. En preview, ejecutar `alembic upgrade head` y comprobar `0000 → 0001 → 0002 → 0003`.
-4. Ejecutar `python -m scripts.bootstrap_admin` desde la raíz del backend.
-5. Iniciar FastAPI.
-6. Verificar `/api/health`.
-7. Login administrador técnico.
-8. En producción verificar permisos efectivos: solo `config:manage`, `requests:read`.
-9. En preview/test verificar permisos técnicos completos si `ENVIRONMENT != production`.
-10. Configurar grupos/roles requeridos desde UI.
-11. Validar creación/aprobación/cierre con usuarios separados y validar correcciones SIMPLE/MULTI_QUOTE, incluyendo el caso de pestaña SIMPLE activa antes de corregir una MULTI_QUOTE.
-12. Solo después repetir el procedimiento en producción.
+1. backup/snapshot antes de cambios riesgosos;
+2. construir imagen backend;
+3. ejecutar/validar Alembic en preview;
+4. ejecutar bootstrap;
+5. iniciar FastAPI y verificar `/api/health`;
+6. validar política de permisos del ambiente;
+7. validar Accesos/configuración y workflows con usuarios apropiados;
+8. promover a producción.
 
 ## Rollback
 
-No depender únicamente de `alembic downgrade` para recuperar datos. Antes de migración productiva mantener snapshot/branch Neon. El baseline 0000 tiene downgrade deliberadamente no destructivo porque puede haberse aplicado sobre tablas preexistentes que Alembic no creó. La reparación `0003` es de datos y su downgrade no intenta reconstruir un valor incorrecto anterior. Si la migración falla después de escrituras de negocio, restaurar snapshot y versión previa del servicio.
+No depender exclusivamente de downgrade para recuperar datos. Usar snapshot/backup cuando una migración modifica estructura o datos relevantes.
+
+## Documentación
+
+Mantener sincronizados Constitución, features específicas posteriores, README, prompt maestro, IAM_MODEL, FASTAPI_ARCHITECTURE, HISTORY y CHANGELOG.
