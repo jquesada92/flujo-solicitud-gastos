@@ -79,7 +79,6 @@ def group_overview(
         member_cache[member.id] = {
             'id': member.id,
             'name': member.name,
-            'email': member.email,
             'roles': _effective_role_names(db, member.id),
             'pending_actions': sum(len(actions) for actions in pending.values()),
         }
