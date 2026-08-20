@@ -34,15 +34,25 @@ class DatabaseSchemaContractTests(unittest.TestCase):
                 with self.assertRaises(ValidationError):
                     Settings(database_url='sqlite://', database_schema=schema)
 
-    def test_only_clean_initial_alembic_baseline_exists(self):
+    def test_clean_initial_baseline_is_preserved_and_forward_migrations_are_linear(self):
         revisions = sorted(path.name for path in VERSIONS_DIR.glob('*.py'))
-        self.assertEqual(revisions, ['20260820_0001_initial_schema.py'])
+        self.assertEqual(
+            revisions,
+            [
+                '20260820_0001_initial_schema.py',
+                '20260820_0002_group_scoped_roles.py',
+            ],
+        )
 
-        baseline = (VERSIONS_DIR / revisions[0]).read_text(encoding='utf-8')
+        baseline = (VERSIONS_DIR / '20260820_0001_initial_schema.py').read_text(encoding='utf-8')
         self.assertIn("revision = '20260820_0001'", baseline)
         self.assertIn('down_revision = None', baseline)
         self.assertIn("existing_tables - {'alembic_version'}", baseline)
         self.assertIn('Fresh baseline requires an empty application schema', baseline)
+
+        group_roles = (VERSIONS_DIR / '20260820_0002_group_scoped_roles.py').read_text(encoding='utf-8')
+        self.assertIn("revision = '20260820_0002'", group_roles)
+        self.assertIn("down_revision = '20260820_0001'", group_roles)
 
     def test_alembic_version_table_uses_application_schema(self):
         env_source = (REPO_ROOT / 'backend' / 'alembic' / 'env.py').read_text(encoding='utf-8')
