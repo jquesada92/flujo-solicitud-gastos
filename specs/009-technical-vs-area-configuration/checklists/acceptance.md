@@ -33,9 +33,34 @@
 - [x] usuario sin ninguna capacidad de configuración no recibe menú Configuración.
 - [x] bridge temporal de `injectAccessMenu()` tolera whitespace/LF/CRLF y exige exactamente una coincidencia.
 - [x] el bridge de Accesos no usa `replaceRequired()` con un bloque multilinea literal para el guard de inyección.
+- [x] la consola de **Accesos** conserva visible la navegación estándar de la aplicación.
+- [x] navegar desde la barra estándar fuera de **Accesos** cierra la consola IAM sin requerir un botón **Volver** independiente.
+- [x] la acción de refresco se presenta como **Recargar** y se integra con las pestañas internas.
+- [x] la consola IAM reutiliza el ancho, espaciado, tarjetas y jerarquía visual del shell principal.
+- [x] la columna de navegación IAM reserva ancho suficiente y nombres/correos largos no cortan badges **Activo/SISTEMA**.
+- [x] el Maestro de Roles muestra únicamente el nombre del Rol y su estado; el resumen de códigos de permiso queda en el panel de detalle/edición.
+- [x] **Guardar cambios** de Roles permanece deshabilitado mientras nombre, descripción y permisos coincidan con persistencia.
+- [x] en **Grupos**, cambiar Roles heredados o Miembros modifica un borrador local y no persiste inmediatamente.
+- [x] el detalle de Grupo expone un único botón **Guardar cambios** para Roles heredados + Miembros.
+- [x] **Guardar cambios** de Grupo permanece gris/deshabilitado sin cambios y usa el acento pendiente cuando existe un diff real.
+- [x] cambiar de Grupo con cambios pendientes exige confirmación antes de descartarlos.
+- [x] los botones de persistencia deshabilitados usan estado gris de bajo énfasis.
+- [x] los botones con cambios pendientes conocidos por el componente usan un brillo/acento leve de la paleta existente.
+- [x] la pantalla canónica separa Maestro de Áreas, Maestro de Categorías y **Categorías por área**.
+- [x] **Categorías por área** muestra solo categorías activas.
+- [x] categorías inactivas siguen visibles en el Maestro de Categorías para poder reactivarlas.
+- [x] el contador de **Categorías por área** considera solo categorías activas.
+- [x] cambiar el checkbox de asignación no persiste hasta pulsar **Guardar** en la fila.
+- [x] si no existen categorías activas, la tarjeta muestra un estado vacío explícito.
 - [ ] validar manualmente menú System Admin.
 - [ ] validar manualmente menú de usuario con `areas:manage`.
 - [ ] validar manualmente usuario ordinario sin Configuración.
+- [ ] validar manualmente navegación desde Accesos hacia Inicio/Solicitudes/Facturas/Configuración usando la barra estándar.
+- [ ] validar manualmente que emails largos no recorten el estado del usuario en Accesos.
+- [ ] validar manualmente que el Maestro de Roles no muestre cadenas de permisos debajo del nombre.
+- [ ] validar manualmente estados gris/pendiente de Guardar en Roles, Grupos y Categorías por área.
+- [ ] validar manualmente que cambiar Roles/Miembros de Grupo no persista hasta pulsar **Guardar cambios**.
+- [ ] validar manualmente que una categoría desactivada desaparece de **Categorías por área** y reaparece al reactivarla conservando su relación previa.
 
 ## Migración
 
@@ -50,7 +75,8 @@
 ## Pruebas
 
 - [x] `test_iam_api.py` cubre system-only config y `areas:manage` ordinario.
-- [x] `test_frontend_configuration_access.py` protege separación de menú y robustez del bridge.
+- [x] `test_frontend_configuration_access.py` protege separación de menú, robustez del bridge, checkbox IAM, integración de navegación, overflow de listas, presentación compacta de Roles, estado dirty de Roles y guardado explícito de asignaciones de Grupo.
+- [x] `test_frontend_classification_admin_contract.py` protege catálogo global, guardado por fila y visibilidad solo de categorías activas en asignación.
 - [x] `test_migrations.py` protege `0006`.
 - [ ] suite backend completa ejecutada localmente en head final.
 - [ ] `npm run build` ejecutado localmente con éxito en head final.

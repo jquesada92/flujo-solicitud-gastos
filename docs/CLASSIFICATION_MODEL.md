@@ -99,6 +99,18 @@ El Administrador del sistema también posee `areas:manage` por política de `sys
 
 Nombres como Administración o Junta Directiva pueden ser Grupos/Cargos configurados por el cliente, pero el backend no los consulta para decidir acceso.
 
+### Categorías por área
+
+La pantalla de configuración separa el catálogo maestro de Categorías de la asignación Área ↔ Categoría.
+
+- El **Maestro de Categorías** muestra categorías activas e inactivas para permitir reactivación y mantenimiento del catálogo.
+- La tarjeta **Categorías por área** muestra **únicamente categorías activas**.
+- Una categoría inactiva no aparece como opción asignable ni en el contador de la tarjeta de asignación.
+- Si una categoría ya estaba relacionada con un Área y luego se desactiva, la relación persistida no se elimina automáticamente; la categoría simplemente deja de mostrarse en la tarjeta de asignación mientras permanezca inactiva.
+- Para modificar nuevamente esa relación desde la UI, primero se reactiva la categoría desde el Maestro de Categorías.
+
+Los cambios de asignación son explícitos y se guardan por fila. Marcar o desmarcar el checkbox solo modifica el estado local hasta pulsar **Guardar**.
+
 ## API canónica
 
 ```text

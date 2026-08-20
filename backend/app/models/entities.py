@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 
 from app.core.database import Base
 
@@ -134,8 +134,8 @@ class Expense(Base):
     request_type: Mapped[str] = mapped_column(String(20), nullable=False, default='SIMPLE', index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    expense_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    expense_subcategory: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    expense_area: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    expense_category: Mapped[str | None] = mapped_column(String(80), nullable=True)
     urgency: Mapped[str] = mapped_column(String(20), nullable=False, default='NORMAL', index=True)
     amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     supplier: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -151,6 +151,11 @@ class Expense(Base):
     closed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     closure_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     selected_quotation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Transitional aliases keep older internal callers working while the
+    # canonical ORM and physical database columns remain expense_area/category.
+    expense_type = synonym('expense_area')
+    expense_subcategory = synonym('expense_category')
 
     approvals = relationship('Approval', back_populates='expense', cascade='all, delete-orphan', order_by='Approval.step')
     attachments = relationship('ExpenseAttachment', back_populates='expense', cascade='all, delete-orphan')

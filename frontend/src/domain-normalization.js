@@ -34,6 +34,32 @@ function normalizeRequestUrl(value) {
   }
 }
 
+function normalizeExpenseRequestBody(init, normalizedUrl) {
+  if (!init || typeof init.body !== 'string') return init;
+  try {
+    const path = new URL(normalizedUrl, window.location.origin).pathname;
+    const isExpenseMutation = path === '/api/expenses' || /^\/api\/expenses\/[^/]+\/resubmit$/.test(path);
+    if (!isExpenseMutation) return init;
+
+    const payload = JSON.parse(init.body);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return init;
+
+    const normalized = { ...payload };
+    if ('expense_type' in normalized && !('expense_area' in normalized)) {
+      normalized.expense_area = normalized.expense_type;
+    }
+    if ('expense_subcategory' in normalized && !('expense_category' in normalized)) {
+      normalized.expense_category = normalized.expense_subcategory;
+    }
+    delete normalized.expense_type;
+    delete normalized.expense_subcategory;
+
+    return { ...init, body: JSON.stringify(normalized) };
+  } catch (_) {
+    return init;
+  }
+}
+
 function adaptLegacyUser(user) {
   if (!user || typeof user !== 'object') return user;
   if (!('person_type' in user) && user.title === 'ADMINISTRADORA') {
@@ -56,7 +82,20 @@ function adaptPayload(payload, path) {
   }
   if (Array.isArray(payload)) return payload.map((item) => adaptPayload(item, path));
   if (!payload || typeof payload !== 'object') return payload;
-  const adapted = { ...payload };
+
+  const adapted = Object.fromEntries(
+    Object.entries(payload).map(([key, value]) => [key, adaptPayload(value, path)]),
+  );
+
+  // API responses are canonical. Keep temporary in-memory aliases only for the
+  // remaining legacy React shell until all consumers are migrated.
+  if ('expense_area' in adapted && !('expense_type' in adapted)) {
+    adapted.expense_type = adapted.expense_area;
+  }
+  if ('expense_category' in adapted && !('expense_subcategory' in adapted)) {
+    adapted.expense_subcategory = adapted.expense_category;
+  }
+
   if ('user' in adapted) adapted.user = adaptLegacyUser(adapted.user);
   if ('title' in adapted && ('role' in adapted || 'email' in adapted)) return adaptLegacyUser(adapted);
   return adapted;
@@ -73,7 +112,8 @@ window.fetch = async (input, init) => {
     normalizedInput = new Request(normalizedUrl, input);
   }
 
-  const response = await originalFetch(normalizedInput, init);
+  const normalizedInit = normalizeExpenseRequestBody(init, normalizedUrl);
+  const response = await originalFetch(normalizedInput, normalizedInit);
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) return response;
 
@@ -82,7 +122,10 @@ window.fetch = async (input, init) => {
     catch (_) { return ''; }
   })();
 
-  const needsAdapter = path === '/api/areas' || path.startsWith('/api/auth/') || path.startsWith('/api/users');
+  const needsAdapter = path === '/api/areas'
+    || path.startsWith('/api/auth/')
+    || path.startsWith('/api/users')
+    || path.startsWith('/api/expenses');
   if (!needsAdapter) return response;
 
   try {
@@ -140,12 +183,23 @@ function productTerminology(text) {
   return userTerminology(classificationTerminology(text));
 }
 
+function isCanonicalTerminologyNode(node) {
+  const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+  return Boolean(element?.closest?.('#expense-form, [data-canonical-classification-settings="true"]'));
+}
+
+function terminologyForNode(node, text) {
+  // Canonical UI already uses Área/Categoría explicitly. The legacy terminology
+  // adapter must not rewrite Categoría to Área inside those components.
+  return isCanonicalTerminologyNode(node) ? userTerminology(text) : productTerminology(text);
+}
+
 function normalizeTextNodes(root) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const nodes = [];
   while (walker.nextNode()) nodes.push(walker.currentNode);
   for (const node of nodes) {
-    const normalized = productTerminology(node.nodeValue);
+    const normalized = terminologyForNode(node, node.nodeValue);
     if (normalized !== node.nodeValue) node.nodeValue = normalized;
   }
 
@@ -154,7 +208,7 @@ function normalizeTextNodes(root) {
       for (const attribute of ['placeholder', 'aria-label', 'title']) {
         if (!element.hasAttribute(attribute)) continue;
         const value = element.getAttribute(attribute);
-        const normalized = productTerminology(value);
+        const normalized = terminologyForNode(element, value);
         if (normalized !== value) element.setAttribute(attribute, normalized);
       }
     }
@@ -165,7 +219,7 @@ const observer = new MutationObserver((records) => {
   for (const record of records) {
     for (const node of record.addedNodes) {
       if (node.nodeType === Node.TEXT_NODE) {
-        const normalized = productTerminology(node.nodeValue);
+        const normalized = terminologyForNode(node, node.nodeValue);
         if (normalized !== node.nodeValue) node.nodeValue = normalized;
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         normalizeTextNodes(node);

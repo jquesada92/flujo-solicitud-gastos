@@ -1,0 +1,37 @@
+/* Shared persistence-action states.
+   Disabled save/update actions stay visually quiet; actions with explicit
+   pending changes receive a subtle accent using the existing app palette. */
+button.primary:disabled,
+.iam-button.primary:disabled,
+.classification-save-assignment:disabled {
+  opacity: 1;
+  background: #e4e7ec;
+  color: #98a2b3;
+  border: 1px solid #d0d5dd;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.iam-persist-action.pending,
+.classification-save-assignment:not(:disabled),
+.bulk-save button.primary:not(:disabled) {
+  box-shadow:
+    0 0 0 3px rgba(39, 93, 168, 0.10),
+    0 8px 20px rgba(39, 93, 168, 0.12);
+}
+
+.iam-persist-action.pending:hover,
+.classification-save-assignment:not(:disabled):hover,
+.bulk-save button.primary:not(:disabled):hover {
+  box-shadow:
+    0 0 0 4px rgba(39, 93, 168, 0.13),
+    0 10px 24px rgba(39, 93, 168, 0.14);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .iam-persist-action,
+  .classification-save-assignment,
+  .bulk-save button.primary {
+    transition: background .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease, opacity .15s ease;
+  }
+}
