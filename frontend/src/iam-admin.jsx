@@ -36,14 +36,13 @@ const emptyUser = {
   email: "",
   phone: "",
   active: true,
-  group_ids: [],
   role_ids: [],
 };
 
 const normalizeIds = (values) => [...(values || [])].map(Number).sort((a, b) => a - b);
 const sameIds = (left, right) => JSON.stringify(normalizeIds(left)) === JSON.stringify(normalizeIds(right));
 
-function CheckList({ items, selected, onToggle, getValue = (item) => item.id, render }) {
+function CheckList({ items, selected, onToggle, getValue = (item) => item.id, render, disabled = false }) {
   const values = new Set(selected || []);
   return (
     <div className="iam-checks">
@@ -54,7 +53,8 @@ function CheckList({ items, selected, onToggle, getValue = (item) => item.id, re
             <input
               type="checkbox"
               checked={values.has(value)}
-              onChange={() => onToggle(value, !values.has(value))}
+              disabled={disabled}
+              onChange={() => !disabled && onToggle(value, !values.has(value))}
             />
             <span>{render(item)}</span>
           </label>
@@ -102,11 +102,11 @@ function RolesPanel({ permissions, roles, reload, setError }) {
     if (!canPersistRole) return;
     setError("");
     try {
-      await iamApi(selected ? `/api/iam/roles/${selected.id}` : "/api/iam/roles", {
+      const saved = await iamApi(selected ? `/api/iam/roles/${selected.id}` : "/api/iam/roles", {
         method: selected ? "PATCH" : "POST",
         body: JSON.stringify({ ...form, active: selected?.active ?? true }),
       });
-      setSelectedId(null);
+      setSelectedId(saved.id);
       await reload();
     } catch (error) { setError(error.message); }
   };
@@ -122,16 +122,16 @@ function RolesPanel({ permissions, roles, reload, setError }) {
     <section className="iam-card">
       <div className="iam-toolbar"><h2>Roles</h2><button className="iam-button" onClick={() => setSelectedId(null)}>+ Nuevo</button></div>
       <div className="iam-list">{roles.map((role) => <div className={`iam-list-item ${selectedId === role.id ? "selected" : ""}`} key={role.id}>
-        <button className="iam-button" style={{ textAlign: "left", flex: 1 }} onClick={() => setSelectedId(role.id)}><span className="iam-list-main"><strong>{role.name}</strong><small>{role.permission_codes.join(" · ") || "Sin permisos"}</small></span></button>
+        <button className="iam-button" style={{ textAlign: "left", flex: 1 }} onClick={() => setSelectedId(role.id)}><span className="iam-list-main"><strong>{selectedId === role.id && form.name ? form.name : role.name}</strong><small>{role.permission_codes.join(" · ") || "Sin permisos"}</small></span></button>
         {role.system_managed ? <span className="iam-system">SISTEMA</span> : <button className="iam-button" onClick={() => toggleActive(role)}>{role.active ? "Activo" : "Inactivo"}</button>}
       </div>)}</div>
     </section>
     <section className="iam-card">
-      <h2>{selected ? `Editar ${selected.name}` : "Crear rol"}</h2>
+      <h2>{selected ? `Editar ${form.name || selected.name}` : "Crear rol"}</h2>
       {selected?.system_managed ? <div className="iam-notice">Este rol técnico es administrado por el sistema.</div> : <form className="iam-form" onSubmit={save}>
         <label>Nombre<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required minLength={2} /></label>
         <label>Descripción<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
-        <div><strong>Permisos del rol</strong><p className="iam-muted">Los permisos solo se asignan a roles. Los usuarios obtienen esos roles directamente o mediante sus grupos.</p></div>
+        <div><strong>Permisos del rol</strong><p className="iam-muted">Los permisos solo se asignan a roles. Luego el rol se vincula a un único grupo.</p></div>
         <CheckList items={permissions.filter((item) => item.active)} selected={form.permission_codes} getValue={(item) => item.code} onToggle={togglePermission} render={(item) => <PermissionLabel permission={item} />} />
         <button className={`iam-button primary iam-persist-action ${canPersistRole ? "pending" : ""}`} disabled={!canPersistRole}>{selected ? "Guardar cambios" : "Crear rol"}</button>
       </form>}
@@ -147,7 +147,7 @@ function GroupsPanel({ groups, roles, users, reload, setError }) {
   const [draftMemberIds, setDraftMemberIds] = useState([]);
   const [savingAssignments, setSavingAssignments] = useState(false);
   const selected = groups.find((item) => item.id === selectedId) || null;
-  const groupDirty = useMemo(() => Boolean(selected) && (!sameIds(draftRoleIds, selected.role_ids) || !sameIds(draftMemberIds, selected.member_ids)), [draftRoleIds, draftMemberIds, selected]);
+  const groupDirty = useMemo(() => Boolean(selected) && !sameIds(draftRoleIds, selected.role_ids), [draftRoleIds, selected]);
 
   useEffect(() => {
     setDraftRoleIds([...(selected?.role_ids || [])]);
@@ -175,7 +175,6 @@ function GroupsPanel({ groups, roles, users, reload, setError }) {
   };
 
   const toggleDraftRole = (roleId, checked) => setDraftRoleIds((current) => checked ? [...new Set([...current, roleId])] : current.filter((item) => item !== roleId));
-  const toggleDraftMember = (userId, checked) => setDraftMemberIds((current) => checked ? [...new Set([...current, userId])] : current.filter((item) => item !== userId));
 
   const saveGroupAssignments = async () => {
     if (!selected || !groupDirty || savingAssignments) return;
@@ -195,18 +194,18 @@ function GroupsPanel({ groups, roles, users, reload, setError }) {
     <section className="iam-card">
       <h2>Grupos</h2>
       <form className="iam-form" onSubmit={createGroup}>
-        <label>Nuevo grupo<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Ej. Junta Directiva, Finanzas, Procurement" required /></label>
+        <label>Nuevo grupo<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Ej. Junta Directiva, Solicitudes, Administración" required /></label>
         <label>Descripción<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
         <button className="iam-button primary">Crear grupo</button>
       </form>
       <div className="iam-section iam-list">{groups.map((group) => <button key={group.id} className={`iam-list-item ${selectedId === group.id ? "selected" : ""}`} onClick={() => selectGroup(group.id)}><span className="iam-list-main"><strong>{group.name}</strong><small>{group.member_ids.length} usuario(s) · {group.role_ids.length} rol(es)</small></span><span>{group.active ? "Activo" : "Inactivo"}</span></button>)}</div>
     </section>
-    <section className="iam-card">{!selected ? <p className="iam-empty">Selecciona un grupo para administrar sus roles y miembros.</p> : <>
+    <section className="iam-card">{!selected ? <p className="iam-empty">Selecciona un grupo para administrar los roles disponibles.</p> : <>
       <span hidden data-unsaved={groupDirty ? "true" : "false"} />
       <div className="iam-toolbar"><div><h2>{selected.name}</h2><p className="iam-muted">{selected.description || "Sin descripción"}</p></div><button className="iam-button" onClick={() => patchGroup({ active: !selected.active })}>{selected.active ? "Inactivar" : "Activar"}</button></div>
       <div className="iam-toolbar"><button className="iam-button" onClick={() => { const value = window.prompt("Nuevo nombre del grupo", selected.name); if (value?.trim()) patchGroup({ name: value.trim() }); }}>Renombrar</button><button className={`iam-button primary iam-persist-action ${groupDirty ? "pending" : ""}`} disabled={!groupDirty || savingAssignments} onClick={saveGroupAssignments}>{savingAssignments ? "Guardando..." : "Guardar cambios"}</button></div>
-      <div className="iam-section"><h3>Roles del grupo</h3><p className="iam-muted">Los miembros heredan los permisos definidos por estos roles.</p><CheckList items={roles.filter((item) => item.active && !item.system_managed)} selected={draftRoleIds} onToggle={toggleDraftRole} render={(role) => <><strong>{role.name}</strong><small>{role.permission_codes.join(" · ") || "Sin permisos"}</small></>} /></div>
-      <div className="iam-section"><h3>Miembros</h3><CheckList items={users.filter((item) => !item.is_system_account)} selected={draftMemberIds} onToggle={toggleDraftMember} render={(user) => <><strong>{user.name}</strong><small>{user.email}</small></>} /></div>
+      <div className="iam-section"><h3>Roles del grupo</h3><p className="iam-muted">Cada rol puede pertenecer a un solo grupo. Los usuarios eligen como máximo un rol de este grupo.</p><CheckList items={roles.filter((item) => item.active && !item.system_managed)} selected={draftRoleIds} onToggle={toggleDraftRole} render={(role) => <><strong>{role.name}</strong><small>{role.permission_codes.join(" · ") || "Sin permisos"}</small></>} /></div>
+      <div className="iam-section"><h3>Miembros</h3><p className="iam-muted">Solo lectura. La membresía se obtiene al asignar un rol de este grupo desde la ficha del usuario.</p><CheckList items={users.filter((item) => !item.is_system_account && draftMemberIds.includes(item.id))} selected={draftMemberIds} onToggle={() => {}} disabled render={(user) => <><strong>{user.name}</strong><small>{user.email}</small></>} /></div>
     </>}</section>
   </div>;
 }
@@ -215,16 +214,14 @@ function UsersPanel({ users, groups, roles, permissions, reload, setError }) {
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(emptyUser);
-  const [draftGroupIds, setDraftGroupIds] = useState([]);
   const [draftRoleIds, setDraftRoleIds] = useState([]);
   const [savingAccess, setSavingAccess] = useState(false);
   const selected = users.find((item) => item.id === selectedId) || null;
-  const userDirty = useMemo(() => Boolean(selected) && !selected.is_system_account && (!sameIds(draftGroupIds, selected.group_ids) || !sameIds(draftRoleIds, selected.role_ids)), [draftGroupIds, draftRoleIds, selected]);
+  const userDirty = useMemo(() => Boolean(selected) && !selected.is_system_account && !sameIds(draftRoleIds, selected.role_ids), [draftRoleIds, selected]);
 
   useEffect(() => {
-    setDraftGroupIds([...(selected?.group_ids || [])]);
     setDraftRoleIds([...(selected?.role_ids || [])]);
-  }, [selectedId, selected?.id, JSON.stringify(selected?.group_ids || []), JSON.stringify(selected?.role_ids || [])]);
+  }, [selectedId, selected?.id, JSON.stringify(selected?.role_ids || [])]);
 
   const selectUser = (userId) => {
     if (userDirty && !window.confirm("Hay cambios sin guardar para este usuario. ¿Deseas descartarlos y continuar?")) return;
@@ -255,8 +252,14 @@ function UsersPanel({ users, groups, roles, permissions, reload, setError }) {
     } catch (error) { setError(error.message); }
   };
 
-  const toggleDraftGroup = (value, checked) => setDraftGroupIds((current) => checked ? [...new Set([...current, value])] : current.filter((item) => item !== value));
-  const toggleDraftRole = (value, checked) => setDraftRoleIds((current) => checked ? [...new Set([...current, value])] : current.filter((item) => item !== value));
+  const rolesForGroup = (group) => roles.filter((role) => role.active && !role.system_managed && (group.role_ids || []).includes(role.id));
+  const selectedRoleForGroup = (group) => draftRoleIds.find((roleId) => (group.role_ids || []).includes(roleId)) || "";
+  const setGroupRole = (group, rawRoleId) => {
+    const groupRoleIds = new Set(group.role_ids || []);
+    const withoutCurrentGroup = draftRoleIds.filter((roleId) => !groupRoleIds.has(roleId));
+    const nextRoleId = Number(rawRoleId) || null;
+    setDraftRoleIds(nextRoleId ? [...withoutCurrentGroup, nextRoleId] : withoutCurrentGroup);
+  };
 
   const saveAccess = async () => {
     if (!selected || !userDirty || savingAccess) return;
@@ -265,7 +268,7 @@ function UsersPanel({ users, groups, roles, permissions, reload, setError }) {
     try {
       await iamApi(`/api/iam/users/${selected.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ group_ids: draftGroupIds, role_ids: draftRoleIds }),
+        body: JSON.stringify({ role_ids: draftRoleIds }),
       });
       await reload();
     } catch (error) { setError(error.message); }
@@ -289,8 +292,13 @@ function UsersPanel({ users, groups, roles, permissions, reload, setError }) {
       <span hidden data-unsaved={userDirty ? "true" : "false"} />
       <div className="iam-toolbar"><div><h2>{selected.name}</h2><p className="iam-muted">{selected.email}</p></div>{selected.is_system_account ? <span className="iam-system">CUENTA TÉCNICA PROTEGIDA</span> : <button className="iam-button" onClick={toggleActive}>{selected.active ? "Inactivar" : "Activar"}</button>}</div>
       {selected.is_system_account ? <div className="iam-notice">Esta cuenta está separada del flujo financiero y se administra mediante la política técnica del sistema.</div> : <>
-        <div className="iam-section"><h3>Grupos</h3><p className="iam-muted">Los grupos otorgan a sus miembros los roles configurados en el grupo.</p><CheckList items={groups.filter((item) => item.active)} selected={draftGroupIds} onToggle={toggleDraftGroup} render={(item) => <><strong>{item.name}</strong><small>{item.description || "Grupo de usuarios"}</small></>} /></div>
-        <div className="iam-section"><h3>Roles directos</h3><p className="iam-muted">Asigna un rol directamente solo cuando no corresponda heredarlo mediante un grupo.</p><CheckList items={roles.filter((item) => item.active && !item.system_managed)} selected={draftRoleIds} onToggle={toggleDraftRole} render={(item) => <><strong>{item.name}</strong><small>{item.permission_codes.join(" · ") || "Sin permisos"}</small></>} /></div>
+        <div className="iam-section"><h3>Acceso por grupo</h3><p className="iam-muted">Asigna como máximo un rol por grupo. El rol seleccionado agrega automáticamente al usuario al grupo; “Sin rol” lo remueve de ese grupo.</p>
+          <div className="iam-group-role-grid">{groups.filter((group) => group.active).map((group) => {
+            const availableRoles = rolesForGroup(group);
+            const selectedRoleId = selectedRoleForGroup(group);
+            return <label className="iam-group-role" key={group.id}><span><strong>{group.name}</strong><small>{group.description || "Grupo de usuarios"}</small></span><select value={selectedRoleId} disabled={!availableRoles.length} onChange={(event) => setGroupRole(group, event.target.value)}><option value="">{availableRoles.length ? "Sin rol / sin acceso" : "Sin roles configurados"}</option>{availableRoles.map((role) => <option value={role.id} key={role.id}>{role.name}</option>)}</select></label>;
+          })}</div>
+        </div>
         <div className="iam-toolbar"><span className="iam-muted">Los cambios no se aplican hasta guardar.</span><button className={`iam-button primary iam-persist-action ${userDirty ? "pending" : ""}`} disabled={!userDirty || savingAccess} onClick={saveAccess}>{savingAccess ? "Guardando..." : "Guardar cambios"}</button></div>
       </>}
       <div className="iam-section"><h3>Permisos efectivos</h3>{userDirty && <p className="iam-muted">Este resumen se actualizará después de guardar los cambios.</p>}{selected.effective_permission_codes.length ? selected.effective_permission_codes.map((code) => <div className="iam-permission-row" key={code}><strong>{permissions.find((item) => item.code === code)?.name || code}</strong><code>{code}</code><small>{(selected.permission_sources?.[code] || []).join(" · ")}</small></div>) : <p className="iam-empty">Este usuario no tiene permisos efectivos.</p>}</div>
@@ -299,7 +307,7 @@ function UsersPanel({ users, groups, roles, permissions, reload, setError }) {
 }
 
 function PermissionsPanel({ permissions }) {
-  return <section className="iam-card"><h2>Permisos del producto</h2><p className="iam-muted">Los permisos son capacidades atómicas del producto y solo se asignan a roles. Los usuarios reciben roles directamente o a través de grupos.</p><div className="iam-list">{permissions.map((permission) => <div className="iam-list-item" key={permission.code}><span className="iam-list-main"><strong>{permission.name}</strong><small>{permission.code}</small><small>{permission.description}</small></span><span>{permission.active ? "Activo" : "Inactivo"}</span></div>)}</div></section>;
+  return <section className="iam-card"><h2>Permisos del producto</h2><p className="iam-muted">Los permisos son capacidades atómicas del producto y solo se asignan a roles. El usuario recibe el permiso por el rol que ocupa dentro de un grupo.</p><div className="iam-list">{permissions.map((permission) => <div className="iam-list-item" key={permission.code}><span className="iam-list-main"><strong>{permission.name}</strong><small>{permission.code}</small><small>{permission.description}</small></span><span>{permission.active ? "Activo" : "Inactivo"}</span></div>)}</div></section>;
 }
 
 function IamConsole() {
@@ -340,7 +348,7 @@ function IamConsole() {
   if (loading) return <div className="iam-overlay"><main className="iam-shell"><div className="iam-loading">Cargando configuración de accesos…</div></main></div>;
   const tabs = [["users", "Usuarios"], ["groups", "Grupos"], ["roles", "Roles"], ["permissions", "Permisos"]];
   return <div className="iam-overlay"><main className="iam-shell">
-    <header className="iam-header"><p className="iam-eyebrow">CONFIGURACIÓN · ACCESOS</p><h1>Usuarios, grupos, roles y permisos</h1><p className="iam-muted">Modelo de acceso: Usuario → Grupo/Rol → Permisos. Los cargos pertenecen al organigrama y no otorgan acceso.</p></header>
+    <header className="iam-header"><p className="iam-eyebrow">CONFIGURACIÓN · ACCESOS</p><h1>Usuarios, grupos, roles y permisos</h1><p className="iam-muted">Modelo de acceso: Usuario → Rol del grupo → Permisos. Un rol pertenece a un solo grupo y cada usuario puede tener como máximo un rol por grupo.</p></header>
     {error && <div className="iam-notice error">{error}</div>}
     <div className="iam-page-nav"><nav className="iam-tabs">{tabs.map(([value, label]) => <button className={tab === value ? "active" : ""} key={value} onClick={() => setTab(value)}>{label}</button>)}</nav><button className="iam-button iam-refresh" onClick={() => reload().catch((e) => setError(e.message))}>↻ Recargar</button></div>
     {tab === "users" && <UsersPanel {...data} reload={reload} setError={setError} />}
