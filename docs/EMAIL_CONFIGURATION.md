@@ -9,41 +9,34 @@
 | Local con Vite directo | `http://localhost:5173` | FastAPI local | Google SMTP |
 | Test automatizado | n/a | test runner | console/mocks según la prueba |
 
-## URL pública usada en los enlaces de correo
+## URL pública usada en enlaces
 
 Los enlaces de aprobación/votación se construyen desde `PUBLIC_URL`.
 
-Cuando se usa Docker Compose, el frontend no vive en el puerto de desarrollo de Vite. Nginx se publica en:
+Docker Compose publica el frontend en:
 
 ```text
 http://localhost:3000
 ```
 
-Por eso `docker-compose.yml` sobreescribe el valor recibido desde `backend/.env` y fija por defecto:
+Configuración local recomendada:
 
 ```env
 PUBLIC_URL=http://localhost:3000
 CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 ```
 
-Los valores pueden personalizarse desde el `.env` de la raíz mediante:
-
-```env
-LOCAL_PUBLIC_URL=http://localhost:3000
-LOCAL_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
-```
-
-Si se ejecuta Vite directamente con `npm run dev`, sin el frontend de Docker Compose, entonces el backend puede usar:
+Si se ejecuta Vite directamente con `npm run dev`, el backend puede usar:
 
 ```env
 PUBLIC_URL=http://localhost:5173
 ```
 
-Regla: el host/puerto que aparece en un correo debe corresponder al frontend que realmente está escuchando en ese modo de ejecución. Un enlace `localhost:5173` no funciona si solo está levantado Docker Compose en `localhost:3000`.
+El host/puerto de un correo debe corresponder al frontend realmente activo.
 
 ## Local — Google SMTP
 
-Crear `backend/.env` a partir de `backend/.env.example` y configurar:
+Crear `backend/.env` a partir de `backend/.env.example`:
 
 ```env
 ENVIRONMENT=development
@@ -63,20 +56,11 @@ SMTP_PORT=587
 SMTP_SECURITY=starttls
 ```
 
-Google SMTP requiere autenticación. Para cuentas con 2-Step Verification, usar una App Password. No usar ni guardar la contraseña real de la cuenta en el repositorio.
-
-### Crear App Password
-
-1. Activar 2-Step Verification en la cuenta Google.
-2. Crear una App Password para esta aplicación cuando la cuenta lo permita.
-3. Copiarla únicamente a `backend/.env` como `SMTP_PASSWORD`.
-4. No pegarla en README, issues, PRs, screenshots ni chats compartidos.
-
-Algunas cuentas administradas, Advanced Protection o configuraciones basadas solo en security keys pueden no ofrecer App Passwords; en esos casos se debe usar la política permitida por el administrador de Google Workspace.
+Para cuentas Google con 2-Step Verification, usar App Password cuando la política de la cuenta lo permita. Nunca guardar la contraseña real ni secretos en repositorio, README, issues, PRs o logs.
 
 ## Producción — Brevo
 
-Las variables pertenecen al servicio backend en Render:
+Variables del backend en Render:
 
 ```env
 ENVIRONMENT=production
@@ -87,11 +71,11 @@ BREVO_SENDER_NAME=Gestión de Solicitudes
 PUBLIC_URL=<URL_HTTPS_DEL_FRONTEND_EN_VERCEL>
 ```
 
-No colocar `BREVO_API_KEY`, `SMTP_PASSWORD` ni secretos equivalentes en Vercel/Vite. El frontend solo necesita variables públicas como la URL del backend y timezone.
+No colocar `BREVO_API_KEY`, `SMTP_PASSWORD` ni secretos equivalentes en Vercel/Vite.
 
-## Probar el transporte antes del workflow
+## Probar transporte
 
-Dentro de Docker Compose:
+Docker Compose:
 
 ```bash
 docker compose exec backend python -m scripts.test_email --to destino@example.com
@@ -103,21 +87,21 @@ Sin Docker, desde `backend/`:
 python -m scripts.test_email --to destino@example.com
 ```
 
-La salida muestra el transporte usado, host/puerto cuando aplica y remitente/destinatario, pero nunca imprime la contraseña ni la API key.
-
-Si el comando termina con:
-
-```text
-Email accepted by the configured transport.
-```
-
-el servidor SMTP/API aceptó la entrega. Después se valida el workflow real.
+El diagnóstico no debe imprimir secretos.
 
 ## Correos de acceso de usuario
 
+La administración de usuarios se realiza canónicamente desde:
+
+```text
+Configuración → Accesos → Usuarios
+```
+
+No existe una pantalla Usuarios/Personas independiente.
+
 ### Invitación inicial
 
-Cuando se crea un usuario activo desde IAM, el mismo correo que contiene la contraseña temporal incluye:
+Cuando se crea un usuario activo desde **Accesos**, el correo de contraseña temporal incluye:
 
 ```text
 Cargo(s)
@@ -127,47 +111,38 @@ Contraseña temporal
 Enlace de acceso
 ```
 
-Los permisos no se toman de `can_*` ni `UserRole`; se calculan con el IAM canónico después de aplicar Grupo/Rol/Cargo/permisos directos.
-
-Ejemplo:
-
-```text
-Cargo(s):
-- Tesorero
-
-Permisos efectivos:
-- Consultar solicitudes (requests:read)
-- Aprobar solicitudes (requests:approve)
-```
+Los permisos se calculan con IAM canónico después de aplicar Grupo/Rol/Cargo/permisos directos; no provienen de `can_*` ni `UserRole`.
 
 ### Cambio de Cargo
 
-Cuando cambia realmente `position_ids` de un usuario activo, se envía **Actualización de cargo y permisos** con los Cargos resultantes y los permisos efectivos recalculados.
+Cuando cambia realmente `position_ids` de un usuario activo desde Accesos, se envía **Actualización de cargo y permisos** con Cargos resultantes y permisos efectivos recalculados.
 
-Guardar exactamente el mismo conjunto de Cargos no genera un correo duplicado.
+Guardar exactamente el mismo conjunto de Cargos no genera correo duplicado.
 
-El correo de cambio de Cargo **no contiene contraseña temporal**.
+El correo de cambio de Cargo no contiene contraseña temporal.
 
 ### Semántica de fallo
 
-Invitación inicial y cambio de Cargo son notificaciones obligatorias de administración de acceso. Si falla el transporte:
+Invitación inicial y cambio de Cargo son notificaciones obligatorias de administración de acceso.
 
-- creación de usuario: no se confirma la creación;
+Si falla el transporte:
+
+- creación: no se confirma la operación;
 - cambio de Cargo: se revierte la transacción y el endpoint devuelve 502.
 
-Esto es deliberadamente distinto de algunos correos de workflow. Una futura outbox persistente podrá desacoplar entrega y transacción sin perder garantía de notificación.
+Una futura outbox persistente podrá desacoplar entrega y transacción sin perder la garantía de notificación.
 
-## Probar solicitudes después del SMTP
+## Solicitudes después del SMTP
 
-### Solicitud SIMPLE
+### SIMPLE
 
-El correo de aprobación se genera cuando el flujo entra en aprobación. Si la solicitud exige un archivo, esto puede ocurrir después de cargar el soporte. El destinatario debe ser un usuario activo con permiso efectivo `requests:approve`, distinto del solicitante.
+El correo de aprobación se genera cuando el flujo entra en aprobación. El destinatario debe ser usuario activo con permiso efectivo `requests:approve`, distinto del solicitante.
 
 ### MULTI_QUOTE
 
-Al crear/reiniciar la ronda se envía una invitación de votación a cada usuario elegible con `requests:approve`, excluyendo al solicitante según la regla actual.
+Al crear/reiniciar la ronda se envía invitación a cada usuario elegible con `requests:approve`, excluyendo al solicitante según la regla vigente.
 
-Al abrir el correo en Docker Compose, el enlace esperado debe comenzar por:
+En Docker Compose el enlace esperado comienza por:
 
 ```text
 http://localhost:3000/email-action/...
@@ -175,26 +150,19 @@ http://localhost:3000/email-action/...
 
 ## Diagnóstico
 
-Si no llega el correo:
+Si no llega correo:
 
 ```bash
 docker compose logs backend --tail=200
 ```
 
-Buscar mensajes como:
-
-```text
-Email delivery failed
-Quotation voting email delivery failed
-```
-
-Si el correo llega pero el enlace responde `ERR_CONNECTION_REFUSED`, comparar el puerto del enlace con el modo de frontend activo:
+Si el enlace responde `ERR_CONNECTION_REFUSED`, comparar puerto del enlace con el frontend activo:
 
 ```text
 Docker Compose → localhost:3000
 Vite directo   → localhost:5173
 ```
 
-Si `EMAIL_MODE=console`, no habrá correo real: el mensaje aparecerá únicamente en los logs.
+Si `EMAIL_MODE=console`, no existe entrega real; el mensaje solo aparece en logs.
 
-Los correos de aprobación/votación pueden conservar actualmente el estado del workflow aunque falle el proveedor. En cambio, invitación inicial y cambio de Cargo son obligatorios y se tratan como parte de la operación IAM. La convergencia futura recomendada es una outbox/reintentos persistidos.
+Los correos de workflow pueden conservar actualmente el estado aunque falle el proveedor. Invitación inicial y cambio de Cargo son obligatorios. La convergencia futura recomendada es outbox/reintentos persistidos.
