@@ -5,9 +5,57 @@
 La clasificación de una solicitud de gasto se divide en dos dimensiones independientes:
 
 - **Área**: unidad organizacional que origina, utiliza o es responsable del gasto.
-- **Categoría**: naturaleza del bien o servicio que se está adquiriendo.
+- **Categoría**: naturaleza del bien o servicio adquirido.
 
-Esta separación permite usar la aplicación tanto en empresas como en PH sin introducir conceptos específicos de un solo dominio.
+Esta separación permite usar la aplicación en empresas, PH y otras organizaciones sin introducir conceptos específicos de un solo dominio.
+
+## Contrato canónico
+
+La solicitud usa de extremo a extremo:
+
+```text
+expense_area
+expense_category
+```
+
+Estos son los nombres canónicos de:
+
+- columnas físicas de `expenses`;
+- atributos ORM;
+- contratos Pydantic;
+- respuestas de API;
+- nuevo código frontend/backend;
+- documentación funcional.
+
+Los nombres:
+
+```text
+expense_type
+expense_subcategory
+```
+
+son **legacy** y solo pueden existir como aliases de compatibilidad transitoria. No deben volver a introducirse como contrato nuevo.
+
+## Migración 0008
+
+Alembic:
+
+```text
+20260819_0008_expense_area_category_columns.py
+```
+
+renombra en PostgreSQL:
+
+```text
+expenses.expense_type        → expenses.expense_area
+expenses.expense_subcategory → expenses.expense_category
+```
+
+y renombra el índice correspondiente de Área sin perder valores históricos.
+
+El downgrade existe para reversibilidad técnica, pero el estado funcional vigente usa `expense_area` / `expense_category`.
+
+No se debe hacer `alembic stamp` para fingir compatibilidad cuando la base física no coincide con el código activo.
 
 ## Área
 
@@ -20,7 +68,7 @@ Ejemplos:
 - Marketing
 - Recursos Humanos
 
-El Área responde principalmente a la pregunta: **¿qué parte de la organización está asociada con este gasto?**
+Pregunta principal: **¿qué parte de la organización está asociada con este gasto?**
 
 ## Categoría
 
@@ -34,13 +82,11 @@ Ejemplos:
 - Capacitación
 - Publicidad
 
-La Categoría responde principalmente a la pregunta: **¿qué clase de bien o servicio se está comprando?**
+Pregunta principal: **¿qué clase de bien o servicio se está comprando?**
 
 ## Relación Área ↔ Categoría
 
-Área y Categoría son catálogos independientes. Una misma categoría puede utilizarse en múltiples áreas.
-
-Ejemplo:
+Área y Categoría son catálogos independientes. Una misma Categoría puede utilizarse en múltiples Áreas.
 
 ```text
 Administración
@@ -52,39 +98,30 @@ IT
  ├─ Equipos
  ├─ Software / Licencias
  └─ Servicios / Consultoría
-
-Operaciones
- ├─ Equipos
- ├─ Insumos
- └─ Servicios / Consultoría
 ```
 
-No deben crearse tres categorías distintas llamadas `Equipos`. Debe existir una sola categoría lógica `Equipos` y relaciones configurables con las áreas en las que está habilitada.
+No se deben duplicar Categorías lógicas por Área. Se configura una relación N:M.
 
 ## Comportamiento funcional
 
 Al crear una solicitud:
 
-1. El usuario selecciona un **Área**.
-2. El sistema muestra las **Categorías** habilitadas para esa Área.
-3. El usuario selecciona una Categoría.
-4. La solicitud conserva ambos códigos para análisis histórico.
+1. el usuario selecciona un **Área**;
+2. el sistema muestra las **Categorías** habilitadas para esa Área;
+3. el usuario selecciona una Categoría;
+4. la solicitud conserva ambos valores para análisis histórico.
 
 Si posteriormente se desactiva una relación Área-Categoría, las solicitudes históricas no se modifican.
 
 ## Administración del catálogo
 
-La gestión de Áreas/Categorías está separada de la administración técnica del sistema.
-
-Permiso:
+Permiso de escritura:
 
 ```text
 areas:manage
 ```
 
-Un usuario con `areas:manage` puede crear/editar/activar/desactivar Áreas, administrar el catálogo de Categorías y las relaciones Área ↔ Categoría.
-
-Puede recibir ese permiso mediante:
+Puede llegar mediante:
 
 ```text
 Rol directo
@@ -93,23 +130,34 @@ Cargo → Rol
 Permiso directo
 ```
 
-El Administrador del sistema también posee `areas:manage` por política de `system_accounts`.
+El Administrador del sistema también posee `areas:manage` según la política de `system_accounts`.
 
-`config:manage` **no es necesario** para administrar el catálogo y queda reservado para administración técnica.
+`config:manage` no es necesario para administrar este catálogo.
 
-Nombres como Administración o Junta Directiva pueden ser Grupos/Cargos configurados por el cliente, pero el backend no los consulta para decidir acceso.
+`config:read` permite inspeccionar la configuración sin mutarla.
 
 ### Categorías por área
 
-La pantalla de configuración separa el catálogo maestro de Categorías de la asignación Área ↔ Categoría.
+La pantalla separa:
 
-- El **Maestro de Categorías** muestra categorías activas e inactivas para permitir reactivación y mantenimiento del catálogo.
-- La tarjeta **Categorías por área** muestra **únicamente categorías activas**.
-- Una categoría inactiva no aparece como opción asignable ni en el contador de la tarjeta de asignación.
-- Si una categoría ya estaba relacionada con un Área y luego se desactiva, la relación persistida no se elimina automáticamente; la categoría simplemente deja de mostrarse en la tarjeta de asignación mientras permanezca inactiva.
-- Para modificar nuevamente esa relación desde la UI, primero se reactiva la categoría desde el Maestro de Categorías.
+```text
+Maestro de Categorías
+→ activas + inactivas
+→ mantenimiento / reactivación
 
-Los cambios de asignación son explícitos y se guardan por fila. Marcar o desmarcar el checkbox solo modifica el estado local hasta pulsar **Guardar**.
+Categorías por área
+→ solo categorías activas
+→ asignación operativa
+```
+
+Desactivar una Categoría:
+
+- no elimina relaciones `expense_area_categories`;
+- no altera solicitudes históricas;
+- la retira temporalmente de la tarjeta de asignación;
+- permite reactivarla desde el Maestro.
+
+Los cambios de asignación son staged y se persisten únicamente al pulsar **Guardar** por fila.
 
 ## API canónica
 
@@ -125,54 +173,41 @@ POST   /api/areas/{id}/categories/{category_id}
 DELETE /api/areas/{id}/categories/{category_id}
 ```
 
-Las lecturas activas necesarias para clasificar solicitudes permanecen disponibles a usuarios autenticados. Las mutaciones y la consulta de elementos inactivos requieren `areas:manage`.
+Las lecturas activas necesarias para clasificar solicitudes permanecen disponibles a usuarios autenticados. Las mutaciones requieren `areas:manage`.
+
+## Persistencia de catálogos
+
+Catálogo global:
+
+```text
+expense_category_catalog
+```
+
+Relación configurable:
+
+```text
+expense_area_categories
+```
+
+Pueden existir tablas/routers legacy de clasificación durante la migración del MVP, pero no definen el contrato nuevo.
+
+## Frontend legacy
+
+`domain-normalization.js` y otros bridges pueden traducir temporalmente estructuras legacy hacia el contrato canónico. Esa capa es compatibilidad transitoria y debe retirarse cuando el shell principal esté completamente modularizado.
+
+Nuevo código no debe depender de `expense_type` / `expense_subcategory`.
 
 ## Reportes esperados
-
-Este modelo permite analizar:
 
 - gasto por Área;
 - gasto por Categoría;
 - gasto por Área × Categoría;
 - evolución mensual por Área;
 - evolución mensual por Categoría;
-- proveedores por Área o Categoría;
-- solicitudes aprobadas/rechazadas por Área o Categoría.
-
-## Compatibilidad histórica
-
-El MVP original almacenaba estos conceptos con nombres legacy:
-
-```text
-expense_type          → Área
-expense_subcategory   → Categoría
-expense_categories    → almacenamiento histórico de Áreas
-expense_subcategories → puente de compatibilidad Área-Categoría
-```
-
-Los nombres físicos legacy se mantienen temporalmente para no romper solicitudes existentes ni exigir una migración destructiva inmediata.
-
-El contrato funcional nuevo es siempre **Área + Categoría**.
-
-El catálogo global de categorías utiliza:
-
-```text
-expense_category_catalog
-```
-
-y las relaciones configurables utilizan:
-
-```text
-expense_area_categories
-```
-
-La tabla legacy `expense_subcategories` se mantiene temporalmente sincronizada como puente de compatibilidad con validaciones y datos históricos del MVP.
-
-El frontend legacy todavía traduce `/api/categories` hacia `/api/areas` mediante `domain-normalization.js`; es compatibilidad transitoria, no el contrato de dominio objetivo.
+- proveedores por Área/Categoría;
+- solicitudes aprobadas/rechazadas por Área/Categoría.
 
 ## Regla de diseño
-
-No utilizar `Subárea` ni `Subcategoría` para este nivel de clasificación.
 
 La jerarquía funcional vigente es:
 
@@ -180,12 +215,6 @@ La jerarquía funcional vigente es:
 Área + Categoría
 ```
 
-Una futura Subcategoría solo debe introducirse si existe una necesidad real de tercer nivel, por ejemplo:
+No usar Subárea ni Subcategoría para este nivel.
 
-```text
-Área: IT
-Categoría: Equipos
-Subcategoría: Laptops
-```
-
-Ese tercer nivel no forma parte del alcance actual.
+Una futura Subcategoría solo se introduce si existe una necesidad real de tercer nivel y mediante una nueva especificación/migración.
