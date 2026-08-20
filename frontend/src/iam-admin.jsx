@@ -176,7 +176,34 @@ function GroupsPanel({ groups, roles, users, reload, setError }) {
   const [selectedId, setSelectedId] = useState(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [draftRoleIds, setDraftRoleIds] = useState([]);
+  const [draftMemberIds, setDraftMemberIds] = useState([]);
+  const [savingAssignments, setSavingAssignments] = useState(false);
   const selected = groups.find((item) => item.id === selectedId) || null;
+
+  const normalizeIds = (values) => [...(values || [])].map(Number).sort((a, b) => a - b);
+  const groupDirty = useMemo(() => {
+    if (!selected) return false;
+    return (
+      JSON.stringify(normalizeIds(draftRoleIds)) !== JSON.stringify(normalizeIds(selected.role_ids))
+      || JSON.stringify(normalizeIds(draftMemberIds)) !== JSON.stringify(normalizeIds(selected.member_ids))
+    );
+  }, [draftRoleIds, draftMemberIds, selected]);
+
+  useEffect(() => {
+    if (selected) {
+      setDraftRoleIds([...(selected.role_ids || [])]);
+      setDraftMemberIds([...(selected.member_ids || [])]);
+    } else {
+      setDraftRoleIds([]);
+      setDraftMemberIds([]);
+    }
+  }, [selectedId, selected?.id, JSON.stringify(selected?.role_ids || []), JSON.stringify(selected?.member_ids || [])]);
+
+  const selectGroup = (groupId) => {
+    if (groupDirty && !window.confirm("Hay cambios sin guardar en este grupo. ¿Deseas descartarlos y continuar?")) return;
+    setSelectedId(groupId);
+  };
 
   const createGroup = async (event) => {
     event.preventDefault();
@@ -189,13 +216,47 @@ function GroupsPanel({ groups, roles, users, reload, setError }) {
     try { await iamApi(`/api/iam/groups/${selected.id}`, { method: "PATCH", body: JSON.stringify(payload) }); await reload(); }
     catch (error) { setError(error.message); }
   };
-  const toggleRole = async (roleId, checked) => {
-    try { await iamApi(`/api/iam/groups/${selected.id}/roles/${roleId}`, { method: checked ? "PUT" : "DELETE" }); await reload(); }
-    catch (error) { setError(error.message); }
+  const toggleDraftRole = (roleId, checked) => {
+    setDraftRoleIds((current) => checked
+      ? [...new Set([...current, roleId])]
+      : current.filter((item) => item !== roleId));
   };
-  const toggleMember = async (userId, checked) => {
-    try { await iamApi(`/api/iam/groups/${selected.id}/members/${userId}`, { method: checked ? "PUT" : "DELETE" }); await reload(); }
-    catch (error) { setError(error.message); }
+  const toggleDraftMember = (userId, checked) => {
+    setDraftMemberIds((current) => checked
+      ? [...new Set([...current, userId])]
+      : current.filter((item) => item !== userId));
+  };
+  const saveGroupAssignments = async () => {
+    if (!selected || !groupDirty || savingAssignments) return;
+    setSavingAssignments(true);
+    setError("");
+    try {
+      const savedRoles = new Set(selected.role_ids || []);
+      const nextRoles = new Set(draftRoleIds);
+      const savedMembers = new Set(selected.member_ids || []);
+      const nextMembers = new Set(draftMemberIds);
+      const changes = [];
+
+      nextRoles.forEach((roleId) => {
+        if (!savedRoles.has(roleId)) changes.push(iamApi(`/api/iam/groups/${selected.id}/roles/${roleId}`, { method: "PUT" }));
+      });
+      savedRoles.forEach((roleId) => {
+        if (!nextRoles.has(roleId)) changes.push(iamApi(`/api/iam/groups/${selected.id}/roles/${roleId}`, { method: "DELETE" }));
+      });
+      nextMembers.forEach((userId) => {
+        if (!savedMembers.has(userId)) changes.push(iamApi(`/api/iam/groups/${selected.id}/members/${userId}`, { method: "PUT" }));
+      });
+      savedMembers.forEach((userId) => {
+        if (!nextMembers.has(userId)) changes.push(iamApi(`/api/iam/groups/${selected.id}/members/${userId}`, { method: "DELETE" }));
+      });
+
+      await Promise.all(changes);
+      await reload();
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setSavingAssignments(false);
+    }
   };
 
   return (
@@ -208,15 +269,25 @@ function GroupsPanel({ groups, roles, users, reload, setError }) {
           <button className="iam-button primary">Crear grupo</button>
         </form>
         <div className="iam-section iam-list">
-          {groups.map((group) => <button key={group.id} className={`iam-list-item ${selectedId === group.id ? "selected" : ""}`} onClick={() => setSelectedId(group.id)}><span className="iam-list-main"><strong>{group.name}</strong><small>{group.member_ids.length} usuario(s) · {group.role_ids.length} rol(es)</small></span><span>{group.active ? "Activo" : "Inactivo"}</span></button>)}
+          {groups.map((group) => <button key={group.id} className={`iam-list-item ${selectedId === group.id ? "selected" : ""}`} onClick={() => selectGroup(group.id)}><span className="iam-list-main"><strong>{group.name}</strong><small>{group.member_ids.length} usuario(s) · {group.role_ids.length} rol(es)</small></span><span>{group.active ? "Activo" : "Inactivo"}</span></button>)}
         </div>
       </section>
       <section className="iam-card">
         {!selected ? <p className="iam-empty">Selecciona un grupo para administrar sus roles y miembros.</p> : <>
+          <span hidden data-unsaved={groupDirty ? "true" : "false"} />
           <div className="iam-toolbar"><div><h2>{selected.name}</h2><p className="iam-muted">{selected.description || "Sin descripción"}</p></div><button className="iam-button" onClick={() => patchGroup({ active: !selected.active })}>{selected.active ? "Inactivar" : "Activar"}</button></div>
-          <button className="iam-button" onClick={() => { const value = window.prompt("Nuevo nombre del grupo", selected.name); if (value?.trim()) patchGroup({ name: value.trim() }); }}>Renombrar</button>
-          <div className="iam-section"><h3>Roles heredados por el grupo</h3><CheckList items={roles.filter((item) => item.active && !item.system_managed)} selected={selected.role_ids} onToggle={toggleRole} render={(role) => <><strong>{role.name}</strong><small>{role.permission_codes.join(" · ")}</small></>} /></div>
-          <div className="iam-section"><h3>Miembros</h3><CheckList items={users.filter((item) => !item.is_system_account)} selected={selected.member_ids} onToggle={toggleMember} render={(user) => <><strong>{user.name}</strong><small>{user.email}</small></>} /></div>
+          <div className="iam-toolbar">
+            <button className="iam-button" onClick={() => { const value = window.prompt("Nuevo nombre del grupo", selected.name); if (value?.trim()) patchGroup({ name: value.trim() }); }}>Renombrar</button>
+            <button
+              className={`iam-button primary iam-persist-action ${groupDirty ? "pending" : ""}`}
+              disabled={!groupDirty || savingAssignments}
+              onClick={saveGroupAssignments}
+            >
+              {savingAssignments ? "Guardando..." : "Guardar cambios"}
+            </button>
+          </div>
+          <div className="iam-section"><h3>Roles heredados por el grupo</h3><CheckList items={roles.filter((item) => item.active && !item.system_managed)} selected={draftRoleIds} onToggle={toggleDraftRole} render={(role) => <><strong>{role.name}</strong><small>{role.permission_codes.join(" · ")}</small></>} /></div>
+          <div className="iam-section"><h3>Miembros</h3><CheckList items={users.filter((item) => !item.is_system_account)} selected={draftMemberIds} onToggle={toggleDraftMember} render={(user) => <><strong>{user.name}</strong><small>{user.email}</small></>} /></div>
         </>}
       </section>
     </div>
