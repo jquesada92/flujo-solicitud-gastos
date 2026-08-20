@@ -341,7 +341,7 @@ function PermissionsPanel({ permissions }) {
   return <section className="iam-card"><h2>Permisos del producto</h2><p className="iam-muted">Estas son capacidades atómicas implementadas por el producto. La organización configura cómo se combinan mediante roles y cómo esos roles se asignan a usuarios, grupos o cargos.</p><div className="iam-list">{permissions.map((permission) => <div className="iam-list-item" key={permission.code}><span className="iam-list-main"><strong>{permission.name}</strong><small>{permission.code}</small><small>{permission.description}</small></span><span>{permission.active ? "Activo" : "Inactivo"}</span></div>)}</div></section>;
 }
 
-function IamConsole({ onClose }) {
+function IamConsole() {
   const [tab, setTab] = useState("users");
   const [data, setData] = useState({ permissions: [], roles: [], groups: [], users: [], positions: [] });
   const [loading, setLoading] = useState(true);
@@ -358,8 +358,25 @@ function IamConsole({ onClose }) {
   };
 
   useEffect(() => { reload().catch((e) => setError(e.message)).finally(() => setLoading(false)); }, []);
-  if (loading) return <div className="iam-overlay"><div className="iam-loading">Cargando configuración de accesos…</div></div>;
-  return <div className="iam-overlay"><main className="iam-shell"><header className="iam-header"><div><p className="iam-eyebrow">CONFIGURACIÓN · ACCESOS</p><h1>Usuarios, grupos, cargos, roles y permisos</h1><p className="iam-muted">Los permisos efectivos pueden heredarse por grupo o por cargo, además de roles/permisos directos. La estructura y sus nombres son datos configurables.</p></div><div className="iam-actions"><button className="iam-button" onClick={() => reload().catch((e) => setError(e.message))}>Actualizar</button><button className="iam-button primary" onClick={onClose}>Volver</button></div></header>{error && <div className="iam-notice error">{error}</div>}<nav className="iam-tabs">{[["users","Usuarios"],["groups","Grupos"],["roles","Roles"],["permissions","Permisos"],["positions","Cargos"]].map(([value,label]) => <button className={tab === value ? "active" : ""} key={value} onClick={() => setTab(value)}>{label}</button>)}</nav>{tab === "users" && <UsersPanel {...data} reload={reload} setError={setError} />}{tab === "groups" && <GroupsPanel {...data} reload={reload} setError={setError} />}{tab === "roles" && <RolesPanel {...data} reload={reload} setError={setError} />}{tab === "permissions" && <PermissionsPanel permissions={data.permissions} />}{tab === "positions" && <PositionsPanel positions={data.positions} roles={data.roles} reload={reload} setError={setError} />}</main></div>;
+  useEffect(() => {
+    const topbar = document.querySelector(".topbar");
+    if (!topbar) return undefined;
+    const handleTopbarClick = (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const button = target?.closest("button");
+      if (!button || !topbar.contains(button)) return;
+      if (button.dataset.iamAccess === "true") return;
+      if (button.closest(".config-menu") && !button.closest(".config-menu-items")) return;
+      window.setTimeout(() => {
+        if (window.location.hash === "#access-management") window.location.hash = "";
+      }, 0);
+    };
+    topbar.addEventListener("click", handleTopbarClick);
+    return () => topbar.removeEventListener("click", handleTopbarClick);
+  }, []);
+
+  if (loading) return <div className="iam-overlay"><main className="iam-shell"><div className="iam-loading">Cargando configuración de accesos…</div></main></div>;
+  return <div className="iam-overlay"><main className="iam-shell"><header className="iam-header"><p className="iam-eyebrow">CONFIGURACIÓN · ACCESOS</p><h1>Usuarios, grupos, cargos, roles y permisos</h1><p className="iam-muted">Los permisos efectivos pueden heredarse por grupo o por cargo, además de roles/permisos directos. La estructura y sus nombres son datos configurables.</p></header>{error && <div className="iam-notice error">{error}</div>}<div className="iam-page-nav"><nav className="iam-tabs">{[["users","Usuarios"],["groups","Grupos"],["roles","Roles"],["permissions","Permisos"],["positions","Cargos"]].map(([value,label]) => <button className={tab === value ? "active" : ""} key={value} onClick={() => setTab(value)}>{label}</button>)}</nav><button className="iam-button iam-refresh" onClick={() => reload().catch((e) => setError(e.message))}>↻ Actualizar</button></div>{tab === "users" && <UsersPanel {...data} reload={reload} setError={setError} />}{tab === "groups" && <GroupsPanel {...data} reload={reload} setError={setError} />}{tab === "roles" && <RolesPanel {...data} reload={reload} setError={setError} />}{tab === "permissions" && <PermissionsPanel permissions={data.permissions} />}{tab === "positions" && <PositionsPanel positions={data.positions} roles={data.roles} reload={reload} setError={setError} />}</main></div>;
 }
 
 let mounted = false;
@@ -368,7 +385,7 @@ function renderForHash() {
   const active = window.location.hash === "#access-management";
   if (active && !mounted) {
     const host = document.createElement("div"); host.id = "iam-admin-root"; document.body.appendChild(host);
-    root = createRoot(host); root.render(<IamConsole onClose={() => { window.location.hash = ""; }} />); mounted = true;
+    root = createRoot(host); root.render(<IamConsole />); mounted = true;
   } else if (!active && mounted) {
     root?.unmount(); document.getElementById("iam-admin-root")?.remove(); root = null; mounted = false;
   }
