@@ -12,7 +12,8 @@ class IamUserCreate(BaseModel):
     email: EmailStr
     phone: str | None = Field(default=None, max_length=30)
     active: bool = True
-    group_ids: list[int] = Field(default_factory=list, max_length=100)
+    # Compatibility input only. Membership is derived from role_ids.
+    group_ids: list[int] | None = Field(default=None, max_length=100)
     role_ids: list[int] = Field(default_factory=list, max_length=100)
     # Compatibility field only. Direct user permissions are not allowed.
     direct_permission_codes: list[str] = Field(default_factory=list, max_length=100)
@@ -41,6 +42,7 @@ class IamUserUpdate(BaseModel):
     email: EmailStr | None = None
     phone: str | None = Field(default=None, max_length=30)
     active: bool | None = None
+    # Compatibility input only. Membership changes through role_ids.
     group_ids: list[int] | None = Field(default=None, max_length=100)
     role_ids: list[int] | None = Field(default=None, max_length=100)
     direct_permission_codes: list[str] | None = Field(default=None, max_length=100)
@@ -74,6 +76,7 @@ class IamUserOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     is_system_account: bool = False
+    # Derived from each assigned role's group.
     group_ids: list[int] = Field(default_factory=list)
     role_ids: list[int] = Field(default_factory=list)
     position_ids: list[int] = Field(default_factory=list)
