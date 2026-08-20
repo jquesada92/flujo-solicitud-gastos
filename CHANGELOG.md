@@ -1,24 +1,41 @@
 # Changelog
 
-## 2026-08-20 — Feature 012: Neon `ph_torre_delta` aislado por ambiente
+## 2026-08-20 — Feature 012: base limpia `ph_torre_delta.administracion`
 
 ### Added
-- Feature 012 con `spec.md`, `plan.md` y checklist de aceptación para aislamiento de schema Neon.
-- contrato central `DATABASE_SCHEMA=ph_torre_delta` para SQLAlchemy/Alembic.
+- `DATABASE_SCHEMA=administracion` como contrato central de SQLAlchemy y Alembic.
+- baseline única `20260820_0001_initial_schema.py` con `down_revision = None`.
+- validación de `DATABASE_SCHEMA` para impedir `public`, `information_schema`, `pg_*` e identificadores inseguros.
+- `test_database_schema_contract.py` para proteger la nueva arquitectura.
 
 ### Changed
-- Constitución actualizada a **2.10.0**.
-- topología canónica de persistencia: `main → PROD`, `dev → DEV`, base `ph_torre_delta`, schema `ph_torre_delta`.
-- DEV y PROD se definen como instalaciones limpias creadas desde cero mediante Alembic.
-- `ph_torre_delta.alembic_version` debe ser la única tabla de versión usada por la instalación vigente.
+- Constitución **2.10.0** queda definida por base `ph_torre_delta` + schema `administracion`.
+- SQLAlchemy usa metadata schema-aware en PostgreSQL y restringe `search_path` al schema configurado.
+- Alembic crea/verifica `administracion`, limita discovery al schema configurado y almacena allí `alembic_version`.
+- DEV y PROD nacen desde cero con la misma baseline; cada uno conserva su propia `DATABASE_URL`.
+- `expense_area` y `expense_category` se crean directamente con sus nombres canónicos.
+- ENV examples se alinean con `ph_torre_delta` y `DATABASE_SCHEMA=administracion`.
 
-### Prohibited
-- no mover, copiar, clonar ni renombrar tablas desde `flujos_de_aprobacion`, `public` u otros schemas legacy.
-- no usar `public` como schema de aplicación.
-- no usar `alembic stamp` para reutilizar estado Alembic de schemas previos.
+### Removed
+- revisiones Alembic operativas `0000 → 0008` de la rama vigente.
+- `backend/migrations/20260817_remove_property_domain.sql`.
+- cualquier lógica de migración/backfill/importación de datos legacy como parte de la instalación nueva.
+
+### Safety
+- la baseline aborta si encuentra tablas de aplicación preexistentes en el schema destino.
+- no se mueven, copian, clonan ni renombran tablas anteriores.
+- no se usa `alembic stamp` para adoptar una estructura previa.
+- `public` no es schema de aplicación ni fallback.
+
+### IAM bootstrap
+- permisos activos iniciales: `requests:read`, `requests:create`, `requests:approve`, `areas:manage`, `config:read`, `config:manage`.
+- `requests:close` se conserva solo como registro legacy inactivo.
+- roles iniciales: `system-administrator`, `area-manager`, `configuration-viewer`.
 
 ### Documentation
-- Constitución, Feature 012, README, prompt maestro, HISTORY y CHANGELOG quedan sincronizados.
+- Constitución, Feature 012, README, prompt maestro, HISTORY y CHANGELOG sincronizados con el reset físico.
+
+> Las referencias a revisiones `0000 → 0008` en entradas anteriores describen la evolución histórica previa al reset del 20 de agosto de 2026; ya no forman parte de la cadena Alembic vigente.
 
 ---
 
@@ -51,19 +68,17 @@
 ### Changed
 - el contrato nuevo de solicitud, API, ORM y persistencia usa `expense_area` y `expense_category`.
 - `expense_type` / `expense_subcategory` quedan únicamente como aliases legacy de compatibilidad.
-- la rama de Feature 011 se sincroniza con `main` antes de continuar.
 
-### Migrations
-- Alembic `20260819_0008_expense_area_category_columns.py` renombra las columnas físicas de `expenses` preservando datos existentes.
-- cadena vigente: `0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007 → 0008`.
-- una revisión Alembic ausente debe resolverse sincronizando la cadena correcta, no ocultándose con `stamp`.
+### Historical migration
+- en la cadena anterior, `20260819_0008_expense_area_category_columns.py` renombraba las columnas físicas preservando datos.
+- esa revisión quedó retirada con el reset de Feature 012; la baseline nueva crea directamente los nombres canónicos.
 
 ---
 
 ## 2026-08-19 — Configuración de solo lectura (`config:read`)
 
 ### Added
-- permiso `config:read` y Rol neutral **Visor de configuración** mediante migración `0007`.
+- permiso `config:read` y Rol neutral **Visor de configuración**.
 
 ### Changed
 - `config:read` permite consultar Configuración sin conceder mutaciones.
@@ -125,7 +140,6 @@
 - `areas:manage`.
 - Rol neutral **Gestor de áreas**.
 - `UserOut.is_system_account`.
-- Alembic `0006`.
 
 ### Changed
 - `config:manage` pasa a system-only.
@@ -145,7 +159,6 @@
 - `closure_service.py` y API GET/PUT/DELETE por solicitud.
 - `ExpenseOut.can_close` y `can_delegate_close`.
 - `frontend/src/closure-delegation.jsx`.
-- Alembic `0005`.
 - Feature 008 y pruebas asociadas.
 
 ### Changed
@@ -181,7 +194,6 @@ OR delegado activo
 ### Added
 - `position_roles`, API/UI de Roles heredados por Cargo.
 - `users_with_permission()` reconoce Cargo→Rol.
-- migración `0004` importa configuración legacy a IAM.
 - Feature 006.
 
 ### Changed
@@ -215,7 +227,7 @@ OR delegado activo
 ## 2026-08-17 — Corrección MULTI_QUOTE preserva tipo y evidencia
 
 ### Added
-- `expense-form.jsx`, `revision_actions.py`, migración `0003`.
+- `expense-form.jsx`, `revision_actions.py`.
 
 ### Fixed
 - `SIMPLE → SIMPLE` y `MULTI_QUOTE → MULTI_QUOTE` durante corrección.
@@ -237,7 +249,7 @@ OR delegado activo
 ## 2026-08-17 — IAM configurable + FastAPI hardening
 
 ### Added
-- Pydantic Settings, Argon2/PBKDF2 compatibility, application factory, Alembic `0000/0001/0002`, system accounts, consola IAM y TestClient.
+- Pydantic Settings, Argon2/PBKDF2 compatibility, application factory, Alembic, system accounts, consola IAM y TestClient.
 
 ### Changed
 - autorización runtime por permisos efectivos/políticas.
@@ -266,7 +278,8 @@ Permanecen temporalmente sin autoridad o arquitectura objetivo:
 - `requests:close` inactivo;
 - vistas internas `people` / `organization` no navegables;
 - `expense_type` / `expense_subcategory` como aliases transitorios;
-- `main.jsx`, `domain-normalization.js` y bridges Vite;
-- schemas/tablas legacy fuera de `ph_torre_delta`, sin autoridad runtime.
+- `main.jsx`, `domain-normalization.js` y bridges Vite.
+
+La compatibilidad de código no implica conservar una base legacy: la persistencia vigente nace de `20260820_0001` en `ph_torre_delta.administracion`.
 
 Pendientes separados: fórmula completa de mayoría APPROVED/REJECTED, empate MULTI_QUOTE, edición estructural de opciones y outbox/retry persistente.
