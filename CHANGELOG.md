@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-19 — Consola de Accesos integrada al shell principal
+
+### Changed
+- **Configuración → Accesos** deja de cubrir la barra superior estándar y conserva visible la navegación principal del producto.
+- navegar desde Inicio/Solicitudes/Facturas/Configuración cierra la consola IAM y respeta la navegación normal de la aplicación.
+- se retira el botón independiente **Volver**; la salida se realiza mediante la navegación estándar.
+- **Actualizar** pasa a integrarse con las pestañas internas de Usuarios/Grupos/Roles/Permisos/Cargos.
+- ancho, espaciado, jerarquía del encabezado y tarjetas de IAM se alinean con el layout principal.
+
+### Testing
+- `test_frontend_configuration_access.py` protege visibilidad de la topbar, cierre por navegación estándar, ausencia de **Volver** y ubicación integrada de **Actualizar**.
+
+---
+
 ## 2026-08-19 — Asignación Área-Categoría muestra solo categorías activas
 
 ### Changed
@@ -75,7 +89,7 @@
 
 ### Migrations
 - Cadena actual: `0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006`.
-- `0006` crea/activa `areas:manage`, crea el Rol neutral y actualiza la descripción de `config:manage` como administración técnica.
+- `0006` crea/activa `areas:manage`, crea el Rol neutral y actualiza la descripción técnica de `config:manage` como administración técnica.
 
 ### Testing
 - usuario ordinario con `areas:manage` puede administrar Áreas y sigue bloqueado de IAM técnico.
@@ -219,7 +233,7 @@
 ## 2026-08-17 — IAM configurable + FastAPI hardening
 
 ### Added
-- Pydantic Settings, Argon2, application factory, Alembic `0000/0001/0002`, system accounts, consola IAM, TestClient y hardening Docker.
+- Pydantic Settings, Argon2 con compatibilidad PBKDF2, application factory, Alembic `0000/0001/0002`, system accounts, consola IAM, TestClient y hardening Docker.
 
 ### Changed
 - autorización runtime por permisos efectivos/políticas, no `UserRole`/`can_*`.
