@@ -1,7 +1,7 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine, pool
 
 from app.core.config import get_settings
 from app.core.database import Base
@@ -18,8 +18,22 @@ settings = get_settings()
 database_url = settings.database_url
 if database_url.startswith('postgresql://'):
     database_url = database_url.replace('postgresql://', 'postgresql+psycopg://', 1)
+
+is_postgresql = database_url.startswith('postgresql+')
+database_schema = settings.database_schema if is_postgresql else None
 config.set_main_option('sqlalchemy.url', database_url)
+config.attributes['database_schema'] = database_schema
 target_metadata = Base.metadata
+
+
+def include_name(name, type_, parent_names):
+    """Restrict Alembic discovery to the configured application schema."""
+    if not is_postgresql:
+        return True
+    if type_ == 'schema':
+        return name in {None, database_schema}
+    schema_name = parent_names.get('schema_name') if parent_names else None
+    return schema_name in {None, database_schema}
 
 
 def run_migrations_offline() -> None:
@@ -29,19 +43,43 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={'paramstyle': 'named'},
         compare_type=True,
+        include_schemas=is_postgresql,
+        include_name=include_name,
+        version_table_schema=database_schema,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def run_migrations_online() -> None:
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix='sqlalchemy.',
+    connect_args: dict[str, object] = {}
+    if is_postgresql and database_schema:
+        connect_args['options'] = f'-csearch_path={database_schema}'
+
+    connectable = create_engine(
+        database_url,
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
+
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+        if is_postgresql and database_schema:
+            quoted_schema = connection.dialect.identifier_preparer.quote(database_schema)
+            connection.exec_driver_sql(f'CREATE SCHEMA IF NOT EXISTS {quoted_schema}')
+            connection.commit()
+            connection.exec_driver_sql(f'SET search_path TO {quoted_schema}')
+            # Alembic/SQLAlchemy use this value when comparing unqualified
+            # objects with the target metadata during autogeneration.
+            connection.dialect.default_schema_name = database_schema
+
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+            include_schemas=is_postgresql,
+            include_name=include_name,
+            version_table_schema=database_schema,
+        )
         with context.begin_transaction():
             context.run_migrations()
 
