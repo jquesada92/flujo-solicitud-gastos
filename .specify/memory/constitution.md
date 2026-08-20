@@ -1,12 +1,12 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.9.0  
-**Vigente desde:** 2026-08-19
+**Versión:** 2.10.0  
+**Vigente desde:** 2026-08-20
 
 ## 1. Evolucionar el producto existente
 
-El producto debe evolucionar sobre el repositorio actual. Se reutiliza código correcto y se migra o reemplaza únicamente lo que contradiga esta Constitución, las especificaciones vigentes o los criterios de aceptación.
+El producto debe evolucionar sobre el repositorio actual. Se reutiliza código correcto y se reemplaza únicamente lo que contradiga esta Constitución, las especificaciones vigentes o los criterios de aceptación.
 
 La documentación es parte del entregable. Un cambio funcional, técnico o de seguridad no está completo si deja Constitución, Spec-Kit, README, prompt maestro, documentación funcional, HISTORY o CHANGELOG desalineados.
 
@@ -54,9 +54,7 @@ expense_category
 
 `expense_type` y `expense_subcategory` son nombres legacy de compatibilidad y no deben reintroducirse como contrato nuevo.
 
-Alembic `20260819_0008_expense_area_category_columns.py` renombra físicamente las columnas de `expenses` a `expense_area` y `expense_category`, preservando los datos existentes.
-
-La cadena vigente debe contener una revisión disponible para la versión almacenada por PostgreSQL. No se debe hacer `stamp` para ocultar una discrepancia de esquema.
+La baseline limpia `20260820_0001_initial_schema.py` crea físicamente `expense_area` y `expense_category` desde el inicio. No existe una migración vigente que renombre columnas antiguas ni se preservan filas históricas de una base anterior.
 
 ## 5. IAM configurable: permisos sobre nombres
 
@@ -99,7 +97,7 @@ config:read
 config:manage   # system-only
 ```
 
-`requests:close` puede permanecer físicamente como registro legacy inactivo, pero no autoriza cierre, factura ni delegación.
+`requests:close` puede permanecer físicamente como registro legacy **inactivo**, pero no autoriza cierre, factura ni delegación.
 
 Para un usuario activo ordinario:
 
@@ -113,7 +111,7 @@ effective_permissions =
   - {config:manage}
 ```
 
-`requests:read` es baseline no revocable. `config:manage` nunca se vuelve efectivo para un usuario ordinario aunque exista una asignación legacy/directa/heredada.
+`requests:read` es baseline no revocable. `config:manage` nunca se vuelve efectivo para un usuario ordinario aunque exista una asignación directa o heredada.
 
 ### 5.1 `config:read`
 
@@ -129,7 +127,7 @@ Un actor con `config:read` puede inspeccionar Accesos, Áreas, Reglas y Auditor�
 
 `areas:manage` sí es configurable por Rol/Grupo/Cargo/usuario y gobierna mutaciones del catálogo Área + Categoría.
 
-Alembic `0006` crea el Rol neutral `Gestor de áreas`; no debe asignarse automáticamente por nombre de Grupo/Cargo.
+La baseline inicial crea el Rol neutral `Gestor de áreas`, pero no lo asigna a ningún Cargo, Grupo o Usuario por nombre.
 
 ### 5.4 Prohibiciones
 
@@ -145,7 +143,7 @@ No autorizar por:
 
 ## 6. Accesos es la única superficie administrativa de identidades
 
-**Usuarios/Personas y Organigrama dejan de ser pantallas independientes de Configuración.**
+**Usuarios/Personas y Organigrama no son pantallas independientes de Configuración.**
 
 La navegación objetivo del Administrador del sistema es:
 
@@ -172,7 +170,7 @@ Configuración
 
 No se debe exigir una pantalla separada de Usuarios u Organigrama para completar ninguna de esas operaciones.
 
-Código legacy de `people` / `organization` puede permanecer temporalmente como deuda de migración, pero no aparece en navegación normal ni vuelve a ser fuente de verdad.
+Código legacy de `people` / `organization` puede permanecer temporalmente como deuda de migración de frontend, pero no aparece en navegación normal ni vuelve a ser fuente de verdad.
 
 ## 7. Fronteras de Configuración
 
@@ -224,9 +222,7 @@ Salir
 
 Al seleccionar una pantalla distinta de Accesos, el hash `#access-management` debe retirarse y la navegación continuar **en el mismo clic**.
 
-La regla también aplica si el destino ya era la pestaña React subyacente. Ejemplo: Accesos se abrió desde Inicio y el usuario vuelve a pulsar Inicio.
-
-Abrir/cerrar solo el dropdown **Configuración** no abandona Accesos; seleccionar una opción navegable dentro del dropdown sí.
+La regla también aplica si el destino ya era la pestaña React subyacente. Abrir/cerrar solo el dropdown **Configuración** no abandona Accesos; seleccionar una opción navegable dentro del dropdown sí.
 
 Mientras exista la integración legacy, `frontend/src/access-navigation-bridge.js` es el bridge dedicado y se carga antes de `main.jsx`.
 
@@ -479,7 +475,40 @@ Cuando cambia realmente `position_ids`, se recalculan permisos efectivos y se en
 
 Las fuentes de verdad son `UserPosition → Position` y `effective_permission_codes()`.
 
-## 20. Arquitectura FastAPI y migraciones
+## 20. Persistencia Neon y baseline limpia
+
+La persistencia vigente usa una base nueva y un schema dedicado:
+
+```text
+DEV
+DATABASE_URL  → Neon / database ph_torre_delta
+DATABASE_SCHEMA=administracion
+
+PROD / Render
+DATABASE_URL  → Neon / database ph_torre_delta
+DATABASE_SCHEMA=administracion
+```
+
+Reglas constitucionales:
+
+1. toda tabla de aplicación pertenece a `administracion`;
+2. índices, constraints, secuencias, ENUMs, funciones/triggers propios y `alembic_version` pertenecen al mismo schema;
+3. `public` no es schema de aplicación ni fallback;
+4. SQLAlchemy resuelve el schema centralmente mediante Settings/metadata y fuerza `search_path` al schema configurado;
+5. Alembic limita discovery/versionado al schema configurado;
+6. la historia física anterior `0000 → 0008` queda retirada de la rama vigente;
+7. la nueva historia comienza en `20260820_0001_initial_schema.py` con `down_revision = None`;
+8. la baseline crea el modelo actual directamente, sin copiar, mover, renombrar ni backfillear estructuras/datos previos;
+9. la baseline debe abortar si encuentra tablas preexistentes en el schema destino;
+10. no se usa `alembic stamp` para adoptar una estructura anterior;
+11. DEV y PROD nacen de la misma baseline y revisiones futuras, aunque tengan `DATABASE_URL` distintas;
+12. una vez desplegada la baseline en un ambiente persistente, no se reescribe: cualquier cambio posterior crea una nueva revisión Alembic.
+
+Los schemas o bases anteriores no son fuente de verdad y no se consultan desde runtime. Su eliminación, si se decide, es una operación destructiva separada.
+
+Feature normativa: `specs/012-neon-schema-isolation/`.
+
+## 21. Arquitectura FastAPI y evolución de base
 
 - `APIRouter` por dominio/capacidad;
 - modelos SQLAlchemy fuera de routers;
@@ -490,16 +519,14 @@ Las fuentes de verdad son `UserPosition → Position` y `effective_permission_co
 - `lifespan` sin migraciones de esquema;
 - Alembic antes de levantar ASGI;
 - response models explícitos;
-- pruebas HTTP para autorización y contratos críticos.
+- pruebas HTTP para autorización y contratos críticos;
+- schema PostgreSQL resuelto centralmente mediante Settings/SQLAlchemy/Alembic.
 
-Cadena vigente:
+Historia vigente:
 
 ```text
-0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007 → 0008
+20260820_0001_initial_schema
 ```
-
-`0007` incorpora `config:read`.  
-`0008` alinea columnas físicas de solicitudes a `expense_area` / `expense_category`.
 
 Contrato de arranque:
 
@@ -509,9 +536,11 @@ python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
 
-## 21. Compatibilidad y deuda explícita
+En una instalación limpia, `alembic upgrade head` crea el modelo actual bajo `administracion`; no migra datos antiguos.
 
-Pueden permanecer temporalmente:
+## 22. Compatibilidad y deuda explícita
+
+Pueden permanecer temporalmente en código mientras se retiran de forma controlada:
 
 - `UserRole`;
 - flags `can_*` legacy;
@@ -521,9 +550,9 @@ Pueden permanecer temporalmente:
 - vistas internas `people` / `organization` no navegables;
 - `main.jsx`, `domain-normalization.js` y bridges Vite.
 
-Esa compatibilidad no es autoridad runtime ni arquitectura objetivo.
+Esa compatibilidad no autoriza runtime ni implica conservar una base anterior. La nueva base se construye exclusivamente desde la baseline vigente.
 
-## 22. Definition of Done
+## 23. Definition of Done
 
 Antes de considerar terminado un cambio relevante:
 
@@ -533,9 +562,12 @@ Antes de considerar terminado un cambio relevante:
 4. actualizar `PROMPT_RECONSTRUCCION.md`;
 5. actualizar documentación afectada en `docs/`;
 6. actualizar `docs/HISTORY.md` y `CHANGELOG.md`;
-7. verificar migraciones (`alembic heads`, `alembic current`, `alembic upgrade head` cuando aplique);
+7. verificar `alembic heads`, `alembic current` y `alembic upgrade head` cuando aplique;
 8. ejecutar tests backend relevantes;
 9. ejecutar `npm run build`;
-10. validar manualmente UX crítica cuando exista un bridge o integración legacy.
+10. validar manualmente UX crítica cuando exista un bridge o integración legacy;
+11. para cambios de persistencia, validar con `information_schema` que las tablas de aplicación y `alembic_version` estén bajo `administracion` y que no se hayan creado tablas de aplicación en `public`.
+
+Para Feature 012, DEV y PROD deben producir la misma estructura física desde `20260820_0001` sin migrar datos anteriores.
 
 Para Feature 011, la validación manual debe incluir navegación desde Accesos hacia Inicio, Solicitudes, Facturas, Auditoría, otra opción de Configuración y Salir.

@@ -86,19 +86,19 @@ class ExpenseAreaCategoryContractTests(unittest.TestCase):
         self.assertNotIn("'expense_type':", source)
         self.assertNotIn("'expense_subcategory':", source)
 
-    def test_database_migration_renames_columns_in_place(self):
+    def test_clean_baseline_creates_canonical_columns_directly(self):
         migration = (
             REPO_ROOT
             / 'backend'
             / 'alembic'
             / 'versions'
-            / '20260819_0008_expense_area_category_columns.py'
+            / '20260820_0001_initial_schema.py'
         ).read_text(encoding='utf-8')
-        self.assertIn("'expense_type', new_column_name='expense_area'", migration)
-        self.assertIn("'expense_subcategory', new_column_name='expense_category'", migration)
-        self.assertIn('ix_expenses_expense_area', migration)
-        self.assertIn("'expense_category', new_column_name='expense_subcategory'", migration)
-        self.assertIn("'expense_area', new_column_name='expense_type'", migration)
+        self.assertIn("sa.Column('expense_area', sa.String(80), nullable=False, index=True)", migration)
+        self.assertIn("sa.Column('expense_category', sa.String(80), nullable=True)", migration)
+        self.assertNotIn("new_column_name='expense_area'", migration)
+        self.assertNotIn("new_column_name='expense_category'", migration)
+        self.assertIn('no legacy table migration, data copy, rename, backfill', migration)
 
 
 if __name__ == '__main__':
