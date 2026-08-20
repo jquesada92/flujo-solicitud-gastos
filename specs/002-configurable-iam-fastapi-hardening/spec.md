@@ -1,248 +1,284 @@
 # Especificación funcional — IAM configurable y hardening FastAPI
 
 **Feature:** 002-configurable-iam-fastapi-hardening  
-**Estado:** Implementación en PR #6  
-**Fecha:** 2026-08-17  
-**Constitución vigente:** 2.3.2
+**Constitución vigente:** 2.9.0  
+**Estado:** Implementada y evolucionada por Features 005–011.
 
 ## Objetivo
 
-Eliminar la autorización basada en roles/cargos hardcodeados y convertir la administración de acceso en una capacidad configurable desde la interfaz gráfica, manteniendo el backend FastAPI alineado con prácticas recomendadas de modularidad, configuración, seguridad, testing, ciclo de vida y portabilidad de despliegue.
+Mantener autorización configurable desde base de datos, sin roles/cargos/nombres hardcodeados, y un backend FastAPI modular, seguro, testeable y portable.
 
-## Problema
+## Modelo IAM vigente
 
-El MVP mezclaba tres conceptos distintos:
+```text
+Usuario → Grupo ─────────→ Rol → Permiso
+       ↘ Cargo/Posición ─→ Rol → Permiso
+       ↘ Rol directo ─────────→ Permiso
+       ↘ Permiso directo
+       ↘ baseline requests:read
+       ↘ capacidades/delegaciones por recurso
+```
 
-- rol técnico (`ADMIN`, `REQUESTER`, `APPROVER`, `VIEWER`);
-- cargo organizacional (`PRESIDENTE`, `TESORERO`, etc.);
-- permiso (`can_request`, `can_approve`, etc.).
+Persistencia:
 
-Esto impedía reutilizar el producto en organizaciones con estructuras diferentes y otorgaba privilegios implícitos al administrador técnico.
+```text
+permissions
+roles
+role_permissions
+user_groups
+group_members
+group_roles
+user_role_assignments
+user_permissions
+positions
+user_positions
+position_roles
+system_accounts
+```
 
-## Historias de usuario
-
-### US-001 — Administrar grupos
-
-Como administrador de configuración quiero crear, renombrar, activar/inactivar grupos y administrar sus miembros para representar la estructura de mi organización sin solicitar cambios de código.
-
-### US-002 — Administrar roles
-
-Como administrador de configuración quiero crear roles y seleccionar sus permisos para reutilizar combinaciones de acceso entre grupos y usuarios.
-
-### US-003 — Heredar permisos por grupo
-
-Como administrador de configuración quiero asignar uno o más roles a un grupo para que sus miembros reciban automáticamente los permisos correspondientes.
-
-### US-004 — Excepciones individuales
-
-Como administrador de configuración quiero asignar roles o permisos adicionales directamente a un usuario para cubrir excepciones que no justifican crear un grupo nuevo.
-
-### US-005 — Administrar cargos
-
-Como administrador de configuración quiero crear y asignar cargos/posiciones como metadatos organizacionales sin que esos cargos otorguen permisos automáticamente.
-
-### US-006 — Ver acceso efectivo
-
-Como administrador de configuración quiero ver los permisos efectivos de un usuario y de dónde provienen para auditar y explicar su acceso.
-
-### US-007 — Cuenta técnica segregada en producción
-
-Como propietario técnico del sistema quiero que mi cuenta técnica en producción pueda administrar configuración y consultar, pero no crear, aprobar ni cerrar solicitudes, para mantener segregación de funciones.
-
-### US-008 — Estructura empresarial variable
-
-Como cliente empresarial quiero crear grupos, roles y cargos con nombres y combinaciones distintas a las del PH sin modificar ni desplegar backend/frontend.
-
-### US-009 — Seguridad inmediata
-
-Como administrador quiero que una asignación o retiro de permisos cambie la autorización efectiva sin reiniciar la aplicación ni volver a generar código.
-
-### US-010 — Backend mantenible
-
-Como equipo de desarrollo quiero configuración centralizada, migraciones versionadas fuera del lifespan, tests HTTP reales y separación de routers/modelos/schemas/servicios para reducir errores al escalar el producto.
-
-### US-011 — Ejecución local portable
-
-Como desarrollador en Windows quiero poder construir y ejecutar los contenedores Linux sin que los finales de línea CRLF rompan los scripts de entrada ni oculten el error real del backend detrás de un fallo de Nginx.
-
-### US-012 — Bootstrap importable
-
-Como desarrollador u operador quiero que el bootstrap técnico se ejecute con una raíz de imports estable para que pueda importar `app` tanto en desarrollo local como dentro de Docker sin depender de cómo Python calcule `sys.path` para un archivo ejecutado por ruta.
-
-### US-013 — Cuenta técnica de pruebas con acceso completo
-
-Como propietario técnico del producto quiero usar la cuenta **Administrador del sistema** para probar cualquier funcionalidad en local, dev, test, staging o preview, sin tener que crear usuarios auxiliares solo para validar crear, aprobar, votar, cargar factura o cerrar solicitudes.
-
-## Permisos atómicos iniciales
+## Permisos vigentes
 
 | Código | Capacidad |
 | --- | --- |
-| `requests:read` | Consultar solicitudes y documentos autorizados |
-| `requests:create` | Crear/corregir solicitudes y cargar sus soportes |
-| `requests:approve` | Participar en votaciones y decisiones de aprobación |
-| `requests:close` | Subir/reemplazar factura y cerrar una solicitud aprobada |
-| `config:manage` | Administrar configuración organizacional y accesos |
+| `requests:read` | Seguimiento universal; baseline para usuarios activos |
+| `requests:create` | Crear nuevas solicitudes |
+| `requests:approve` | Aprobar, rechazar, votar y enviar a revisión cuando corresponda |
+| `areas:manage` | Administrar Área + Categoría |
+| `config:read` | Consultar Configuración en modo solo lectura |
+| `config:manage` | Administración técnica system-only |
 
-Los permisos atómicos son capacidades implementadas por el producto. La interfaz no inventa códigos arbitrarios; permite combinar las capacidades existentes.
+`requests:close` es un registro legacy inactivo. **No** autoriza cierre/factura.
 
-## Resolución de acceso de usuarios operativos
+## Resolución de acceso
+
+Para usuario activo ordinario:
 
 ```text
-effective_permissions(user) =
-    direct_user_permissions
+effective_permissions =
+    {requests:read}
+  ∪ direct_user_permissions
   ∪ direct_role_permissions
   ∪ group_role_permissions
+  ∪ position_role_permissions
+  - {config:manage}
 ```
 
-La ausencia de permiso significa DENY. Los cargos/posiciones no participan en esta fórmula.
+La ausencia de un permiso mutable produce DENY.
+
+`config:manage` solo es efectivo para cuentas persistidas en `system_accounts`.
+
+## Cargo/Posición
+
+La afirmación inicial de Feature 002 de que Cargo era solo metadata fue evolucionada por Feature 006.
+
+Estado vigente:
+
+```text
+Cargo/Posición → Rol → Permiso
+```
+
+El nombre del Cargo nunca autoriza. Solo importan relaciones persistidas.
+
+## Configuración gráfica
+
+La consola canónica es:
+
+```text
+Configuración → Accesos
+```
+
+Feature 011 consolidó Usuarios/Personas y Organigrama dentro de Accesos.
+
+Accesos permite:
+
+- crear/activar/inactivar Usuarios;
+- crear/editar Grupos;
+- administrar miembros;
+- crear/editar Roles;
+- asignar Permisos a Roles;
+- crear/editar Cargos/Posiciones;
+- asignar Roles a Grupos y Cargos;
+- asignar Grupos/Cargos/Roles/Permisos a Usuarios;
+- visualizar permisos efectivos y fuentes.
+
+Un actor con `config:read` reutiliza esta experiencia en modo solo lectura.
 
 ## Política de cuenta técnica por ambiente
 
-Una cuenta marcada en `system_accounts` como `TECHNICAL_ADMIN` utiliza una política ambiental explícita.
+Una cuenta `TECHNICAL_ADMIN` se identifica por `system_accounts`.
 
-### `ENVIRONMENT=production`
+### Producción
 
-Permisos efectivos máximos:
+Permisos IAM máximos actuales:
 
 ```text
-config:manage
 requests:read
+areas:manage
+config:read
+config:manage
 ```
 
-La cuenta técnica:
+No puede crear solicitudes ni participar en aprobación/votación.
 
-- no puede crear solicitudes;
-- no puede aprobar ni votar;
-- no puede subir/reemplazar factura ni cerrar;
-- no entra en poblaciones financieras aunque reciba por error un rol/grupo/permiso financiero.
+Sí conserva excepciones administrativas **por recurso** para:
 
-### Cualquier `ENVIRONMENT` distinto de `production`
+```text
+cancelar
+corregir / reenviar
+gestionar cierre/factura
+```
 
-La cuenta técnica recibe todos los permisos atómicos **activos** del catálogo del producto.
+Estas excepciones no son permisos financieros globales.
 
-Por tanto puede:
+### No producción
 
-- crear/corregir solicitudes;
-- consultar;
-- aprobar y votar;
-- participar en poblaciones de aprobación/votación;
-- subir/reemplazar factura y cerrar;
-- administrar configuración.
+Puede recibir todos los permisos atómicos activos para pruebas E2E, además de las capacidades administrativas por recurso.
 
-Esta elevación se determina por `SystemAccount + ENVIRONMENT`, no por email, cargo, rol legacy ni nombre visible.
+`RENDER=true` no sustituye `ENVIRONMENT=production`.
 
-`RENDER=true` puede activar validaciones estrictas de secretos/CORS, pero no activa por sí solo la política de autorización de producción. Solo `ENVIRONMENT=production` restringe financieramente la cuenta técnica.
+## Capacidades por recurso
 
-## Configuración inicial sugerida del PH
+Features posteriores retiraron ciertas mutaciones del IAM global:
 
-Esta configuración es **dato**, no código:
+```text
+can_cancel
+= estado cancelable AND (requester OR system_accounts)
 
-- Grupo `Administración PH` → rol con `requests:create`, `requests:close`, `requests:read`.
-- Grupo `Junta Directiva` → rol con `requests:approve`, `requests:read`.
-- Cuenta técnica → identificada como `TECHNICAL_ADMIN`; su política efectiva depende del ambiente.
+can_correct
+= estado corregible AND (requester OR system_accounts)
 
-Ningún nombre anterior es obligatorio para futuras organizaciones.
+can_close
+= APPROVED/CLOSED AND (requester OR system_accounts OR delegado activo)
 
-## Consola gráfica
+can_delegate_close
+= requester original
+```
 
-La pantalla **Configuración → Accesos** debe permitir:
+Por tanto:
 
-- crear/editar/activar roles;
-- seleccionar permisos de un rol;
-- crear/editar/activar grupos;
-- asignar roles a grupos;
-- administrar miembros;
-- crear usuarios;
-- asignar grupos, roles directos, permisos directos y cargos;
-- crear/editar/activar cargos;
-- mostrar permisos atómicos disponibles;
-- mostrar permisos efectivos del usuario y su origen;
-- identificar la cuenta técnica y explicar si su acceso proviene de política de producción o de acceso de prueba no-productivo.
+- `requests:create` no permite corregir solicitudes ajenas;
+- `requests:approve` no permite editarlas;
+- `requests:close` no concede cierre;
+- `config:manage` no reemplaza reglas de propiedad ordinarias.
+
+## Solicitudes / workflow
+
+### Creación
+
+Nueva solicitud requiere `requests:create`.
+
+### Aprobación / votación
+
+Participantes se resuelven mediante:
+
+```text
+users_with_permission('requests:approve')
+```
+
+incluyendo permiso directo, Rol directo, Grupo→Rol y Cargo→Rol.
+
+### Corrección
+
+Solo solicitante original o Administrador del sistema. Mantiene invariant:
+
+```text
+SIMPLE      → SIMPLE
+MULTI_QUOTE → MULTI_QUOTE
+```
+
+### Cierre/factura
+
+Autorización por solicitud según `can_close`; no por `requests:close`.
 
 ## Contrato de sesión/UI
 
-Las respuestas autenticadas del usuario actual deben exponer `permission_codes` con los permisos efectivos calculados por backend.
+`UserOut` expone:
 
-Durante la compatibilidad con el frontend legacy también se derivan temporalmente:
+```text
+permission_codes
+is_system_account
+```
 
-- `can_request` desde `requests:create`;
-- `can_approve` desde `requests:approve`;
-- `can_view` desde `requests:read`;
-- `can_configure` desde `config:manage`;
-- `can_close` desde `requests:close`.
+Aliases `can_*` de sesión pueden permanecer temporalmente por compatibilidad, pero no autorizan backend.
 
-Estos campos son una vista de compatibilidad; nunca autorizan el backend.
-
-## Requisitos FastAPI
+## FastAPI
 
 - configuración con `pydantic-settings`;
-- `get_db()` como dependencia con `yield`/context manager;
-- aplicación compuesta con `APIRouter`;
+- `get_db()` por request;
+- `APIRouter` por dominio/capacidad;
 - modelos SQLAlchemy en `models/`;
-- contratos Pydantic reutilizables en `schemas/`;
-- lógica reutilizable en `services/`;
-- Argon2 para nuevos hashes con upgrade transparente de PBKDF2 legacy;
-- migraciones Alembic antes de iniciar ASGI;
-- `lifespan` sin DDL/backfills;
-- endpoints con I/O SQLAlchemy/filesystem síncrono declarados como `def`;
-- response models explícitos cuando el contrato sea sensible;
-- tests `TestClient` para matriz de autorización.
+- schemas reutilizables en `schemas/`;
+- lógica reusable en `services/`;
+- Argon2 para nuevos hashes y compatibilidad PBKDF2;
+- Alembic antes de iniciar ASGI;
+- lifespan sin DDL/backfills;
+- response models explícitos;
+- tests `TestClient` para autorización crítica.
 
-## Requisitos de despliegue y portabilidad
+## Portabilidad Docker
 
-- Los scripts `.sh` que se ejecutan dentro de imágenes Linux deben materializarse con finales de línea LF.
-- `.gitattributes` debe forzar `*.sh text eol=lf`.
-- El backend Docker debe normalizar defensivamente cualquier CRLF antes de ejecutar el entrypoint.
-- El bootstrap técnico debe ejecutarse desde la raíz del backend como módulo: `python -m scripts.bootstrap_admin`.
-- `scripts` debe ser importable como paquete/módulo y el CI debe comprobar que `scripts.bootstrap_admin` puede importarse dentro de la imagen backend.
-- El frontend local debe esperar a que el backend supere `/api/health` antes de iniciar Nginx.
-- Si el backend falla en Alembic/bootstrap/Uvicorn, el error debe quedar visible como fallo del backend y no quedar oculto por un error secundario de resolución DNS de Nginx.
-- Producción debe declarar explícitamente `ENVIRONMENT=production`; local/dev/test/preview no deben usar ese valor si se pretende probar con acceso técnico completo.
+- scripts Linux en LF;
+- `.gitattributes` protege `*.sh`;
+- Docker normaliza CRLF defensivamente;
+- bootstrap canónico: `python -m scripts.bootstrap_admin`;
+- frontend espera healthcheck del backend.
+
+## Migraciones vigentes
+
+La cadena original de Feature 002 evolucionó. Estado actual:
+
+```text
+0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006 → 0007 → 0008
+```
+
+Puntos principales:
+
+```text
+0000 baseline
+0001 IAM foundation
+0002 system_accounts
+0003 repair MULTI_QUOTE
+0004 position_roles
+0005 closure delegation / requests:close legacy
+0006 areas:manage
+0007 config:read
+0008 expense_area / expense_category
+```
+
+## Clasificación actual
+
+Nuevo código usa:
+
+```text
+expense_area
+expense_category
+```
+
+No usar `expense_type` / `expense_subcategory` como contrato nuevo.
 
 ## Compatibilidad temporal
 
-Pueden permanecer temporalmente:
+Pueden permanecer:
 
-- enum `UserRole`;
-- columnas `can_*`;
+- `UserRole`;
+- `can_*` legacy;
 - `title`;
-- router legacy `/api/users`;
-- partes del router monolítico de gastos;
-- capa frontend `domain-normalization.js`;
-- transform Vite temporal de Feature 003 mientras `ExpenseForm` siga dentro del monolito.
+- `/api/users` legacy;
+- `AccessProfile`;
+- `BOARD_CODES`;
+- `main.jsx` y bridges de compatibilidad.
 
-Condiciones:
+No son autoridad de autorización ni arquitectura objetivo.
 
-1. no son fuente de autorización;
-2. los `can_*` que vea código legacy se derivan del IAM efectivo;
-3. las rutas canónicas se registran antes que las rutas legacy equivalentes;
-4. invariantes funcionales posteriores, como preservar el tipo canónico durante una corrección, se protegen también en backend;
-5. la deuda se documenta y retira gradualmente.
+## Relación con features posteriores
 
-## Criterios funcionales clave de la política ambiental
+- Feature 003: invariant de corrección.
+- Feature 005: seguimiento universal/tareas contextuales.
+- Feature 006: Cargo→Rol→Permiso.
+- Feature 007: propiedad de corrección / Enviar a revisión.
+- Feature 008: cierre por propiedad/delegación.
+- Feature 009: `areas:manage`, `config:read`, `config:manage` system-only.
+- Feature 010: notificaciones de Cargo/permisos.
+- Feature 011: Accesos como única superficie y navegación del shell.
 
-- En `test`, la cuenta técnica devuelve todos los permisos activos en `/api/iam/me/permissions`.
-- En `test`, el login devuelve `can_request`, `can_approve`, `can_view`, `can_configure` y `can_close` habilitados para la cuenta técnica mientras esos permisos estén activos.
-- En no producción, la cuenta técnica puede aparecer en `users_with_permission('requests:approve')`.
-- En producción, aunque se asigne directamente `requests:close`, el permiso efectivo no aparece y el endpoint de cierre devuelve 403.
-- En producción, la cuenta técnica no aparece como aprobador/votante financiero.
-
-## Relación con Feature 003
-
-La política IAM de esta feature no define por sí sola la semántica de correcciones. Feature `003-request-correction-invariants` establece que `Corregir / reenviar` preserva el tipo canónico, que la pestaña de creación previa no puede influir en el editor, que una MULTI_QUOTE reinicia su ronda y que datos legacy inconsistentes se reparan mediante Alembic `0003`.
-
-## Fuera de alcance de esta feature
-
-- motor de DENY explícito;
-- scopes por organización/Área/recurso;
-- SSO/OIDC empresarial;
-- SCIM;
-- corrección completa de la fórmula funcional de quorum/aprobación;
-- rediseño completo del `main.jsx` monolítico;
-- motor genérico de workflow para módulos distintos de solicitudes de gasto.
-
-## Deuda funcional explícita
-
-La votación `MULTI_QUOTE` mantiene la regla legacy de resolución al participar toda la población invitada y existir un ganador único. La semántica de quorum/empates de cotizaciones requiere una especificación funcional independiente.
-
-Asimismo, la regla de mayoría del motor de aprobación existente no se declara corregida por este PR; la Constitución vigente 2.3.2 sigue siendo la fuente de verdad funcional para la futura refactorización del motor de decisiones.
+Ante discrepancia, prevalecen Constitución 2.9.0 y la feature posterior más específica.
