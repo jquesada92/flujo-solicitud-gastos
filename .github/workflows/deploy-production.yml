@@ -1,10 +1,12 @@
 name: Deploy production
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+    inputs:
+      confirm_deploy:
+        description: "Type DEPLOY to confirm deployment of main to production"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -16,6 +18,7 @@ concurrency:
 jobs:
   validate:
     name: Validate release
+    if: github.ref == 'refs/heads/main' && github.event.inputs.confirm_deploy == 'DEPLOY'
     uses: ./.github/workflows/reusable-ci.yml
 
   deploy-backend:
