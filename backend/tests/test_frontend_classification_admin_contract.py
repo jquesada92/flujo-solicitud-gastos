@@ -22,13 +22,16 @@ class FrontendClassificationAdminContractTests(unittest.TestCase):
         self.assertIn('isCanonicalTerminologyNode', normalizer)
         self.assertIn('/src/classification-admin.js', index)
 
-    def test_category_assignment_is_staged_and_saved_per_row(self):
+    def test_category_assignment_is_staged_saved_per_row_and_active_only(self):
         repo_root = Path(__file__).resolve().parents[2]
         script = (repo_root / 'frontend' / 'src' / 'classification-admin.js').read_text(encoding='utf-8')
 
         self.assertIn("node('h2', '', 'Categorías por área')", script)
         self.assertIn("['Categoría', 'Asignada', 'Estado', 'Áreas asignadas', 'Acción']", script)
         self.assertIn('assignmentDrafts', script)
+        self.assertIn('function visibleAssignmentCategories()', script)
+        self.assertIn('return state.categories.filter((category) => category.active);', script)
+        self.assertIn('visibleAssignmentCategories().forEach((category) => {', script)
         self.assertIn("checkbox.addEventListener('change', () => {", script)
         self.assertNotIn("checkbox.addEventListener('change', async", script)
         self.assertIn('async function saveAssignment(category)', script)
@@ -36,7 +39,9 @@ class FrontendClassificationAdminContractTests(unittest.TestCase):
         self.assertIn("method: assigned ? 'POST' : 'DELETE'", script)
         self.assertIn("save.disabled = !assignmentChanged(category)", script)
         self.assertIn('Hay cambios de categorías sin guardar', script)
-        self.assertIn('!category.active && !persisted', script)
+        self.assertNotIn('!category.active && !persisted', script)
+        self.assertIn('No hay categorías activas disponibles para asignar.', script)
+        self.assertIn('dirtyCount ? `${dirtyCount} cambio(s) sin guardar` : `${activeCategories.length} categoría(s)`', script)
         self.assertIn("dirtyMarker.dataset.unsaved = hasAssignmentChanges() ? 'true' : 'false'", script)
 
 
