@@ -76,6 +76,72 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn("readJson('/api/iam/positions')", source)
         self.assertIn('/src/config-readonly.js', index)
 
+    def test_iam_checkboxes_have_larger_click_target_and_visible_selected_state(self):
+        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.css').read_text(encoding='utf-8')
+        self.assertIn('.iam-check input{width:20px;height:20px;min-width:20px;', css)
+        self.assertIn('accent-color:#172033', css)
+        self.assertIn('.iam-check:has(input:checked)', css)
+        self.assertIn('.iam-check:focus-within', css)
+        self.assertIn('cursor:pointer', css)
+
+    def test_access_console_reuses_standard_navigation_and_integrated_refresh(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.css').read_text(encoding='utf-8')
+        self.assertIn('document.querySelector(".topbar")', source)
+        self.assertIn('topbar.addEventListener("click", handleTopbarClick)', source)
+        self.assertIn('window.location.hash = ""', source)
+        self.assertIn('className="iam-page-nav"', source)
+        self.assertIn('className="iam-button iam-refresh"', source)
+        self.assertIn('↻ Recargar', source)
+        self.assertNotIn('>Volver</button>', source)
+        self.assertIn('.iam-overlay{position:fixed;top:72px;right:0;bottom:0;left:0;z-index:10', css)
+        self.assertIn('.iam-shell{width:min(1180px,92vw);margin:0 auto;padding:48px 0 72px}', css)
+        self.assertIn('.iam-card{min-width:0;background:#fff;border:1px solid #e3e7ee;border-radius:18px;padding:26px;', css)
+
+    def test_access_user_list_cannot_overflow_status_badges(self):
+        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.css').read_text(encoding='utf-8')
+        self.assertIn('grid-template-columns:minmax(330px,360px) minmax(0,1fr)', css)
+        self.assertIn('.iam-list-item{display:flex;width:100%;min-width:0;overflow:hidden;', css)
+        self.assertIn('.iam-list-main{flex:1 1 auto;min-width:0;overflow:hidden}', css)
+        self.assertIn('text-overflow:ellipsis;white-space:nowrap', css)
+        self.assertIn('.iam-list-item>span:last-child{flex:0 0 auto}', css)
+
+    def test_role_save_is_disabled_until_there_are_real_changes(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        action_css = (REPO_ROOT / 'frontend' / 'src' / 'action-state.css').read_text(encoding='utf-8')
+        index = (REPO_ROOT / 'frontend' / 'index.html').read_text(encoding='utf-8')
+        self.assertIn('const roleDirty = useMemo(() => {', source)
+        self.assertIn('const canPersistRole = roleDirty && form.name.trim().length >= 2;', source)
+        self.assertIn('iam-persist-action ${canPersistRole ? "pending" : ""}', source)
+        self.assertIn('disabled={!canPersistRole}', source)
+        self.assertIn('button.primary:disabled', action_css)
+        self.assertIn('.iam-persist-action.pending', action_css)
+        self.assertIn('.classification-save-assignment:not(:disabled)', action_css)
+        self.assertIn('/src/action-state.css', index)
+
+    def test_role_master_list_uses_clean_single_surface_rows(self):
+        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.css').read_text(encoding='utf-8')
+        role_scope = '.iam-page-nav:has(.iam-tabs button:nth-child(3).active)+.iam-grid>.iam-card:first-child'
+        self.assertIn(f'{role_scope} .iam-list-main small{{display:none}}', css)
+        self.assertIn(f'{role_scope} .iam-list-item>.iam-button:first-child', css)
+        self.assertIn('border:0;background:transparent;padding:0;border-radius:0;box-shadow:none;text-align:left', css)
+        self.assertIn(f'{role_scope} .iam-list-item{{align-items:center;padding:14px}}', css)
+        self.assertIn(f'{role_scope} .iam-system{{margin-left:auto}}', css)
+
+    def test_group_assignments_are_staged_until_explicit_save(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        self.assertIn('const [draftRoleIds, setDraftRoleIds] = useState([]);', source)
+        self.assertIn('const [draftMemberIds, setDraftMemberIds] = useState([]);', source)
+        self.assertIn('const groupDirty = useMemo(() => {', source)
+        self.assertIn('const saveGroupAssignments = async () => {', source)
+        self.assertIn('selected={draftRoleIds}', source)
+        self.assertIn('selected={draftMemberIds}', source)
+        self.assertIn('data-unsaved={groupDirty ? "true" : "false"}', source)
+        self.assertIn('iam-persist-action ${groupDirty ? "pending" : ""}', source)
+        self.assertIn('disabled={!groupDirty || savingAssignments}', source)
+        self.assertIn('{savingAssignments ? "Guardando..." : "Guardar cambios"}', source)
+        self.assertIn('Hay cambios sin guardar en este grupo.', source)
+
 
 if __name__ == '__main__':
     unittest.main()

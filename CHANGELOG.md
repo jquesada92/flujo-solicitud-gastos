@@ -1,5 +1,39 @@
 # Changelog
 
+## 2026-08-19 — Consola de Accesos integrada al shell principal
+
+### Changed
+- **Configuración → Accesos** deja de cubrir la barra superior estándar y conserva visible la navegación principal del producto.
+- navegar desde Inicio/Solicitudes/Facturas/Configuración cierra la consola IAM y respeta la navegación normal de la aplicación.
+- se retira el botón independiente **Volver**; la salida se realiza mediante la navegación estándar.
+- la acción de refresco pasa a llamarse **Recargar** para no confundirse con una acción de persistencia y permanece integrada con las pestañas internas de Usuarios/Grupos/Roles/Permisos/Cargos.
+- ancho, espaciado, jerarquía del encabezado y tarjetas de IAM se alinean con el layout principal.
+- la columna de navegación IAM aumenta su ancho útil y aplica truncado seguro para que nombres/correos largos no recorten los badges **Activo/SISTEMA**.
+- `action-state.css` normaliza botones de persistencia deshabilitados en gris y aplica un brillo/acento leve cuando el componente conoce cambios pendientes.
+- **Guardar cambios** de Roles ahora calcula estado `dirty` real y permanece deshabilitado mientras nombre, descripción y permisos coincidan con persistencia.
+
+### Testing
+- `test_frontend_configuration_access.py` protege visibilidad de la topbar, cierre por navegación estándar, ausencia de **Volver**, ubicación integrada de **Recargar**, overflow de la lista y estados visuales/dirty de persistencia.
+
+---
+
+## 2026-08-19 — Asignación Área-Categoría muestra solo categorías activas
+
+### Changed
+- **Categorías por área** muestra únicamente categorías activas y su contador usa esa misma población visible.
+- el Maestro de Categorías conserva activas e inactivas para permitir mantenimiento y reactivación.
+- los cambios de asignación continúan siendo staged por fila y solo persisten al pulsar **Guardar**.
+
+### Behavior
+- desactivar una categoría no elimina sus relaciones persistidas ni modifica solicitudes históricas; la categoría deja de aparecer en la tarjeta de asignación hasta ser reactivada.
+- si no existen categorías activas, la tarjeta muestra un estado vacío explícito.
+
+### Testing / Docs
+- `test_frontend_classification_admin_contract.py` protege el filtro `active=true`, el contador y el guardado explícito.
+- Feature 009, su checklist y `docs/CLASSIFICATION_MODEL.md` documentan la regla visible.
+
+---
+
 ## 2026-08-18 — Notificaciones de Cargo y permisos efectivos
 
 ### Added
@@ -58,7 +92,7 @@
 
 ### Migrations
 - Cadena actual: `0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006`.
-- `0006` crea/activa `areas:manage`, crea el Rol neutral y actualiza la descripción de `config:manage` como administración técnica.
+- `0006` crea/activa `areas:manage`, crea el Rol neutral y actualiza la descripción técnica de `config:manage` como administración técnica.
 
 ### Testing
 - usuario ordinario con `areas:manage` puede administrar Áreas y sigue bloqueado de IAM técnico.
@@ -108,7 +142,7 @@
 
 ### Migrations
 - Cadena hasta Feature 008: `0000 → 0001 → 0002 → 0003 → 0004 → 0005`.
-- `0005` crea `expense_closure_delegations` y marca `requests:close` como inactivo/legacy sin borrar asignaciones históricas.
+- `0005` crea `expense_closure_delegations` y marca `requests:close` inactivo/legacy sin borrar asignaciones históricas.
 
 ### Testing
 - Requester/Admin/delegado positivos.
@@ -157,7 +191,6 @@
 
 ### Added
 - `pending_action_service.py`, `my_actions.py`, `home-dashboard.jsx` y modal contextual.
-
 ### Changed
 - Filas de Acciones pendientes abren modal; **Ver todas** abre Solicitudes.
 - KPIs superiores dejan de ser botones.
@@ -203,7 +236,7 @@
 ## 2026-08-17 — IAM configurable + FastAPI hardening
 
 ### Added
-- Pydantic Settings, Argon2, application factory, Alembic `0000/0001/0002`, system accounts, consola IAM, TestClient y hardening Docker.
+- Pydantic Settings, Argon2 con compatibilidad PBKDF2, application factory, Alembic `0000/0001/0002`, system accounts, consola IAM, TestClient y hardening Docker.
 
 ### Changed
 - autorización runtime por permisos efectivos/políticas, no `UserRole`/`can_*`.

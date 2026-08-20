@@ -141,6 +141,46 @@ Cadena:
 0000 → 0001 → 0002 → 0003 → 0004 → 0005 → 0006
 ```
 
+## F-009-10 — Asignación visible solo para Categorías activas
+
+La pantalla **Áreas y categorías** mantiene dos contextos distintos:
+
+1. **Maestro de Categorías**: muestra activas e inactivas para poder administrar/reactivar el catálogo.
+2. **Categorías por área**: muestra únicamente Categorías con `active=true`.
+
+Reglas observables:
+
+- una Categoría inactiva no aparece como fila asignable;
+- el contador de la tarjeta considera únicamente Categorías activas;
+- cambiar un checkbox no persiste inmediatamente; habilita **Guardar** para esa fila;
+- la relación se crea/elimina únicamente al pulsar **Guardar**;
+- desactivar una Categoría no borra sus relaciones existentes ni altera solicitudes históricas;
+- si se necesita modificar una relación de una Categoría inactiva desde la UI, primero debe reactivarse en el Maestro de Categorías.
+
+## F-009-11 — Estados visuales de persistencia e integración de Accesos
+
+La consola **Configuración → Accesos** debe sentirse como parte del shell principal:
+
+- conserva visible la barra de navegación estándar;
+- usa el ancho y las tarjetas del layout principal;
+- las listas no pueden desbordar ni cortar badges de estado cuando nombres o correos son largos;
+- una acción de refresco se presenta como **Recargar**, no como una acción de persistencia.
+
+Para acciones que sí persisten cambios:
+
+```text
+sin cambios pendientes
+→ botón deshabilitado
+→ gris / bajo énfasis
+
+cambios pendientes válidos
+→ botón habilitado
+→ énfasis principal
+→ brillo/acento leve usando la paleta existente
+```
+
+El brillo nunca sustituye el atributo `disabled` ni la validación de negocio. Solo refleja un estado `dirty` que el componente ya conoce. En la edición de Roles, **Guardar cambios** debe permanecer deshabilitado hasta que cambie realmente nombre, descripción o conjunto de permisos.
+
 ## Seguridad
 
 - `config:manage` system-only;
