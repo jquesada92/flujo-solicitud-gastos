@@ -157,6 +157,30 @@ Reglas observables:
 - desactivar una Categoría no borra sus relaciones existentes ni altera solicitudes históricas;
 - si se necesita modificar una relación de una Categoría inactiva desde la UI, primero debe reactivarse en el Maestro de Categorías.
 
+## F-009-11 — Estados visuales de persistencia e integración de Accesos
+
+La consola **Configuración → Accesos** debe sentirse como parte del shell principal:
+
+- conserva visible la barra de navegación estándar;
+- usa el ancho y las tarjetas del layout principal;
+- las listas no pueden desbordar ni cortar badges de estado cuando nombres o correos son largos;
+- una acción de refresco se presenta como **Recargar**, no como una acción de persistencia.
+
+Para acciones que sí persisten cambios:
+
+```text
+sin cambios pendientes
+→ botón deshabilitado
+→ gris / bajo énfasis
+
+cambios pendientes válidos
+→ botón habilitado
+→ énfasis principal
+→ brillo/acento leve usando la paleta existente
+```
+
+El brillo nunca sustituye el atributo `disabled` ni la validación de negocio. Solo refleja un estado `dirty` que el componente ya conoce. En la edición de Roles, **Guardar cambios** debe permanecer deshabilitado hasta que cambie realmente nombre, descripción o conjunto de permisos.
+
 ## Seguridad
 
 - `config:manage` system-only;
