@@ -1,5 +1,38 @@
 # Historial funcional y técnico
 
+## 2026-08-19 — Asignación Área-Categoría oculta categorías inactivas
+
+### Problema observado
+
+La tarjeta **Categorías por área** mostraba también categorías inactivas. Aunque esa visibilidad servía para inspección técnica, mezclaba dos responsabilidades distintas: mantenimiento del catálogo y selección de opciones realmente disponibles para asignar a un Área.
+
+### Decisión funcional
+
+Se separa explícitamente la visibilidad:
+
+```text
+Maestro de Categorías
+→ activas + inactivas
+→ mantenimiento / reactivación
+
+Categorías por área
+→ solo active=true
+→ asignación operativa
+```
+
+Desactivar una categoría no elimina sus relaciones `expense_area_categories` ni altera solicitudes históricas. Mientras esté inactiva deja de aparecer en la tarjeta de asignación. Si se necesita editar nuevamente esa relación, se reactiva primero desde el Maestro de Categorías.
+
+Los checkboxes de la tarjeta siguen siendo estado local: la relación solo cambia al pulsar **Guardar** por fila. El contador usa la misma población activa visible para evitar discrepancias entre número mostrado y filas disponibles.
+
+### Implementación y protección
+
+- `classification-admin.js` centraliza la población visible en `visibleAssignmentCategories()`.
+- la tabla, el contador, el control de cambios pendientes y el estado vacío usan únicamente categorías activas.
+- `test_frontend_classification_admin_contract.py` protege esta regla.
+- Feature 009, checklist y `docs/CLASSIFICATION_MODEL.md` quedan sincronizados con el comportamiento.
+
+---
+
 ## 2026-08-18 — Notificaciones de Cargo y permisos efectivos
 
 ### Necesidad
