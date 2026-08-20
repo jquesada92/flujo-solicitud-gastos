@@ -15,6 +15,7 @@ from app.api import (
     expenses,
     financial_actions,
     iam,
+    iam_group_assignments,
     iam_users,
     legacy_position_notifications,
     my_actions,
@@ -143,9 +144,10 @@ def create_app() -> FastAPI:
         dependencies=[Depends(require_permission('config:manage'))],
     )
     app.include_router(iam_users.router, prefix='/api/iam/users', tags=['Access Management'])
-    # Position access must precede the generic IAM router because it enriches
-    # GET /positions with inherited role ids while legacy CRUD remains behind it.
-    app.include_router(position_access.router, prefix='/api/iam', tags=['Access Management'])
+    app.include_router(iam_group_assignments.router, prefix='/api/iam', tags=['Access Management'])
+    # Position access remains a compatibility API for the organizational chart;
+    # cargo assignments no longer participate in authorization.
+    app.include_router(position_access.router, prefix='/api/iam', tags=['Organization Compatibility'])
     app.include_router(iam.router, prefix='/api/iam', tags=['Access Management'])
 
     @app.get('/api/health')
