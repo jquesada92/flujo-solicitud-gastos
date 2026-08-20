@@ -26,12 +26,13 @@ def dashboard(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission('requests:read')),
 ):
-    """Home dashboard backed by the canonical pending-action resolver."""
+    """Personal Home dashboard backed by the canonical pending-action resolver."""
     now_local = datetime.now(ZoneInfo(APP_TIME_ZONE))
     now_utc = now_local.astimezone(timezone.utc).replace(tzinfo=None)
     period_start_utc = (now_local - timedelta(days=30)).replace(
         hour=0, minute=0, second=0, microsecond=0,
     ).astimezone(timezone.utc).replace(tzinfo=None)
+    requester_filter = func.lower(Expense.requested_by) == user.email.lower()
 
     open_statuses = [
         ExpenseStatus.QUOTATION_VOTING,
@@ -41,13 +42,18 @@ def dashboard(
         ExpenseStatus.NEEDS_REVISION,
     ]
     in_process = db.scalar(select(func.count(Expense.id)).where(
+        requester_filter,
         Expense.status.in_(open_statuses),
     )) or 0
     closed_24h = db.scalar(select(func.count(Expense.id)).where(
+        requester_filter,
         Expense.status == ExpenseStatus.CLOSED,
         Expense.closed_at >= now_utc - timedelta(hours=24),
     )) or 0
 
+    # Pending actions are personal assignments, regardless of who created the
+    # request. This includes approvals/votes assigned to the current user and
+    # corrections/closures that belong to them.
     pending = pending_actions_by_expense(db, user)
     pending_ids = list(pending)
     pending_items = list(db.scalars(
@@ -59,11 +65,15 @@ def dashboard(
 
     month_rows = db.execute(
         select(Expense.status, func.count(Expense.id))
-        .where(Expense.created_at >= period_start_utc)
+        .where(
+            requester_filter,
+            Expense.created_at >= period_start_utc,
+        )
         .group_by(Expense.status)
     ).all()
     month_by_status = {status.value: count for status, count in month_rows}
     month_amount = db.scalar(select(func.coalesce(func.sum(Expense.amount), 0)).where(
+        requester_filter,
         Expense.created_at >= period_start_utc,
         Expense.status.in_([ExpenseStatus.APPROVED, ExpenseStatus.CLOSED]),
     )) or 0
