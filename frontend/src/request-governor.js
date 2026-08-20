@@ -2,7 +2,16 @@ const delegatedFetch = window.fetch.bind(window);
 
 const inflightReads = new Map();
 const recentReads = new Map();
-const DEFAULT_READ_TTL_MS = 10_000;
+const DEFAULT_READ_TTL_MS = 30_000;
+const USER_INTENT_WINDOW_MS = 1_200;
+let lastHumanInteractionAt = 0;
+
+function noteHumanInteraction() {
+  lastHumanInteractionAt = Date.now();
+}
+
+window.addEventListener("pointerdown", noteHumanInteraction, { passive: true });
+window.addEventListener("keydown", noteHumanInteraction, { passive: true });
 
 function requestUrl(input) {
   try {
@@ -34,7 +43,7 @@ function isApiRequest(url) {
 
 function isCacheableRead(url, method, init) {
   if (!isApiRequest(url) || !["GET", "HEAD"].includes(method)) return false;
-  if (init.cache === "no-store" || init.cache === "reload") return false;
+  if (init.cache === "no-store") return false;
 
   // Authentication and binary/tokenized document endpoints must always reach
   // the server and must never be retained in the in-memory read cache.
@@ -65,8 +74,8 @@ window.fetch = async (input, init = {}) => {
   const url = requestUrl(input);
 
   if (isApiRequest(url) && !["GET", "HEAD", "OPTIONS"].includes(method)) {
-    // A successful or attempted mutation can change any read model. Drop the
-    // short-lived cache before sending it so the next screen load is fresh.
+    // A mutation can change any read model. Drop the short-lived cache before
+    // sending it so the next screen load is fresh.
     clearReadCache();
     return delegatedFetch(input, init);
   }
@@ -77,13 +86,21 @@ window.fetch = async (input, init = {}) => {
 
   const key = readKey(input, init, url, method);
   const now = Date.now();
+  const explicitlyFresh = init.cache === "reload";
+  const userInitiated = now - lastHumanInteractionAt <= USER_INTENT_WINDOW_MS;
   pruneExpiredReads(now);
 
-  const cached = recentReads.get(key);
-  if (cached && cached.expiresAt > now) {
-    return cached.response.clone();
+  // A real click/keyboard action is allowed to refresh the server state. The
+  // cache is primarily a safety net against automatic effects/polling loops.
+  if (!explicitlyFresh && !userInitiated) {
+    const cached = recentReads.get(key);
+    if (cached && cached.expiresAt > now) {
+      return cached.response.clone();
+    }
   }
 
+  // Even explicit/user initiated reads share an already-running identical
+  // request so one UI action cannot produce duplicate concurrent calls.
   const running = inflightReads.get(key);
   if (running) {
     const response = await running;
@@ -93,10 +110,7 @@ window.fetch = async (input, init = {}) => {
   const request = delegatedFetch(input, init)
     .then((response) => {
       const contentType = response.headers.get("content-type") || "";
-      if (
-        response.ok
-        && contentType.includes("application/json")
-      ) {
+      if (response.ok && contentType.includes("application/json")) {
         recentReads.set(key, {
           response: response.clone(),
           expiresAt: Date.now() + DEFAULT_READ_TTL_MS,
