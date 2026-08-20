@@ -8,7 +8,12 @@
 - [x] **Usuarios/Personas** deja de aparecer como entrada independiente de Configuración.
 - [x] **Organigrama** deja de aparecer como entrada independiente de Configuración.
 - [x] **Accesos** permanece como punto único de administración IAM.
-- [ ] validar manualmente navegación final en Docker después del pull más reciente.
+- [x] existe bridge dedicado para cerrar `#access-management` al navegar desde la topbar.
+- [x] el bridge se carga antes de `main.jsx`.
+- [x] abrir/cerrar solamente el dropdown **Configuración** no fuerza salida de Accesos.
+- [x] seleccionar una opción navegable de Configuración sí sale de Accesos.
+- [x] el caso de destino igual a la pestaña React subyacente queda cubierto por limpieza explícita del hash.
+- [ ] validar manualmente Inicio/Solicitudes/Facturas/Auditoría/Configuración/Salir desde Accesos en Docker después del pull más reciente.
 
 ## Accesos
 
@@ -36,6 +41,7 @@
 ## Integración
 
 - [x] cambios faltantes de `main` integrados en `agent/consolidate-users-organigram-in-access`.
+- [x] test de contrato `test_access_navigation_bridge.py` agregado.
 - [ ] `alembic current` ejecutado contra la base local final.
 - [ ] `alembic heads` ejecutado en la rama final.
 - [ ] suite backend ejecutada en head final.
@@ -44,8 +50,8 @@
 ## Documentación
 
 - [ ] Constitución actualizada a 2.9.0.
-- [x] spec Feature 011 creado.
-- [x] plan Feature 011 creado.
+- [x] spec Feature 011 creado y actualizado con navegación global desde Accesos.
+- [x] plan Feature 011 creado y actualizado con el bridge de navegación.
 - [x] checklist Feature 011 creado.
 - [ ] README principal actualizado.
 - [ ] PROMPT_RECONSTRUCCION actualizado.
