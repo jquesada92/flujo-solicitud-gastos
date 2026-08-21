@@ -1,7 +1,7 @@
 # Spec 010 — Notificaciones de acceso
 
 **Estado:** Implementada  
-**Constitución:** 2.11.0
+**Constitución:** 2.12.0
 
 ## Objetivo
 
@@ -37,3 +37,5 @@ Guardar el mismo Cargo no debe generar correo duplicado.
 Cargo    = UserPosition → Position
 Permisos = effective_permission_codes()
 ```
+
+Los permisos efectivos pueden provenir de Roles globales ordinarios y de Roles agrupados cuyo Grupo esté activo. La política técnica de `SystemAccount` continúa separada y protegida.
