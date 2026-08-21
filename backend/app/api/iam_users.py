@@ -104,6 +104,12 @@ def _out(db: Session, user: User) -> IamUserOut:
 
 
 def _validate_role_assignments(db: Session, role_ids: list[int]) -> tuple[list[Role], list[UserGroup]]:
+    """Validate a mix of grouped and global role assignments.
+
+    A business role may belong to zero or one group. Grouped roles require an
+    active group and a user may hold at most one role from each group. Global
+    roles have no GroupRole row and therefore do not create GroupMember rows.
+    """
     unique_role_ids = list(dict.fromkeys(role_ids))
     if not unique_role_ids:
         return [], []
@@ -119,19 +125,21 @@ def _validate_role_assignments(db: Session, role_ids: list[int]) -> tuple[list[R
     binding_rows = db.execute(
         select(GroupRole.role_id, UserGroup)
         .join(UserGroup, UserGroup.id == GroupRole.group_id)
-        .where(
-            GroupRole.role_id.in_(unique_role_ids),
-            UserGroup.active.is_(True),
-        )
+        .where(GroupRole.role_id.in_(unique_role_ids))
     ).all()
     group_by_role = {role_id: group for role_id, group in binding_rows}
-    if len(group_by_role) != len(unique_role_ids):
+
+    inactive_group_roles = [
+        role_id for role_id, group in group_by_role.items()
+        if not group.active
+    ]
+    if inactive_group_roles:
         raise HTTPException(
             status_code=422,
-            detail='Cada rol asignado al usuario debe pertenecer a un grupo activo',
+            detail='No se puede asignar un rol cuyo grupo está inactivo',
         )
 
-    groups = [group_by_role[role_id] for role_id in unique_role_ids]
+    groups = [group_by_role[role_id] for role_id in unique_role_ids if role_id in group_by_role]
     group_ids = [group.id for group in groups]
     if len(group_ids) != len(set(group_ids)):
         raise HTTPException(
@@ -153,7 +161,7 @@ def _validate_positions(db: Session, position_ids: list[int]) -> list[Position]:
 
 
 def _validate_derived_groups(requested_group_ids: list[int] | None, groups: list[UserGroup]) -> None:
-    """Groups are output/compatibility only; role selection owns membership."""
+    """Groups are output/compatibility only; grouped roles own membership."""
     if requested_group_ids is None:
         return
     requested = set(requested_group_ids)
@@ -198,8 +206,8 @@ def _replace_assignments(
             )
 
     if role_ids is not None:
-        # Role and membership are one atomic assignment. There is no independent
-        # group membership and no unscoped/direct role in the authorization model.
+        # Role assignment is atomic. Group membership is rebuilt only from the
+        # subset of roles that belong to a group; global roles remain ungrouped.
         db.execute(delete(UserRoleAssignment).where(UserRoleAssignment.user_id == user.id))
         db.execute(delete(GroupMember).where(GroupMember.user_id == user.id))
         db.add_all(UserRoleAssignment(user_id=user.id, role_id=role.id) for role in roles)
