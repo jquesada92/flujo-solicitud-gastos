@@ -23,6 +23,8 @@ Permisos
 
 ### Usuarios
 
+La lista muestra solamente Usuarios activos, con un máximo de 10 resultados a la vez. Incluye un buscador sin distinción de mayúsculas ni acentos que encuentra por cédula, nombres, apellidos, correo, Rol asignado o Grupo al que pertenece ese Rol. Cuando no hay coincidencias se informa el estado vacío. Los Usuarios inactivos permanecen fuera de la lista y se recuperan mediante el flujo de reactivación por cédula.
+
 La ficha separa dos fuentes de Rol:
 
 ```text

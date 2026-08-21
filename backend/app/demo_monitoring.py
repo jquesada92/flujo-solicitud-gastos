@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.expenses import UPLOAD_DIR, _next_display_id
 from app.core.database import SessionLocal
+from app.core.audit_context import set_system_audit_actor
 from app.core.privacy import analytics_identifier, mask_email
 from app.core.security import hash_password
 from app.models.entities import (
@@ -21,6 +22,7 @@ from app.models.entities import (
     UserChangeEvent, UserRole,
 )
 from app.models.iam import Permission, Role, RolePermission, UserRoleAssignment
+import app.models.activity_periods  # noqa: F401  Register transactional history hooks.
 from app.services.approval_engine import apply_decision, start_approval_flow
 from app.services.iam_service import users_with_permission
 from app.services.quotation_service import cast_quotation_vote
@@ -162,6 +164,7 @@ def ensure_multi_quote_case(db, requester, treasurer, title, with_partial_vote):
 
 def main():
     with SessionLocal() as db:
+        set_system_audit_actor(db, 'SYSTEM:demo_monitoring')
         admin = db.scalar(select(User).where(User.role == UserRole.ADMIN).order_by(User.id))
         if not admin: raise RuntimeError('No existe el administrador del sistema')
         ensure_classification_catalog(db)

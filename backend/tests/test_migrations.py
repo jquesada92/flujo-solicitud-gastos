@@ -12,8 +12,12 @@ class MigrationTopologyTests(unittest.TestCase):
         config.set_main_option('script_location', str(backend_dir / 'alembic'))
         script = ScriptDirectory.from_config(config)
 
-        self.assertEqual(script.get_heads(), ['20260821_0004'])
+        self.assertEqual(script.get_heads(), ['20260821_0008'])
         revisions = {revision.revision: revision.down_revision for revision in script.walk_revisions()}
+        self.assertEqual(revisions['20260821_0008'], '20260821_0007')
+        self.assertEqual(revisions['20260821_0007'], '20260821_0006')
+        self.assertEqual(revisions['20260821_0006'], '20260821_0005')
+        self.assertEqual(revisions['20260821_0005'], '20260821_0004')
         self.assertEqual(revisions['20260821_0004'], '20260821_0003')
         self.assertEqual(revisions['20260821_0003'], '20260820_0002')
         self.assertEqual(revisions['20260820_0002'], '20260820_0001')
@@ -84,6 +88,49 @@ class MigrationTopologyTests(unittest.TestCase):
         self.assertIn('trg_group_role_user_cardinality', migration)
         self.assertIn('enforce_group_role_user_cardinality', migration)
         self.assertIn('Grouping this role would give a user multiple roles in the same group', migration)
+
+    def test_activity_period_migration_backfills_and_guards_open_periods(self):
+        backend_dir = Path(__file__).resolve().parents[1]
+        migration = (
+            backend_dir / 'alembic' / 'versions' / '20260821_0005_activity_periods.py'
+        ).read_text(encoding='utf-8')
+
+        self.assertIn("down_revision = '20260821_0004'", migration)
+        for table in ('user_activity_periods', 'area_activity_periods', 'role_activity_periods', 'group_activity_periods'):
+            self.assertIn(table, migration)
+        self.assertIn('active_until IS NULL OR active_until >= active_from', migration)
+        self.assertIn("postgresql_where=sa.text('active_until IS NULL')", migration)
+        self.assertIn("CASE WHEN active THEN NULL ELSE created_at END", migration)
+
+    def test_period_snapshot_migration_adds_json_and_backfills_relations(self):
+        backend_dir = Path(__file__).resolve().parents[1]
+        migration = (
+            backend_dir / 'alembic' / 'versions' / '20260821_0006_period_snapshot_values.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("down_revision = '20260821_0005'", migration)
+        self.assertIn("sa.Column('values', sa.JSON(), nullable=True)", migration)
+        self.assertIn("'identity_document': row['identity_document']", migration)
+        self.assertIn("'assigned_roles': [dict(item) for item in assigned]", migration)
+        self.assertIn("'group': dict(group) if group else None", migration)
+
+    def test_period_audit_migration_records_actor_time_and_changes(self):
+        backend_dir = Path(__file__).resolve().parents[1]
+        migration = (
+            backend_dir / 'alembic' / 'versions' / '20260821_0007_period_audit_metadata.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("down_revision = '20260821_0006'", migration)
+        for column in ('event_at', 'actor_user_id', 'actor_identifier', 'change_type', 'changed_fields', 'changes'):
+            self.assertIn(column, migration)
+        self.assertIn("actor_identifier='SYSTEM:MIGRATION_BACKFILL'", migration)
+
+    def test_period_timestamps_are_timezone_aware(self):
+        backend_dir = Path(__file__).resolve().parents[1]
+        migration = (
+            backend_dir / 'alembic' / 'versions' / '20260821_0008_normalize_period_timestamps.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("down_revision = '20260821_0007'", migration)
+        self.assertIn("type_=sa.DateTime(timezone=True)", migration)
+        self.assertIn("AT TIME ZONE \\'UTC\\'", migration)
 
 
 if __name__ == '__main__':

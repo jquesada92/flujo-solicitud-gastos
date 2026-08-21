@@ -19,12 +19,13 @@ from app.application import create_app
 from app.core.database import Base, get_db
 from app.core.rate_limit import clear_rate_limits
 from app.core.security import create_token, hash_password
-from app.models.entities import User, UserRole
+from app.models.entities import ExpenseArea, User, UserRole
 from app.models.iam import (
     Permission,
     Role,
     RolePermission,
     SystemAccount,
+    UserGroup,
     UserPermission,
 )
 from app.services.iam_service import users_with_permission
@@ -125,6 +126,38 @@ class IamApiTests(unittest.TestCase):
 
     def auth(self, token: str) -> dict[str, str]:
         return {'Authorization': f'Bearer {token}'}
+
+    def test_inactive_entities_are_hidden_and_recoverable_by_business_key(self):
+        with self.Session() as db:
+            role = Role(code='archived-role', name='Archived Role', active=False, system_managed=False)
+            group = UserGroup(code='archived-group', name='Archived Group', active=False)
+            area = ExpenseArea(code='ARCHIVED-AREA', name='Archived Area', active=False)
+            user = self._new_user(db, 'archived@example.com')
+            user.identity_document = 'ARCHIVED-001'
+            user.active = False
+            db.add_all([role, group, area])
+            db.commit()
+            recovered_ids = (role.id, group.id, user.id, area.id)
+
+        headers = self.auth(self.admin_token)
+        self.assertNotIn('Archived Role', [item['name'] for item in self.client.get('/api/iam/roles', headers=headers).json()])
+        self.assertNotIn('Archived Group', [item['name'] for item in self.client.get('/api/iam/groups', headers=headers).json()])
+        self.assertNotIn('archived@example.com', [item['email'] for item in self.client.get('/api/iam/users', headers=headers).json()])
+        self.assertNotIn('archived@example.com', [item['email'] for item in self.client.get('/api/users', headers=headers).json()])
+        self.assertNotIn('Archived Area', [item['name'] for item in self.client.get('/api/areas', headers=headers).json()])
+
+        recovered_role = self.client.get('/api/iam/roles/recovery', params={'name': ' archived role '}, headers=headers)
+        recovered_group = self.client.get('/api/iam/groups/recovery', params={'name': 'ARCHIVED GROUP'}, headers=headers)
+        recovered_user = self.client.get('/api/iam/users/recovery', params={'identity_document': 'archived-001'}, headers=headers)
+        recovered_person = self.client.get('/api/users/recovery', params={'identity_document': 'archived-001'}, headers=headers)
+        recovered_area = self.client.get('/api/areas/recovery', params={'name': 'ARCHIVED AREA'}, headers=headers)
+        for response in (recovered_role, recovered_group, recovered_user, recovered_person, recovered_area):
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertFalse(response.json()['active'])
+        self.assertEqual(recovered_role.json()['id'], recovered_ids[0])
+        self.assertEqual(recovered_group.json()['id'], recovered_ids[1])
+        self.assertEqual(recovered_user.json()['id'], recovered_ids[2])
+        self.assertEqual(recovered_area.json()['id'], recovered_ids[3])
 
     def _create_group_role(self, group_name: str, role_name: str, permission_codes: list[str]) -> tuple[int, int]:
         role = self.client.post(

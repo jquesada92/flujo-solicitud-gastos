@@ -35,6 +35,10 @@ Schema:   administracion
 → 20260820_0002_group_scoped_roles
 → 20260821_0003_single_user_position
 → 20260821_0004_allow_global_roles
+→ 20260821_0005_activity_periods
+→ 20260821_0006_period_snapshot_values
+→ 20260821_0007_period_audit_metadata
+→ 20260821_0008_normalize_period_timestamps
 ```
 
 ## Render

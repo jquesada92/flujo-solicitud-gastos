@@ -1504,6 +1504,29 @@ function Users({ canConfigure, canEditPeople, view }) {
       setSaving(null);
     }
   };
+  const recoverPerson = async () => {
+    if (editingUserId || form.identity_document.trim().length < 3) return;
+    try {
+      const candidate = await api(`/api/users/recovery?identity_document=${encodeURIComponent(form.identity_document.trim())}`);
+      if (candidate && window.confirm(`La identificación ${candidate.identity_document} pertenece a un usuario inactivo. ¿Deseas recuperar sus datos?`)) {
+        setEditingUserId(candidate.id);
+        setForm({
+          identity_document: candidate.identity_document || "",
+          first_name: candidate.first_name || "",
+          middle_name: candidate.middle_name || "",
+          last_name: candidate.last_name || "",
+          second_last_name: candidate.second_last_name || "",
+          phone: candidate.phone || "",
+          email: candidate.email || "",
+          title: candidate.title || "",
+          active: true,
+        });
+        setMessage({ type: "success", text: "Datos históricos recuperados. Guarda para reactivar el usuario con su mismo ID." });
+      }
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    }
+  };
   const searchPeople = async (e) => {
     e.preventDefault();
     setMessage(null);
@@ -1740,7 +1763,7 @@ function Users({ canConfigure, canEditPeople, view }) {
         <form className="form-grid" onSubmit={savePerson}>
           <label>
             Cédula o pasaporte
-            <input value={form.identity_document} onChange={(e) => setForm({ ...form, identity_document: e.target.value })} required maxLength="50" />
+            <input value={form.identity_document} onChange={(e) => setForm({ ...form, identity_document: e.target.value })} onBlur={recoverPerson} required maxLength="50" />
           </label>
           <label>
             Primer nombre

@@ -166,6 +166,18 @@ def create_area(payload: AreaCreate, db: Session = Depends(get_db)):
     return _area_out(db, item)
 
 
+@router.get('/recovery', response_model=AreaOut | None, dependencies=[Depends(require_permission('areas:manage'))])
+def recover_area(name: str | None = None, code: str | None = None, db: Session = Depends(get_db)):
+    if not (name and name.strip()) and not (code and code.strip()):
+        raise HTTPException(status_code=422, detail='Indica el nombre o código del área')
+    identity_filter = ExpenseArea.code == code.strip().upper() if code and code.strip() else func.lower(func.trim(ExpenseArea.name)) == name.strip().lower()
+    item = db.scalar(select(ExpenseArea).where(
+        identity_filter,
+        ExpenseArea.active.is_(False),
+    ))
+    return _area_out(db, item, include_inactive=True) if item else None
+
+
 @router.patch('/{area_id}', response_model=AreaOut, dependencies=[Depends(require_permission('areas:manage'))])
 def update_area(area_id: int, payload: AreaUpdate, db: Session = Depends(get_db)):
     item = _area(db, area_id)

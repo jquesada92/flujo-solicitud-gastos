@@ -1,6 +1,6 @@
 # Prompt maestro de reconstrucción
 
-> Constitución vigente: **2.13.0**.
+> Constitución vigente: **2.15.0**.
 
 Reconstruye **Flujo de Control de Gastos** como una aplicación web neutral respecto al tipo de organización, lista para desplegar con React/Vite, FastAPI, SQLAlchemy, Alembic y PostgreSQL/Neon.
 
@@ -301,7 +301,20 @@ Cadena:
 → 20260820_0002_group_scoped_roles
 → 20260821_0003_single_user_position
 → 20260821_0004_allow_global_roles
+→ 20260821_0005_activity_periods
+→ 20260821_0006_period_snapshot_values
+→ 20260821_0007_period_audit_metadata
+→ 20260821_0008_normalize_period_timestamps
 ```
+
+Toda creación o modificación relevante de Usuario, Área, Rol y Grupo se registra
+en su tabla temporal. El alta usa exactamente `created_at`; cada cambio cierra
+la versión abierta y crea otra con una instantánea JSON. Nunca se sobrescribe
+historia y el JSON conserva el estado `active` de cada intervalo.
+La fila identifica actor, timestamp, tipo de evento, campos cambiados y valores
+`before/after`. Nunca incluye credenciales, hashes, tokens o secretos.
+Las listas GUI excluyen inactivos. Los formularios consultan recuperación por
+cédula o clave/nombre y reactivan el ID existente con confirmación del usuario.
 
 `0001` crea la instalación limpia. `0002` impide múltiples Grupos por Rol y dos Roles del mismo Grupo por Usuario. `0003` garantiza un Cargo por Usuario. `0004` permite Roles sin Grupo manteniendo la protección para Roles agrupados.
 

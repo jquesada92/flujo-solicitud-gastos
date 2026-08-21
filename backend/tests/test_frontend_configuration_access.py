@@ -6,6 +6,35 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class FrontendConfigurationAccessTests(unittest.TestCase):
+    def test_inactive_iam_records_disappear_and_can_be_recovered(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        self.assertIn('/api/iam/users/recovery?identity_document=', source)
+        self.assertIn('/api/iam/roles/recovery?name=', source)
+        self.assertIn('/api/iam/groups/recovery?name=', source)
+        self.assertIn('.filter((user) => user.active)', source)
+        self.assertIn('roles.filter((role) => role.active)', source)
+        self.assertIn('groups.filter((group) => group.active)', source)
+        self.assertIn('recovery ? "Reactivar usuario"', source)
+        self.assertIn('recovery ? "Reactivar rol"', source)
+        self.assertIn('recovery ? "Reactivar grupo"', source)
+        main = (REPO_ROOT / 'frontend' / 'src' / 'main.jsx').read_text(encoding='utf-8')
+        self.assertIn('/api/users/recovery?identity_document=', main)
+        self.assertIn('onBlur={recoverPerson}', main)
+
+    def test_user_list_searches_identity_role_and_group_and_caps_results(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        self.assertIn('const [userQuery, setUserQuery] = useState("")', source)
+        self.assertIn('user.identity_document', source)
+        self.assertIn('user.first_name', source)
+        self.assertIn('user.last_name', source)
+        self.assertIn('...assignedRoles.flatMap((role) => [role.name, role.code])', source)
+        self.assertIn('...assignedGroups.flatMap((group) => [group.name, group.code])', source)
+        self.assertIn('.normalize("NFD")', source)
+        self.assertIn('.replace(/\\p{Diacritic}/gu, "")', source)
+        self.assertIn('.slice(0, 10)', source)
+        self.assertIn('placeholder="Cédula, nombre, apellido, rol o grupo"', source)
+        self.assertIn('Mostrando {visibleUsers.length} usuario(s), máximo 10.', source)
+
     def test_vite_bridge_separates_configuration_read_from_manage(self):
         vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')
         self.assertIn('isSystemAdmin = user.is_system_account === true', vite)
@@ -78,15 +107,29 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertNotIn("readJson('/api/iam/positions')", source)
         self.assertIn('/src/config-readonly.js', index)
 
-    def test_access_console_distinguishes_grouped_and_global_roles(self):
+    def test_access_console_assigns_one_role_and_displays_derived_group(self):
         source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
-        self.assertIn('<h3>Acceso por grupo</h3>', source)
-        self.assertIn('<h3>Roles globales</h3>', source)
-        self.assertIn('const globalRoles = useMemo(() =>', source)
-        self.assertIn('const toggleGlobalRole = (roleId, checked)', source)
-        self.assertIn('Los roles sin grupo se asignan independientemente', source)
-        self.assertIn('Un grupo puede existir sin roles', source)
-        self.assertIn('rol técnico global', source)
+        self.assertIn('<h3>Rol</h3>', source)
+        self.assertIn('const assignableRoles = useMemo(() =>', source)
+        self.assertIn('const selectedRoleId = draftRoleIds[0] || "";', source)
+        self.assertIn('const setRole = (rawRoleId) => {', source)
+        self.assertIn('setDraftRoleIds(nextRoleId ? [nextRoleId] : []);', source)
+        self.assertIn('`Miembro — ${selectedRoleGroup.name}`', source)
+        self.assertIn('Sin grupo — Rol global', source)
+        self.assertIn('Un rol puede existir sin grupo', source.replace('Un grupo puede existir sin roles. Cada rol puede pertenecer como máximo a un grupo', 'Un rol puede existir sin grupo'))
+        self.assertNotIn('<h3>Acceso por grupo</h3>', source)
+        self.assertNotIn('<h3>Roles globales</h3>', source)
+        self.assertNotIn('const toggleGlobalRole = (roleId, checked)', source)
+
+    def test_create_user_name_fields_follow_left_to_right_person_name_order(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        first_name = source.index('<label>Nombre<input required value={form.first_name}')
+        middle_name = source.index('<label>Segundo nombre<input value={form.middle_name}')
+        last_name = source.index('<label>Apellido<input required value={form.last_name}')
+        second_last_name = source.index('<label>Segundo apellido<input value={form.second_last_name}')
+        self.assertLess(first_name, middle_name)
+        self.assertLess(middle_name, last_name)
+        self.assertLess(last_name, second_last_name)
 
     def test_iam_checkboxes_have_larger_click_target_and_visible_selected_state(self):
         css = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.css').read_text(encoding='utf-8')

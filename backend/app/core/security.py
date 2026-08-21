@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.audit_context import set_audit_actor
 from app.models.entities import User
 from app.services.iam_service import effective_permission_codes, has_permission, is_system_account
 
@@ -146,6 +147,12 @@ def current_user(
             detail='Debes cambiar tu contraseña temporal antes de continuar',
         )
 
+    set_audit_actor(
+        db,
+        user_id=user.id,
+        identifier=user.email,
+        identity_document=user.identity_document,
+    )
     return apply_effective_permissions_to_user(db, user)
 
 

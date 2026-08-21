@@ -35,7 +35,18 @@ group_roles          # opcional por Rol
 user_role_assignments
 group_members        # proyección de Roles agrupados
 system_accounts
+user_activity_periods
+role_activity_periods
+group_activity_periods
 ```
+
+`area_activity_periods` aplica la misma regla temporal al catálogo de Áreas.
+Cada tabla de períodos tiene llave primaria propia, llave foránea a su entidad,
+`active_from`, `active_until` y una instantánea `values` JSON. Solo puede existir
+una fila abierta por entidad. `values.active=false` identifica los intervalos de
+inactividad; el Usuario conserva su cédula y Roles, y el Rol su Grupo asociado.
+Los metadatos `event_at`, `actor_*`, `change_type`, `changed_fields` y `changes`
+permiten reconstruir quién cambió qué y cuándo, además de la vigencia temporal.
 
 Tablas organizacionales/compatibilidad que no conceden permisos:
 

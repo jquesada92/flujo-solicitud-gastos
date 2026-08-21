@@ -30,6 +30,8 @@ Usuario 0..1 Cargo
 
 Un Rol sin Grupo es global. La membresía del Grupo es una proyección únicamente de Roles agrupados. Cargo no participa en autorización.
 
+En Configuración > Accesos, la lista de Usuarios activos presenta como máximo 10 coincidencias. La búsqueda acepta cédula, nombres, apellidos, correo, Rol o Grupo asignado y no distingue mayúsculas ni acentos.
+
 ## Permisos
 
 ```text
@@ -136,9 +138,29 @@ Alembic:
 → 0002 group_scoped_roles
 → 0003 single_user_position
 → 0004 allow_global_roles
+→ 0005 activity_periods
+→ 0006 period_snapshot_values
+→ 0007 period_audit_metadata
+→ 0008 normalize_period_timestamps
 ```
 
 `0004` permite Roles globales manteniendo la protección de máximo un Rol por Usuario/Grupo.
+`0005` agrega períodos para Usuario, Área, Rol y Grupo. `0006` incorpora la
+instantánea JSON: cada modificación cierra la versión anterior y abre una fila
+nueva con llave propia. Usuario conserva cédula, contacto y Roles; Rol conserva
+el Grupo asociado.
+`0007` agrega actor, timestamp, tipo de evento, campos modificados y valores
+anterior/nuevo. Las operaciones autenticadas usan al usuario de la sesión y los
+procesos internos quedan marcados como `SYSTEM:*`.
+`0008` normaliza toda vigencia y evento a timestamps con zona horaria UTC.
+
+## Recuperación de entidades inactivas
+
+Usuario, Área, Rol y Grupo desaparecen de sus listas al quedar inactivos. Las
+rutas `/recovery` permiten localizar únicamente registros inactivos por cédula,
+código o nombre normalizado. La UI solicita confirmación, completa el formulario
+y usa `PATCH` sobre el ID recuperado; nunca crea otra identidad ni borra auditoría.
+El flujo existe tanto en la consola IAM como en la pantalla principal de Personas.
 
 Neon pooled es compatible porque tablas, tipos ENUM y SQL crudo se califican explícitamente y no se envía `search_path` mediante startup options. Los contadores de identificadores usan el nombre completo derivado de `AreaCounter.__table__.fullname`; los Enum ORM usan `inherit_schema=True`.
 
