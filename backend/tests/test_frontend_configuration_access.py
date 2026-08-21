@@ -78,15 +78,29 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertNotIn("readJson('/api/iam/positions')", source)
         self.assertIn('/src/config-readonly.js', index)
 
-    def test_access_console_distinguishes_grouped_and_global_roles(self):
+    def test_access_console_assigns_one_role_and_displays_derived_group(self):
         source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
-        self.assertIn('<h3>Acceso por grupo</h3>', source)
-        self.assertIn('<h3>Roles globales</h3>', source)
-        self.assertIn('const globalRoles = useMemo(() =>', source)
-        self.assertIn('const toggleGlobalRole = (roleId, checked)', source)
-        self.assertIn('Los roles sin grupo se asignan independientemente', source)
-        self.assertIn('Un grupo puede existir sin roles', source)
-        self.assertIn('rol técnico global', source)
+        self.assertIn('<h3>Rol</h3>', source)
+        self.assertIn('const assignableRoles = useMemo(() =>', source)
+        self.assertIn('const selectedRoleId = draftRoleIds[0] || "";', source)
+        self.assertIn('const setRole = (rawRoleId) => {', source)
+        self.assertIn('setDraftRoleIds(nextRoleId ? [nextRoleId] : []);', source)
+        self.assertIn('`Miembro — ${selectedRoleGroup.name}`', source)
+        self.assertIn('Sin grupo — Rol global', source)
+        self.assertIn('Un rol puede existir sin grupo', source.replace('Un grupo puede existir sin roles. Cada rol puede pertenecer como máximo a un grupo', 'Un rol puede existir sin grupo'))
+        self.assertNotIn('<h3>Acceso por grupo</h3>', source)
+        self.assertNotIn('<h3>Roles globales</h3>', source)
+        self.assertNotIn('const toggleGlobalRole = (roleId, checked)', source)
+
+    def test_create_user_name_fields_follow_left_to_right_person_name_order(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        first_name = source.index('<label>Nombre<input required value={form.first_name}')
+        middle_name = source.index('<label>Segundo nombre<input value={form.middle_name}')
+        last_name = source.index('<label>Apellido<input required value={form.last_name}')
+        second_last_name = source.index('<label>Segundo apellido<input value={form.second_last_name}')
+        self.assertLess(first_name, middle_name)
+        self.assertLess(middle_name, last_name)
+        self.assertLess(last_name, second_last_name)
 
     def test_iam_checkboxes_have_larger_click_target_and_visible_selected_state(self):
         css = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.css').read_text(encoding='utf-8')
