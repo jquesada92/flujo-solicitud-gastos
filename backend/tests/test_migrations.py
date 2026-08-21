@@ -81,6 +81,9 @@ class MigrationTopologyTests(unittest.TestCase):
         self.assertIn('RETURN NEW;', migration)
         self.assertIn("RAISE EXCEPTION 'A user can only have one role per group'", migration)
         self.assertIn('CREATE OR REPLACE FUNCTION', migration)
+        self.assertIn('trg_group_role_user_cardinality', migration)
+        self.assertIn('enforce_group_role_user_cardinality', migration)
+        self.assertIn('Grouping this role would give a user multiple roles in the same group', migration)
 
 
 if __name__ == '__main__':
