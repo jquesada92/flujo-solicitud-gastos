@@ -103,7 +103,8 @@ class Position(Base):
 
 class UserPosition(Base):
     __tablename__ = 'user_positions'
-    __table_args__ = (UniqueConstraint('user_id', 'position_id', name='uq_user_position'),)
+    # Cargo is organizational metadata and is single-valued for each user.
+    __table_args__ = (UniqueConstraint('user_id', name='uq_user_position_user'),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
