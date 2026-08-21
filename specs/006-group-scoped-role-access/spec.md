@@ -46,8 +46,9 @@ Después de cambiar el catálogo de Roles de un Grupo, `GroupMember` se reconstr
 
 - validación backend en `iam_users.py` para Roles agrupados y globales;
 - `group_roles.role_id` único para impedir que un Rol pertenezca a dos Grupos;
-- PostgreSQL trigger para impedir dos Roles del mismo Grupo para un Usuario;
-- revisión `20260821_0004_allow_global_roles` permite al mismo trigger aceptar Roles sin Grupo;
+- trigger PostgreSQL sobre `user_role_assignments` para impedir dos Roles del mismo Grupo al asignar/cambiar un Rol de Usuario;
+- trigger PostgreSQL sobre `group_roles` para impedir que un cambio Global→Grupo cree retrospectivamente dos Roles del mismo Grupo para un Usuario;
+- revisión `20260821_0004_allow_global_roles` permite Roles sin Grupo sin relajar ninguno de esos guards;
 - `iam_group_assignments.py` valida cambios Global↔Grupo y reconstruye membresía;
 - política de compatibilidad bloquea endpoints legacy;
 - `user_positions.user_id` único desde revisión 0003.
