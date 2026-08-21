@@ -25,7 +25,6 @@ from app.models.iam import (
     RolePermission,
     SystemAccount,
     UserPermission,
-    UserRoleAssignment,
 )
 from app.services.iam_service import users_with_permission
 
@@ -97,7 +96,6 @@ class IamApiTests(unittest.TestCase):
             self.normal_user = self._new_user(db, 'member@example.com')
             db.flush()
             db.add(SystemAccount(user_id=self.admin.id, account_type='TECHNICAL_ADMIN'))
-            db.add(UserRoleAssignment(user_id=self.admin.id, role_id=system_role.id))
             db.commit()
 
             self.admin_id = self.admin.id
@@ -125,6 +123,45 @@ class IamApiTests(unittest.TestCase):
 
     def auth(self, token: str) -> dict[str, str]:
         return {'Authorization': f'Bearer {token}'}
+
+    def _create_group_role(self, group_name: str, role_name: str, permission_codes: list[str]) -> tuple[int, int]:
+        role = self.client.post(
+            '/api/iam/roles',
+            headers=self.auth(self.admin_token),
+            json={
+                'name': role_name,
+                'description': f'Rol de {group_name}',
+                'permission_codes': permission_codes,
+                'active': True,
+            },
+        )
+        self.assertEqual(role.status_code, 201, role.text)
+        role_id = role.json()['id']
+
+        group = self.client.post(
+            '/api/iam/groups',
+            headers=self.auth(self.admin_token),
+            json={'name': group_name, 'active': True},
+        )
+        self.assertEqual(group.status_code, 201, group.text)
+        group_id = group.json()['id']
+
+        bind = self.client.patch(
+            f'/api/iam/groups/{group_id}',
+            headers=self.auth(self.admin_token),
+            json={'role_ids': [role_id]},
+        )
+        self.assertEqual(bind.status_code, 200, bind.text)
+        return group_id, role_id
+
+    def _assign_roles(self, user_id: int, role_ids: list[int]):
+        response = self.client.patch(
+            f'/api/iam/users/{user_id}',
+            headers=self.auth(self.admin_token),
+            json={'role_ids': role_ids},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response
 
     def test_system_admin_has_all_active_permissions_outside_production(self):
         response = self.client.get('/api/iam/me/permissions', headers=self.auth(self.admin_token))
@@ -195,12 +232,15 @@ class IamApiTests(unittest.TestCase):
         )
         self.assertNotIn('config:manage', effective.json()['permission_codes'])
 
-    def test_area_manage_can_be_assigned_to_ordinary_user(self):
-        grant = self.client.put(
-            f'/api/iam/users/{self.normal_user_id}/permissions/areas:manage',
-            headers=self.auth(self.admin_token),
+    def test_area_manage_is_assigned_through_role_scoped_to_group(self):
+        group_id, role_id = self._create_group_role(
+            'Administración',
+            'Gestor de áreas',
+            ['areas:manage'],
         )
-        self.assertEqual(grant.status_code, 200, grant.text)
+        updated = self._assign_roles(self.normal_user_id, [role_id])
+        self.assertEqual(updated.json()['group_ids'], [group_id])
+        self.assertEqual(updated.json()['role_ids'], [role_id])
 
         create_area = self.client.post(
             '/api/areas',
@@ -213,39 +253,14 @@ class IamApiTests(unittest.TestCase):
         iam_denied = self.client.get('/api/iam/roles', headers=self.auth(self.user_token))
         self.assertEqual(iam_denied.status_code, 403)
 
-    def test_group_role_assignment_changes_effective_permissions_immediately(self):
-        role = self.client.post(
-            '/api/iam/roles',
-            headers=self.auth(self.admin_token),
-            json={
-                'name': 'Aprobador',
-                'description': 'Decide solicitudes',
-                'permission_codes': ['requests:read', 'requests:approve'],
-                'active': True,
-            },
+    def test_group_scoped_role_changes_effective_permissions_immediately(self):
+        group_id, role_id = self._create_group_role(
+            'Comité de aprobación',
+            'Aprobador',
+            ['requests:read', 'requests:approve'],
         )
-        self.assertEqual(role.status_code, 201, role.text)
-        role_id = role.json()['id']
-
-        group = self.client.post(
-            '/api/iam/groups',
-            headers=self.auth(self.admin_token),
-            json={'name': 'Comité de aprobación', 'active': True},
-        )
-        self.assertEqual(group.status_code, 201, group.text)
-        group_id = group.json()['id']
-
-        assigned_role = self.client.put(
-            f'/api/iam/groups/{group_id}/roles/{role_id}',
-            headers=self.auth(self.admin_token),
-        )
-        self.assertEqual(assigned_role.status_code, 200, assigned_role.text)
-
-        member = self.client.put(
-            f'/api/iam/groups/{group_id}/members/{self.normal_user_id}',
-            headers=self.auth(self.admin_token),
-        )
-        self.assertEqual(member.status_code, 200, member.text)
+        updated = self._assign_roles(self.normal_user_id, [role_id])
+        self.assertEqual(updated.json()['group_ids'], [group_id])
 
         effective = self.client.get(
             f'/api/iam/users/{self.normal_user_id}/effective-permissions',
@@ -257,21 +272,52 @@ class IamApiTests(unittest.TestCase):
             {'requests:read', 'requests:approve'},
         )
         sources = effective.json()['sources']['requests:approve']
-        self.assertTrue(any('Comité de aprobación' in source for source in sources))
+        self.assertIn('Grupo Comité de aprobación → Rol Aprobador', sources)
 
-    def test_direct_permission_is_additive(self):
+    def test_user_cannot_have_two_roles_from_same_group(self):
+        group_id, first_role_id = self._create_group_role(
+            'Solicitudes',
+            'Solicitante',
+            ['requests:create'],
+        )
+        second_role = self.client.post(
+            '/api/iam/roles',
+            headers=self.auth(self.admin_token),
+            json={
+                'name': 'Revisor de solicitudes',
+                'permission_codes': ['requests:approve'],
+                'active': True,
+            },
+        )
+        self.assertEqual(second_role.status_code, 201, second_role.text)
+        second_role_id = second_role.json()['id']
+        bind = self.client.patch(
+            f'/api/iam/groups/{group_id}',
+            headers=self.auth(self.admin_token),
+            json={'role_ids': [first_role_id, second_role_id]},
+        )
+        self.assertEqual(bind.status_code, 200, bind.text)
+
+        response = self.client.patch(
+            f'/api/iam/users/{self.normal_user_id}',
+            headers=self.auth(self.admin_token),
+            json={'role_ids': [first_role_id, second_role_id]},
+        )
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertIn('Solo se permite un rol por grupo', response.text)
+
+    def test_direct_permission_assignment_is_rejected(self):
         grant = self.client.put(
             f'/api/iam/users/{self.normal_user_id}/permissions/requests:create',
             headers=self.auth(self.admin_token),
         )
-        self.assertEqual(grant.status_code, 200, grant.text)
+        self.assertEqual(grant.status_code, 409, grant.text)
 
         effective = self.client.get(
             f'/api/iam/users/{self.normal_user_id}/effective-permissions',
             headers=self.auth(self.admin_token),
         )
-        self.assertIn('requests:create', effective.json()['permission_codes'])
-        self.assertIn('Asignación directa', effective.json()['sources']['requests:create'])
+        self.assertNotIn('requests:create', effective.json()['permission_codes'])
 
     def test_system_managed_role_cannot_be_edited_from_ui(self):
         with self.Session() as db:

@@ -60,7 +60,12 @@ class GroupMember(Base):
 
 class GroupRole(Base):
     __tablename__ = 'group_roles'
-    __table_args__ = (UniqueConstraint('group_id', 'role_id', name='uq_group_role'),)
+    __table_args__ = (
+        UniqueConstraint('group_id', 'role_id', name='uq_group_role'),
+        # A business role belongs to one group only. The user receives the group
+        # membership through the role assignment, never as an independent grant.
+        UniqueConstraint('role_id', name='uq_group_role_role'),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     group_id: Mapped[int] = mapped_column(ForeignKey('user_groups.id', ondelete='CASCADE'), nullable=False, index=True)
@@ -98,7 +103,8 @@ class Position(Base):
 
 class UserPosition(Base):
     __tablename__ = 'user_positions'
-    __table_args__ = (UniqueConstraint('user_id', 'position_id', name='uq_user_position'),)
+    # Cargo is organizational metadata and is single-valued for each user.
+    __table_args__ = (UniqueConstraint('user_id', name='uq_user_position_user'),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)

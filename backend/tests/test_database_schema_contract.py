@@ -34,22 +34,44 @@ class DatabaseSchemaContractTests(unittest.TestCase):
                 with self.assertRaises(ValidationError):
                     Settings(database_url='sqlite://', database_schema=schema)
 
-    def test_only_clean_initial_alembic_baseline_exists(self):
+    def test_clean_initial_baseline_is_preserved_and_forward_migrations_are_linear(self):
         revisions = sorted(path.name for path in VERSIONS_DIR.glob('*.py'))
-        self.assertEqual(revisions, ['20260820_0001_initial_schema.py'])
+        self.assertEqual(
+            revisions,
+            [
+                '20260820_0001_initial_schema.py',
+                '20260820_0002_group_scoped_roles.py',
+                '20260821_0003_single_user_position.py',
+            ],
+        )
 
-        baseline = (VERSIONS_DIR / revisions[0]).read_text(encoding='utf-8')
+        baseline = (VERSIONS_DIR / '20260820_0001_initial_schema.py').read_text(encoding='utf-8')
         self.assertIn("revision = '20260820_0001'", baseline)
         self.assertIn('down_revision = None', baseline)
         self.assertIn("existing_tables - {'alembic_version'}", baseline)
         self.assertIn('Fresh baseline requires an empty application schema', baseline)
+
+        group_roles = (VERSIONS_DIR / '20260820_0002_group_scoped_roles.py').read_text(encoding='utf-8')
+        self.assertIn("revision = '20260820_0002'", group_roles)
+        self.assertIn("down_revision = '20260820_0001'", group_roles)
+
+        single_position = (VERSIONS_DIR / '20260821_0003_single_user_position.py').read_text(encoding='utf-8')
+        self.assertIn("revision = '20260821_0003'", single_position)
+        self.assertIn("down_revision = '20260820_0002'", single_position)
 
     def test_alembic_version_table_uses_application_schema(self):
         env_source = (REPO_ROOT / 'backend' / 'alembic' / 'env.py').read_text(encoding='utf-8')
         self.assertIn('version_table_schema=database_schema', env_source)
         self.assertIn("config.attributes['database_schema'] = database_schema", env_source)
         self.assertIn('CREATE SCHEMA IF NOT EXISTS', env_source)
-        self.assertIn("connect_args['options'] = f'-csearch_path={database_schema}'", env_source)
+        self.assertNotIn("connect_args['options']", env_source)
+        self.assertNotIn('-csearch_path=', env_source)
+
+    def test_runtime_engine_is_compatible_with_neon_pooler(self):
+        database_source = (REPO_ROOT / 'backend' / 'app' / 'core' / 'database.py').read_text(encoding='utf-8')
+        self.assertIn('MetaData(schema=APPLICATION_SCHEMA)', database_source)
+        self.assertNotIn("connect_args['options']", database_source)
+        self.assertNotIn('-csearch_path=', database_source)
 
     def test_alembic_schema_setup_commits_before_migration_transaction(self):
         env_source = (REPO_ROOT / 'backend' / 'alembic' / 'env.py').read_text(encoding='utf-8')
@@ -62,6 +84,11 @@ class DatabaseSchemaContractTests(unittest.TestCase):
         self.assertLess(setup_commit_position, configure_position)
         self.assertLess(configure_position, begin_position)
         self.assertNotIn('SET search_path TO', env_source)
+
+    def test_render_declares_application_schema_explicitly(self):
+        render_source = (REPO_ROOT / 'render.yaml').read_text(encoding='utf-8')
+        self.assertIn('- key: DATABASE_SCHEMA', render_source)
+        self.assertIn('value: administracion', render_source)
 
     def test_default_compose_uses_local_postgres_service(self):
         compose_source = (REPO_ROOT / 'docker-compose.yml').read_text(encoding='utf-8')

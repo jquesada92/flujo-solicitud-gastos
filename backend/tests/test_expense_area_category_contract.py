@@ -72,7 +72,16 @@ class ExpenseAreaCategoryContractTests(unittest.TestCase):
         self.assertTrue(hasattr(Expense, 'expense_type'))
         self.assertTrue(hasattr(Expense, 'expense_subcategory'))
 
-    def test_frontend_sends_canonical_wire_payload(self):
+    def test_expense_form_uses_canonical_area_fields_directly(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'expense-form.jsx').read_text(encoding='utf-8')
+        self.assertIn('expense_area: firstType', source)
+        self.assertIn('expense_category: firstSub', source)
+        self.assertIn('value={form.expense_area}', source)
+        self.assertIn('value={form.expense_category}', source)
+        self.assertNotIn('form.expense_type', source)
+        self.assertNotIn('form.expense_subcategory', source)
+
+    def test_legacy_wire_adapter_still_never_serializes_legacy_names(self):
         source = (REPO_ROOT / 'frontend' / 'src' / 'domain-normalization.js').read_text(encoding='utf-8')
         self.assertIn("normalized.expense_area = normalized.expense_type", source)
         self.assertIn("normalized.expense_category = normalized.expense_subcategory", source)

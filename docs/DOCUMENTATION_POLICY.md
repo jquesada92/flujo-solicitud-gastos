@@ -1,178 +1,92 @@
-# Política de sincronización de documentación
+# Política de documentación
 
-## Regla
+## Objetivo
 
-La documentación es parte del entregable. Un cambio de código no está completo si deja artefactos funcionales o técnicos desactualizados.
+Mantener documentación suficiente para comprender, operar y reconstruir el producto sin depender de conversaciones externas.
 
-La fuente de verdad documental se mantiene en este orden:
+## Jerarquía
 
-1. `.specify/memory/constitution.md`
-2. `specs/<feature>/spec.md`
-3. `specs/<feature>/checklists/acceptance.md`
-4. `specs/<feature>/plan.md`
-5. `PROMPT_RECONSTRUCCION.md`
-6. `README.md`
-7. `docs/`
-8. código legacy cuando exista una transición documentada
+1. Constitución.
+2. Specs vigentes.
+3. Checklists.
+4. Plans.
+5. Prompt maestro.
+6. README.
+7. `docs/`.
+8. Código de compatibilidad marcado.
 
-## Artefactos que deben revisarse
+## Regla de estado actual
 
-Según el impacto de cada cambio, revisar siempre:
+Los documentos normativos describen **cómo funciona el producto ahora**. Cuando una arquitectura es sustituida:
 
-1. `.specify/memory/constitution.md`;
-2. `specs/<feature>/spec.md`;
-3. `specs/<feature>/plan.md`;
-4. `specs/<feature>/checklists/acceptance.md`;
-5. `README.md`;
-6. `PROMPT_RECONSTRUCCION.md`;
-7. documentación funcional/técnica afectada en `docs/`;
-8. `docs/TERMINOLOGY.md`;
-9. `docs/HISTORY.md`;
-10. `CHANGELOG.md`;
-11. contratos/API, migraciones y comentarios técnicos afectados;
-12. descripción del PR cuando aplique.
+- se actualiza o reemplaza la Spec que la definía;
+- no se conserva como alternativa válida;
+- HISTORY/CHANGELOG resumen el cambio a nivel de capacidad, sin volver a enseñar el diseño sustituido;
+- rutas, ramas, migraciones o comandos ya cerrados no se presentan como instrucciones actuales.
 
-## Cuándo actualizar cada artefacto
+Una estructura física de compatibilidad puede documentarse únicamente si todavía existe en el código y se identifica claramente como deuda, nunca como fuente de autorización o diseño objetivo.
 
-### Constitución
+## Cambios que obligan a revisar documentación
 
-Actualizar cuando cambie una regla transversal, principio de arquitectura, definición de dominio, seguridad, autorización, navegación canónica, persistencia canónica, migraciones o Definition of Done.
+- IAM, permisos o cardinalidades;
+- navegación o pantallas;
+- comportamiento de sesión;
+- flujo/estados/capacidades;
+- modelos, schemas o migraciones;
+- persistencia, hosting o variables de entorno;
+- email/notificaciones;
+- documentos/seguridad;
+- performance o política de red;
+- terminología visible.
 
-### Especificación funcional
+## Checklist documental por PR
 
-Actualizar cuando cambie qué hace el producto, sus superficies, reglas de negocio, campos, nombres funcionales, permisos, navegación o casos límite.
+1. ¿Cambió una regla constitucional? Actualizar versión de Constitución.
+2. ¿Cambió una feature? Actualizar Spec, Plan y Checklist.
+3. ¿Cambió el contrato transversal? Actualizar README, Prompt y `CURRENT_PRODUCT_CONTRACT.md`.
+4. ¿Cambió operación/despliegue? Actualizar docs técnicos.
+5. ¿Cambió terminología? Buscar y corregir todo el repositorio documental.
+6. ¿Se sustituyó una idea? Eliminarla de la documentación normativa.
+7. Registrar una síntesis en CHANGELOG/HISTORY si aporta trazabilidad.
 
-### Plan técnico
+## Validación automática/manual recomendada
 
-Actualizar cuando cambien modelos, tablas, relaciones, endpoints, migraciones, bridges, compatibilidad, arquitectura, seguridad o estrategia de testing.
+Además de tests/build, revisar texto buscando:
 
-### Criterios de aceptación
+- nombres de ramas ya mergeadas usados como instrucciones;
+- heads Alembic obsoletos;
+- permisos que ya no resuelve `effective_permission_codes()`;
+- rutas o componentes inexistentes;
+- cardinalidades diferentes a los modelos/migraciones;
+- menciones a formas de acceso rechazadas por `iam_access_policy.py`.
 
-Actualizar siempre que cambie el comportamiento observable o la forma de verificar una feature. No marcar como completado un gate que no se haya ejecutado realmente.
+## Fuentes de verdad técnica
 
-### README
-
-Mantenerlo como descripción operativa actual del producto. No debe enseñar pantallas, permisos, nombres de campos o migraciones retiradas como si siguieran vigentes.
-
-### Prompt maestro
-
-Debe ser suficiente para reconstruir el comportamiento canónico actual sin reintroducir arquitectura legacy.
-
-### Terminología
-
-Actualizar cuando cambie cualquier nombre visible o técnico canónico. La UI, API nueva y documentación deben seguir este documento.
-
-### HISTORY
-
-Registrar decisiones relevantes y su causa: cambios de dominio, arquitectura, navegación, compatibilidad, migraciones y causas raíz de defectos.
-
-### CHANGELOG
-
-Registrar brevemente el cambio entregable orientado a release.
-
-## Cambios de navegación son funcionales
-
-Eliminar, consolidar o mover una pantalla es un cambio funcional cuando modifica la superficie desde la que el usuario completa una tarea.
-
-Ejemplo vigente:
+Para verificar documentación IAM:
 
 ```text
-Antes
-Configuración → Usuarios
-Configuración → Organigrama
-Configuración → Accesos
-
-Ahora
-Configuración → Accesos
+backend/app/services/iam_service.py
+backend/app/api/iam_users.py
+backend/app/api/iam_access_policy.py
+backend/app/core/security.py
 ```
 
-Si Usuarios/Personas y Organigrama se consolidan en Accesos, deben sincronizarse Constitución, Feature 011, README, prompt maestro, documentos de IAM/Configuración, HISTORY y CHANGELOG.
-
-## Bridges y defectos de integración legacy
-
-Mientras existan bridges de Vite/DOM/hash para integrar componentes nuevos con el shell legacy, cualquier cambio debe incluir:
-
-- contrato explícito en spec/plan;
-- test de regresión automatizado cuando sea viable;
-- fail-fast ante transformaciones ambiguas;
-- validación manual de la UX crítica cuando el comportamiento depende del navegador.
-
-Para Accesos, la validación mínima es:
+Para persistencia:
 
 ```text
-Accesos → Inicio
-Accesos → Solicitudes
-Accesos → Facturas
-Accesos → Auditoría
-Accesos → Configuración → otra pantalla
-Accesos → Salir
+backend/app/core/database.py
+backend/alembic/env.py
+backend/alembic/versions/
+render.yaml
+docker-compose.yml
 ```
 
-Abrir/cerrar únicamente el dropdown Configuración no debe abandonar Accesos.
-
-## Renombres de contrato y persistencia
-
-Un renombre de campo que atraviesa API/ORM/DB no es solo cosmético.
-
-Si se cambia el contrato canónico, por ejemplo:
+Para UX actual:
 
 ```text
-expense_type        → expense_area
-expense_subcategory → expense_category
+frontend/src/iam-admin.jsx
+frontend/src/home-dashboard.jsx
+frontend/src/user-tracking.jsx
+frontend/src/auth-route-guard.js
+frontend/src/request-governor.js
 ```
-
-se deben revisar como mínimo:
-
-- Constitución y terminología;
-- schemas/API;
-- modelos ORM;
-- migración Alembic y topología;
-- pruebas de contrato/migración;
-- README y prompt maestro;
-- documentación funcional/técnica;
-- HISTORY y CHANGELOG.
-
-No usar aliases legacy como excusa para documentar el nombre retirado como contrato vigente.
-
-## Reparaciones de datos o migraciones legacy
-
-Si una rama o volumen PostgreSQL referencia una revisión Alembic ausente, debe resolverse sincronizando la cadena correcta y validando el esquema físico.
-
-No se considera válido usar `alembic stamp` para ocultar una incompatibilidad entre código y base de datos.
-
-## Revisión antes de merge
-
-Responder explícitamente:
-
-- ¿Cambió comportamiento funcional?
-- ¿Cambió navegación o superficie de administración?
-- ¿Cambió terminología?
-- ¿Cambió modelo de datos/API?
-- ¿Cambió seguridad/autorización?
-- ¿Cambió migración/compatibilidad?
-- ¿Cambió despliegue/configuración?
-- ¿Cambió un criterio de aceptación?
-- ¿Cambió un bridge legacy o su contrato?
-
-Si la respuesta es sí, los documentos correspondientes deben modificarse en el mismo PR/rama.
-
-## Regla de discrepancia
-
-Si código y documentación discrepan:
-
-- no ocultar la discrepancia;
-- corregirla antes del merge; o
-- documentarla explícitamente como transición/deuda con alcance y condición de retiro.
-
-No es válido asumir que el código “habla por sí solo”.
-
-## Cierre
-
-No marcar una feature/corrección como terminada hasta que:
-
-- pruebas relevantes pasen;
-- migraciones aplicables se validen;
-- build frontend pase;
-- documentación afectada esté sincronizada;
-- la descripción del PR refleje el comportamiento real;
-- cualquier verificación manual pendiente esté claramente identificada.

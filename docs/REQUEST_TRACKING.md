@@ -1,236 +1,69 @@
-# Seguimiento universal, acciones pendientes y capacidades por recurso
+# Inicio, acciones pendientes y Seguimiento
 
-## Objetivo
+## Separación de responsabilidades
 
-Todo usuario activo puede consultar dashboard y solicitudes para seguimiento. La lectura compartida no convierte las acciones mutables en universales.
+### Inicio = mi trabajo
 
-```text
-información compartida
-vs
-acciones concretas del usuario
-vs
-capacidades/delegaciones por recurso
-```
+`HomeDashboard` consume `/api/expenses/dashboard` y muestra datos personales:
 
-## Baseline
+- acciones que esperan al usuario;
+- solicitudes propias en proceso;
+- métricas de sus solicitudes;
+- modal de acción contextual.
 
-```text
-active user
-→ requests:read
-→ GET /api/expenses/dashboard
-→ GET /api/expenses
-```
+### Seguimiento = trabajo del equipo
 
-## Dashboard
+`user-tracking.jsx` consume `/api/organization/groups` y muestra Grupos, miembros, Roles y pendientes. Es informativo y no expone controles de IAM.
 
-Los KPIs superiores son informativos:
+## Acciones pendientes
 
 ```text
-Acciones que requieren mi atención
-Solicitudes en proceso
-Cerradas en 24 horas
+APPROVAL_DECISION
+QUOTATION_VOTE
+CORRECT_REQUEST
+CLOSE_REQUEST
 ```
 
-No son botones.
+Una acción existe solo si el backend confirma que sigue vigente.
+
+### APPROVAL_DECISION
+`requests:approve` + aprobación PENDING asignada + solicitud en `PENDING_APPROVAL`.
+
+### QUOTATION_VOTE
+`requests:approve` + invitación vigente + solicitud en `QUOTATION_VOTING` + voto aún pendiente.
+
+### CORRECT_REQUEST
+Solicitud propia en `NEEDS_REVISION`.
+
+### CLOSE_REQUEST
+Solicitud `APPROVED` y actor con autoridad de cierre por recurso.
+
+## Seguimiento de usuarios
+
+KPIs:
 
 ```text
-fila de Acciones pendientes → modal contextual
-Ver todas                    → Solicitudes
+miembros activos
+usuarios con pendientes
+acciones pendientes totales
 ```
 
-## Tareas contextuales
-
-`pending_action_service.py` resuelve:
-
-### `APPROVAL_DECISION`
-
-`requests:approve` + `Approval.PENDING` asignado + `PENDING_APPROVAL`.
-
-### `QUOTATION_VOTE`
-
-`requests:approve` + invitación vigente + `QUOTATION_VOTING` + sin voto.
-
-### `CORRECT_REQUEST`
+Por Grupo se muestra:
 
 ```text
-NEEDS_REVISION
-AND requested_by == current_user.email
+nombre/descripcion
+miembros visibles
+Rol(es) del miembro en ese Grupo
+pending_actions por miembro
+total del Grupo
 ```
 
-La tarea pertenece al solicitante original.
+La UI permite buscar por usuario, Grupo o Rol y filtrar solo miembros con pendientes.
 
-### `CLOSE_REQUEST`
+## Privacidad y autorización
 
-```text
-APPROVED
-AND (
-  requested_by == current_user.email
-  OR delegación de cierre activa para current_user
-)
-```
+Seguimiento requiere sesión. No contiene controles de edición y no sustituye Accesos.
 
-No depende de `requests:close`.
+## Refresco
 
-El Administrador del sistema puede cerrar por excepción administrativa desde Solicitudes, pero no recibe todas las solicitudes aprobadas como tareas personales.
-
-## Modal contextual
-
-Al seleccionar una fila:
-
-```text
-GET /api/expenses/{request_id}/my-actions
-```
-
-El backend revalida tareas y el modal muestra únicamente las vigentes.
-
-### Aprobación
-
-```text
-Aprobar
-Rechazar
-Enviar a revisión
-```
-
-Enviar a revisión exige comentario mínimo de 3 caracteres y usa `POST /api/expenses/{request_id}/approval-decision`.
-
-Una revisión válida:
-
-```text
-aprobación actual    → REVISION_REQUESTED
-solicitud            → NEEDS_REVISION
-otras PENDING/WAITING → EXPIRED
-solicitante          → CORRECT_REQUEST
-```
-
-### Votación
-
-`QUOTATION_VOTE` permite revisar opciones/soportes y votar.
-
-### Cierre
-
-`CLOSE_REQUEST` permite subir factura, notas y cerrar; solo aparece para solicitante o delegado activo.
-
-### Corrección
-
-`CORRECT_REQUEST` abre la solicitud propia para corregir/reenviar.
-
-## Después de una acción
-
-El frontend recarga dashboard + `my-actions`; una tarea atendida desde correo/otra sesión deja de mostrarse.
-
-## Lista de solicitudes
-
-`GET /api/expenses` no filtra por requester y devuelve:
-
-```text
-can_cancel
-can_correct
-can_close
-can_delegate_close
-```
-
-### `can_cancel`
-
-Solicitante original o Administrador del sistema, en estados cancelables.
-
-### `can_correct`
-
-Solicitante original o Administrador del sistema, en estados corregibles.
-
-### `can_close`
-
-```text
-APPROVED/CLOSED
-AND (solicitante OR system_accounts OR delegado activo)
-```
-
-### `can_delegate_close`
-
-Solo el solicitante original puede administrar la delegación de esa solicitud.
-
-## Delegación de cierre/factura
-
-API:
-
-```text
-GET    /api/expenses/{request_id}/closure-delegation
-PUT    /api/expenses/{request_id}/closure-delegation
-DELETE /api/expenses/{request_id}/closure-delegation
-```
-
-Solo el solicitante crea/cambia/revoca. Una única delegación activa por solicitud; cambiar/revocar conserva historial.
-
-El delegado:
-
-- debe ser activo;
-- no puede ser el solicitante;
-- no puede ser `system_accounts`;
-- obtiene autoridad únicamente sobre esa solicitud.
-
-Ver `docs/CLOSURE_DELEGATION.md`.
-
-## Cancelación
-
-Cancelables: `QUOTATION_VOTING`, `SUBMITTED`, `PENDING_APPROVAL`, `NEEDS_REVISION`, `APPROVED`.
-
-No cancelables: `CLOSED`, `CANCELLED`, `REJECTED`.
-
-`POST /api/expenses/{request_id}/cancel` exige motivo.
-
-## Corrección
-
-Corregibles por solicitante/Admin: `QUOTATION_VOTING`, `SUBMITTED`, `PENDING_APPROVAL`, `NEEDS_REVISION`, `APPROVED`, `REJECTED`.
-
-No corregibles: `CLOSED`, `CANCELLED`.
-
-`PUT /api/expenses/{request_id}/resubmit` vuelve a autorizar en backend.
-
-## Administrador del sistema en producción
-
-IAM máximo:
-
-```text
-requests:read
-config:manage
-```
-
-No participa en aprobación/votación. Cancelar, corregir y gestionar cierre/factura son excepciones administrativas por recurso basadas en `system_accounts`.
-
-## Frontend
-
-Componentes:
-
-```text
-frontend/src/home-dashboard.jsx
-frontend/src/home-dashboard.css
-frontend/src/closure-delegation.jsx
-```
-
-Mientras `ExpenseTable` siga legacy, Vite mantiene bridges para:
-
-```text
-x.can_cancel
-x.can_correct
-x.can_close
-x.can_delegate_close
-```
-
-La autorización sigue en backend.
-
-## Pruebas
-
-Cobertura relevante:
-
-```text
-test_universal_tracking.py
-test_request_cancellation.py
-test_pending_actions.py
-test_multi_quote_revision.py
-test_closure_delegation.py
-test_frontend_dashboard_contract.py
-test_frontend_closure_contract.py
-```
-
-Debe demostrar lectura universal, tareas personales correctas, revisión inmediata, corrección/cancelación por recurso, cierre requester/Admin/delegado y revocación de delegación.
-
-Mientras GitHub Actions no tenga cuota, backend tests, `npm run build` y Docker build/smoke son gates locales obligatorios.
+Inicio carga al montar/cambiar `refreshKey`. Seguimiento carga al montar y cuando el usuario pulsa Recargar. Ninguna vista usa polling continuo.

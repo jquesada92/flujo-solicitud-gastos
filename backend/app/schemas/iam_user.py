@@ -12,15 +12,25 @@ class IamUserCreate(BaseModel):
     email: EmailStr
     phone: str | None = Field(default=None, max_length=30)
     active: bool = True
-    group_ids: list[int] = Field(default_factory=list, max_length=100)
+    # Compatibility input only. Membership is derived from role_ids.
+    group_ids: list[int] | None = Field(default=None, max_length=100)
     role_ids: list[int] = Field(default_factory=list, max_length=100)
+    # Compatibility field only. Direct user permissions are not allowed.
     direct_permission_codes: list[str] = Field(default_factory=list, max_length=100)
+    # Cargo is organizational metadata; each user may have at most one Cargo.
     position_ids: list[int] = Field(default_factory=list, max_length=1)
 
     @field_validator('middle_name', 'second_last_name', 'phone', mode='before')
     @classmethod
     def normalize_optional(cls, value):
         return value if value is not None and str(value).strip() else None
+
+    @field_validator('direct_permission_codes')
+    @classmethod
+    def reject_direct_permissions(cls, value):
+        if value:
+            raise ValueError('Los permisos deben asignarse mediante roles; no se permiten permisos individuales')
+        return []
 
 
 class IamUserUpdate(BaseModel):
@@ -32,6 +42,7 @@ class IamUserUpdate(BaseModel):
     email: EmailStr | None = None
     phone: str | None = Field(default=None, max_length=30)
     active: bool | None = None
+    # Compatibility input only. Membership changes through role_ids.
     group_ids: list[int] | None = Field(default=None, max_length=100)
     role_ids: list[int] | None = Field(default=None, max_length=100)
     direct_permission_codes: list[str] | None = Field(default=None, max_length=100)
@@ -41,6 +52,13 @@ class IamUserUpdate(BaseModel):
     @classmethod
     def normalize_optional(cls, value):
         return value if value is not None and str(value).strip() else None
+
+    @field_validator('direct_permission_codes')
+    @classmethod
+    def reject_direct_permissions(cls, value):
+        if value:
+            raise ValueError('Los permisos deben asignarse mediante roles; no se permiten permisos individuales')
+        return value
 
 
 class IamUserOut(BaseModel):
@@ -58,9 +76,11 @@ class IamUserOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     is_system_account: bool = False
+    # Derived from each assigned role's group.
     group_ids: list[int] = Field(default_factory=list)
     role_ids: list[int] = Field(default_factory=list)
     position_ids: list[int] = Field(default_factory=list)
+    # Kept in output for compatibility; authorization ignores direct permissions.
     direct_permission_codes: list[str] = Field(default_factory=list)
     effective_permission_codes: list[str] = Field(default_factory=list)
     permission_sources: dict[str, list[str]] = Field(default_factory=dict)

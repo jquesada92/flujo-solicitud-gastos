@@ -5,6 +5,8 @@ const state = {
   initialized: false,
   readOnly: false,
   permissionCodes: new Set(),
+  refreshPromise: null,
+  lastFailedAt: 0,
 };
 
 const CONFIG_PREFIXES = [
@@ -16,6 +18,7 @@ const CONFIG_PREFIXES = [
   '/api/audit',
 ];
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const FAILED_REFRESH_COOLDOWN_MS = 30_000;
 
 function requestPath(input) {
   try {
@@ -56,8 +59,11 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function readJson(path) {
-  const response = await delegatedFetch(path, { headers: authHeaders() });
+async function readJson(path, { force = false } = {}) {
+  const response = await delegatedFetch(path, {
+    headers: authHeaders(),
+    ...(force ? { cache: 'reload' } : {}),
+  });
   if (!response.ok) {
     let detail = 'No se pudo cargar la configuración';
     try {
@@ -69,38 +75,52 @@ async function readJson(path) {
   return response.json();
 }
 
-async function refreshMode() {
+function resetMode() {
+  state.token = null;
+  state.initialized = false;
+  state.readOnly = false;
+  state.permissionCodes = new Set();
+  state.refreshPromise = null;
+  document.documentElement.removeAttribute('data-config-readonly');
+  closeAccessViewer();
+}
+
+async function refreshMode({ force = false } = {}) {
   const token = localStorage.getItem('access_token');
   if (!token) {
-    state.token = null;
-    state.initialized = false;
-    state.readOnly = false;
-    state.permissionCodes = new Set();
-    document.documentElement.removeAttribute('data-config-readonly');
-    closeAccessViewer();
+    resetMode();
     return;
   }
-  if (state.initialized && token === state.token) return;
+  if (!force && state.initialized && token === state.token) return;
+  if (!force && state.lastFailedAt && Date.now() - state.lastFailedAt < FAILED_REFRESH_COOLDOWN_MS) return;
+  if (state.refreshPromise) return state.refreshPromise;
 
   state.token = token;
-  try {
-    const access = await readJson('/api/iam/me/permissions');
-    state.permissionCodes = new Set(access.permission_codes || []);
-    state.readOnly = state.permissionCodes.has('config:read') && !state.permissionCodes.has('config:manage');
-    state.initialized = true;
-    if (state.readOnly) {
-      document.documentElement.setAttribute('data-config-readonly', 'true');
-      applyReadOnlyUi();
-    } else {
+  state.refreshPromise = (async () => {
+    try {
+      const access = await readJson('/api/iam/me/permissions', { force });
+      state.permissionCodes = new Set(access.permission_codes || []);
+      state.readOnly = state.permissionCodes.has('config:read') && !state.permissionCodes.has('config:manage');
+      state.initialized = true;
+      state.lastFailedAt = 0;
+      if (state.readOnly) {
+        document.documentElement.setAttribute('data-config-readonly', 'true');
+        applyReadOnlyUi();
+      } else {
+        document.documentElement.removeAttribute('data-config-readonly');
+        closeAccessViewer();
+      }
+    } catch (_) {
+      state.initialized = false;
+      state.readOnly = false;
+      state.permissionCodes = new Set();
+      state.lastFailedAt = Date.now();
       document.documentElement.removeAttribute('data-config-readonly');
-      closeAccessViewer();
+    } finally {
+      state.refreshPromise = null;
     }
-  } catch (_) {
-    state.initialized = false;
-    state.readOnly = false;
-    state.permissionCodes = new Set();
-    document.documentElement.removeAttribute('data-config-readonly');
-  }
+  })();
+  return state.refreshPromise;
 }
 
 function text(element) {
@@ -162,11 +182,6 @@ function applyReadOnlyUi() {
     const assignments = sectionByHeading('asignación de cargos');
     assignments?.querySelectorAll('select').forEach((control) => { control.disabled = true; });
     disableMutationButtons(assignments);
-
-    const profiles = sectionByHeading('perfiles de acceso');
-    profiles?.querySelectorAll('.profile-create').forEach((form) => { form.hidden = true; });
-    profiles?.querySelectorAll('input, select, textarea').forEach((control) => { control.disabled = true; });
-    disableMutationButtons(profiles);
   }
 
   if (title.includes('áreas') || title.includes('categorías')) {
@@ -210,6 +225,9 @@ function closeAccessViewer() {
 }
 
 async function openAccessViewer() {
+  await refreshMode();
+  if (!state.readOnly) return;
+
   closeAccessViewer();
   const overlay = node('div', 'iam-overlay');
   overlay.id = 'config-readonly-access';
@@ -218,8 +236,8 @@ async function openAccessViewer() {
   const heading = node('div');
   heading.append(
     node('p', 'iam-eyebrow', 'CONFIGURACIÓN · ACCESOS · SOLO LECTURA'),
-    node('h1', '', 'Usuarios, grupos, cargos, roles y permisos'),
-    node('p', 'iam-muted', 'Puedes consultar la configuración vigente. Las modificaciones están reservadas a quienes tengan config:manage.'),
+    node('h1', '', 'Usuarios, grupos, roles y permisos'),
+    node('p', 'iam-muted', 'Modelo de acceso: Usuario → Grupo/Rol → Permisos. Esta vista es informativa.'),
   );
   const actions = node('div', 'iam-actions');
   const close = node('button', 'iam-button primary', 'Volver');
@@ -237,15 +255,13 @@ async function openAccessViewer() {
   document.body.appendChild(overlay);
 
   try {
-    const [permissions, roles, groups, users, positions] = await Promise.all([
+    const [permissions, roles, groups, users] = await Promise.all([
       readJson('/api/iam/permissions'),
       readJson('/api/iam/roles'),
       readJson('/api/iam/groups'),
       readJson('/api/iam/users'),
-      readJson('/api/iam/positions'),
     ]);
     const roleById = new Map(roles.map((item) => [item.id, item]));
-    const positionById = new Map(positions.map((item) => [item.id, item]));
     const userById = new Map(users.map((item) => [item.id, item]));
     const permissionByCode = new Map(permissions.map((item) => [item.code, item]));
 
@@ -254,7 +270,6 @@ async function openAccessViewer() {
       ['groups', 'Grupos'],
       ['roles', 'Roles'],
       ['permissions', 'Permisos'],
-      ['positions', 'Cargos'],
     ];
     let active = 'users';
 
@@ -266,11 +281,10 @@ async function openAccessViewer() {
       const list = node('div', 'iam-list');
       if (active === 'users') {
         users.forEach((user) => {
-          const cargos = (user.position_ids || []).map((id) => positionById.get(id)?.name).filter(Boolean);
           const permissionsText = (user.effective_permission_codes || []).map((code) => permissionByCode.get(code)?.name || code);
           list.appendChild(accessRow(
             user.name,
-            [user.email, `Cargo(s): ${cargos.join(', ') || 'Sin cargo'}`, `Permisos efectivos: ${permissionsText.join(', ') || 'Ninguno'}`],
+            [user.email, `Permisos efectivos: ${permissionsText.join(', ') || 'Ninguno'}`],
             user.is_system_account ? 'SISTEMA' : user.active ? 'ACTIVO' : 'INACTIVO',
           ));
         });
@@ -292,11 +306,6 @@ async function openAccessViewer() {
       } else if (active === 'permissions') {
         permissions.forEach((permission) => {
           list.appendChild(accessRow(permission.name, [permission.code, permission.description || 'Sin descripción'], permission.active ? 'ACTIVO' : 'INACTIVO'));
-        });
-      } else if (active === 'positions') {
-        positions.forEach((position) => {
-          const roleNames = (position.role_ids || []).map((id) => roleById.get(id)?.name).filter(Boolean);
-          list.appendChild(accessRow(position.name, [position.description || 'Sin descripción', `Roles heredados: ${roleNames.join(', ') || 'Ninguno'}`], position.active ? 'ACTIVO' : 'INACTIVO'));
         });
       }
       if (!list.children.length) list.appendChild(node('p', 'iam-empty', 'No hay registros para mostrar.'));
@@ -332,6 +341,17 @@ document.addEventListener('click', (event) => {
   openAccessViewer();
 }, true);
 
+let refreshScheduled = false;
+function scheduleRefreshMode() {
+  if (refreshScheduled) return;
+  refreshScheduled = true;
+  queueMicrotask(() => {
+    refreshScheduled = false;
+    const token = localStorage.getItem('access_token');
+    if (token !== state.token || !state.initialized) refreshMode();
+  });
+}
+
 const observer = new MutationObserver(() => {
   const menuReadOnly = document.querySelector('.config-menu-items[data-config-readonly="true"]');
   if (menuReadOnly && !state.readOnly) {
@@ -339,8 +359,15 @@ const observer = new MutationObserver(() => {
     document.documentElement.setAttribute('data-config-readonly', 'true');
   }
   if (state.readOnly) applyReadOnlyUi();
+  scheduleRefreshMode();
 });
 observer.observe(document.documentElement, { childList: true, subtree: true });
 
-setInterval(refreshMode, 750);
+window.addEventListener('app-auth-changed', () => refreshMode({ force: true }));
+window.addEventListener('hashchange', scheduleRefreshMode);
+window.addEventListener('focus', scheduleRefreshMode);
+window.addEventListener('storage', (event) => {
+  if (event.key === 'access_token') refreshMode({ force: true });
+});
+
 refreshMode();
