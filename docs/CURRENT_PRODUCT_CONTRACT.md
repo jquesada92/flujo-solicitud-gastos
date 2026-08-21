@@ -30,6 +30,8 @@ Usuario 0..1 Cargo
 
 Un Rol sin Grupo es global. La membresía del Grupo es una proyección únicamente de Roles agrupados. Cargo no participa en autorización.
 
+En Configuración > Accesos, la lista de Usuarios activos presenta como máximo 10 coincidencias. La búsqueda acepta cédula, nombres, apellidos, correo, Rol o Grupo asignado y no distingue mayúsculas ni acentos.
+
 ## Permisos
 
 ```text

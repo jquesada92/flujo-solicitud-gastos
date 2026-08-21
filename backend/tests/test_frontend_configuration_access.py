@@ -11,7 +11,7 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn('/api/iam/users/recovery?identity_document=', source)
         self.assertIn('/api/iam/roles/recovery?name=', source)
         self.assertIn('/api/iam/groups/recovery?name=', source)
-        self.assertIn('users.filter((user) => user.active)', source)
+        self.assertIn('.filter((user) => user.active)', source)
         self.assertIn('roles.filter((role) => role.active)', source)
         self.assertIn('groups.filter((group) => group.active)', source)
         self.assertIn('recovery ? "Reactivar usuario"', source)
@@ -20,6 +20,20 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         main = (REPO_ROOT / 'frontend' / 'src' / 'main.jsx').read_text(encoding='utf-8')
         self.assertIn('/api/users/recovery?identity_document=', main)
         self.assertIn('onBlur={recoverPerson}', main)
+
+    def test_user_list_searches_identity_role_and_group_and_caps_results(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        self.assertIn('const [userQuery, setUserQuery] = useState("")', source)
+        self.assertIn('user.identity_document', source)
+        self.assertIn('user.first_name', source)
+        self.assertIn('user.last_name', source)
+        self.assertIn('...assignedRoles.flatMap((role) => [role.name, role.code])', source)
+        self.assertIn('...assignedGroups.flatMap((group) => [group.name, group.code])', source)
+        self.assertIn('.normalize("NFD")', source)
+        self.assertIn('.replace(/\\p{Diacritic}/gu, "")', source)
+        self.assertIn('.slice(0, 10)', source)
+        self.assertIn('placeholder="Cédula, nombre, apellido, rol o grupo"', source)
+        self.assertIn('Mostrando {visibleUsers.length} usuario(s), máximo 10.', source)
 
     def test_vite_bridge_separates_configuration_read_from_manage(self):
         vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')

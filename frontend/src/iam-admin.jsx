@@ -247,6 +247,7 @@ function UsersPanel({ users, groups, roles, permissions, reload, setError }) {
   const [draftRoleIds, setDraftRoleIds] = useState([]);
   const [savingAccess, setSavingAccess] = useState(false);
   const [recovery, setRecovery] = useState(null);
+  const [userQuery, setUserQuery] = useState("");
   const selected = users.find((item) => item.id === selectedId) || null;
   const userDirty = useMemo(() => Boolean(selected) && !selected.is_system_account && !sameIds(draftRoleIds, selected.role_ids), [draftRoleIds, selected]);
   const assignableRoles = useMemo(() => roles.filter((role) => role.active && !role.system_managed), [roles]);
@@ -255,6 +256,33 @@ function UsersPanel({ users, groups, roles, permissions, reload, setError }) {
   const selectedRoleGroup = selectedRole
     ? groups.find((group) => (group.role_ids || []).includes(selectedRole.id)) || null
     : null;
+  const visibleUsers = useMemo(() => {
+    const normalizeSearch = (value) => String(value || "")
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLocaleLowerCase("es")
+      .trim();
+    const query = normalizeSearch(userQuery);
+    return users
+      .filter((user) => user.active)
+      .filter((user) => {
+        if (!query) return true;
+        const assignedRoles = roles.filter((role) => (user.role_ids || []).includes(role.id));
+        const assignedGroups = groups.filter((group) => assignedRoles.some((role) => (group.role_ids || []).includes(role.id)));
+        return [
+          user.identity_document,
+          user.name,
+          user.first_name,
+          user.middle_name,
+          user.last_name,
+          user.second_last_name,
+          user.email,
+          ...assignedRoles.flatMap((role) => [role.name, role.code]),
+          ...assignedGroups.flatMap((group) => [group.name, group.code]),
+        ].some((value) => normalizeSearch(value).includes(query));
+      })
+      .slice(0, 10);
+  }, [users, roles, groups, userQuery]);
 
   useEffect(() => {
     setDraftRoleIds(selected?.role_ids?.length ? [selected.role_ids[0]] : []);
@@ -338,7 +366,10 @@ function UsersPanel({ users, groups, roles, permissions, reload, setError }) {
   return <div className="iam-grid">
     <section className="iam-card">
       <div className="iam-toolbar"><h2>Usuarios</h2><button className="iam-button" onClick={startCreate}>+ Usuario</button></div>
-      <div className="iam-list">{users.filter((user) => user.active).map((user) => <button key={user.id} className={`iam-list-item ${selectedId === user.id ? "selected" : ""}`} onClick={() => selectUser(user.id)}><span className="iam-list-main"><strong>{user.name}</strong><small>{user.email}</small></span>{user.is_system_account ? <span className="iam-system">SISTEMA</span> : <span>Activo</span>}</button>)}</div>
+      <label className="iam-form">Buscar usuario<input type="search" value={userQuery} onChange={(event) => setUserQuery(event.target.value)} placeholder="Cédula, nombre, apellido, rol o grupo" /></label>
+      <p className="iam-muted">Mostrando {visibleUsers.length} usuario(s), máximo 10.</p>
+      <div className="iam-list">{visibleUsers.map((user) => <button key={user.id} className={`iam-list-item ${selectedId === user.id ? "selected" : ""}`} onClick={() => selectUser(user.id)}><span className="iam-list-main"><strong>{user.name}</strong><small>{user.email}</small></span>{user.is_system_account ? <span className="iam-system">SISTEMA</span> : <span>Activo</span>}</button>)}</div>
+      {!visibleUsers.length && <p className="iam-empty">No hay usuarios activos que coincidan con la búsqueda.</p>}
     </section>
     <section className="iam-card">{creating ? <form className="iam-form" onSubmit={createUser}>
       <h2>{recovery ? "Reactivar usuario" : "Crear usuario"}</h2>
