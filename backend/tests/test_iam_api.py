@@ -17,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 from app.api import auth
 from app.application import create_app
 from app.core.database import Base, get_db
+from app.core.rate_limit import clear_rate_limits
 from app.core.security import create_token, hash_password
 from app.models.entities import User, UserRole
 from app.models.iam import (
@@ -67,6 +68,7 @@ class IamApiTests(unittest.TestCase):
 
     def setUp(self):
         auth._login_attempts.clear()
+        clear_rate_limits()
         with self.Session() as db:
             for table in reversed(Base.metadata.sorted_tables):
                 db.execute(table.delete())

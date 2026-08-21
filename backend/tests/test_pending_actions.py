@@ -16,6 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.application import create_app
 from app.core.database import Base, get_db
+from app.core.rate_limit import clear_rate_limits
 from app.core.security import create_token, hash_password
 from app.models.closure import ExpenseClosureDelegation
 from app.models.entities import (
@@ -28,7 +29,7 @@ from app.models.entities import (
     User,
     UserRole,
 )
-from app.models.iam import Permission, UserPermission
+from app.models.iam import Permission, Role, RolePermission, UserRoleAssignment
 
 
 class PendingActionTests(unittest.TestCase):
@@ -58,6 +59,7 @@ class PendingActionTests(unittest.TestCase):
         cls.engine.dispose()
 
     def setUp(self):
+        clear_rate_limits()
         with self.Session() as db:
             for table in reversed(Base.metadata.sorted_tables):
                 db.execute(table.delete())
@@ -107,7 +109,18 @@ class PendingActionTests(unittest.TestCase):
         return user
 
     def _grant(self, db, user: User, permission: Permission) -> None:
-        db.add(UserPermission(user_id=user.id, permission_id=permission.id))
+        role = Role(
+            code=f'test-{user.id}-{permission.code.replace(":", "-")}',
+            name=f'Test {user.id} {permission.code}',
+            active=True,
+            system_managed=False,
+        )
+        db.add(role)
+        db.flush()
+        db.add_all([
+            RolePermission(role_id=role.id, permission_id=permission.id),
+            UserRoleAssignment(user_id=user.id, role_id=role.id),
+        ])
 
     def _expense(self, db, request_id: str, status: ExpenseStatus, requested_by: str) -> Expense:
         expense = Expense(

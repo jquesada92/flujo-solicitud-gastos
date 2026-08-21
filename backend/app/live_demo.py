@@ -34,7 +34,7 @@ def wait_next():
 
 def create_expense(db, run_id, category, scenario):
     subcategory, product, amount, url = PRODUCTS[category]
-    requester = db.scalar(select(User).where(User.email == 'solicitante.prueba@ph.local'))
+    requester = db.scalar(select(User).where(User.email == 'solicitante.prueba@example.com'))
     expense = Expense(title=f'[PRUEBA EN VIVO {run_id}] {scenario}',
         description=f'Producto de referencia: {product}. Escenario persistente para monitoreo en vivo.',
         expense_type=category, expense_subcategory=subcategory, amount=amount, supplier='Amazon',
@@ -54,8 +54,8 @@ def main():
     run_id = datetime.now().strftime('%Y%m%d-%H%M%S')
     with SessionLocal() as db:
         admin = db.scalar(select(User).where(User.role == UserRole.ADMIN).order_by(User.id))
-        ensure_user(db, 'TEST-REQUESTER-001', 'Solicitante Prueba', 'solicitante.prueba@ph.local', 'PROPIETARIO', True, False)
-        treasurer = ensure_user(db, 'TEST-TREASURER-001', 'Tesorero Prueba', 'tesorero.prueba@ph.local', 'TESORERO', True, True)
+        ensure_user(db, 'TEST-REQUESTER-002', 'Solicitante Prueba', 'solicitante.prueba@example.com', 'PROPIETARIO', True, False)
+        treasurer = ensure_user(db, 'TEST-TREASURER-002', 'Tesorero Prueba', 'tesorero.prueba@example.com', 'TESORERO', True, True)
         if not db.scalar(select(ApprovalPolicy).where(ApprovalPolicy.name == '[PRUEBA] Aprobación por tesorero')):
             raise RuntimeError('Ejecuta primero python -m app.demo_monitoring para crear la regla demo')
 
@@ -89,7 +89,7 @@ def main():
         wait_next(); cancelled_id = create_expense(db, run_id, 'ADMINISTRATION', 'Cancelar solicitud')
         wait_next(); expense, _ = pending_approval(db, cancelled_id)
         expense.status = ExpenseStatus.CANCELLED; expense.cancelled_at = datetime.utcnow()
-        expense.cancelled_by = 'solicitante.prueba@ph.local'; expense.cancellation_reason = 'Cancelación controlada de prueba'
+        expense.cancelled_by = 'solicitante.prueba@example.com'; expense.cancellation_reason = 'Cancelación controlada de prueba'
         expire_open_approvals(db, expense, actor_email=expense.cancelled_by); db.commit()
         announce(f'{expense.display_id}: CANCELADA')
         announce(f'Demostración {run_id} terminada. Todos los datos permanecen guardados.')

@@ -1,6 +1,6 @@
 # Prompt maestro de reconstrucción
 
-> Constitución vigente: **2.12.0**.
+> Constitución vigente: **2.13.0**.
 
 Reconstruye **Flujo de Control de Gastos** como una aplicación web neutral respecto al tipo de organización, lista para desplegar con React/Vite, FastAPI, SQLAlchemy, Alembic y PostgreSQL/Neon.
 
@@ -217,6 +217,8 @@ MULTI_QUOTE
 
 Una corrección conserva el tipo original.
 
+Para `MULTI_QUOTE`, congela por ronda la población activa con `requests:approve`, excluye al solicitante y exige soporte en cada opción. Cada invitado mantiene un voto; la ronda espera a todos y solo avanza con ganador único. Un empate permanece en `QUOTATION_VOTING`.
+
 ## 11. Aprobación y revisión
 
 Una aprobación pendiente admite:
@@ -288,6 +290,8 @@ Aislamiento:
 - Alembic con schema explícito y `version_table_schema`;
 - crear schema si falta;
 - no usar startup `options=-csearch_path=...` con endpoint pooled;
+- tipos Enum ORM con `inherit_schema=True`;
+- SQL crudo con nombres de tabla calificados derivados de metadata;
 - SQLite de tests permanece sin schema.
 
 Cadena:
@@ -303,7 +307,9 @@ Cadena:
 
 ## 16. Correo
 
-Producción: Brevo HTTPS API. Local: SMTP configurable.
+Producción: Brevo HTTPS API. Docker local: `console` por defecto; SMTP únicamente mediante override explícito.
+
+Las pruebas unitarias usan fixtures temporales y no dejan solicitudes visibles. Para datos persistentes locales ejecuta `python -m app.demo_monitoring`; debe crear catálogo, Roles IAM, escenarios SIMPLE y MULTI_QUOTE sin enviar correo real.
 
 Invitación de usuario activo:
 
@@ -342,7 +348,7 @@ Gates:
 cd backend
 alembic heads
 # 20260821_0004
-python -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 
 cd ../frontend
 npm ci

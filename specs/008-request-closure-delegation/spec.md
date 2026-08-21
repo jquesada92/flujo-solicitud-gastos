@@ -1,7 +1,7 @@
 # Spec 008 — Cierre, factura y delegación
 
 **Estado:** Implementada  
-**Constitución:** 2.11.0
+**Constitución:** 2.13.0
 
 ## Objetivo
 

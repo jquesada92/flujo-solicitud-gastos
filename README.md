@@ -1,6 +1,6 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.12.0**.
+> Constitución vigente: **2.13.0**.
 
 Aplicación web para registrar, evaluar, aprobar, votar, seguir, corregir, cancelar, cerrar y documentar solicitudes de gasto con trazabilidad. El producto es neutral respecto al tipo de organización: la estructura se configura como datos y los nombres organizacionales no forman parte de la lógica de autorización.
 
@@ -144,6 +144,8 @@ MULTI_QUOTE
 
 Las correcciones conservan el tipo original.
 
+En `MULTI_QUOTE`, la población votante se congela por ronda desde usuarios activos con `requests:approve`, excluyendo al solicitante. La ronda espera todos los votos y solo se resuelve con ganador único; un empate permanece abierto. Ver [docs/MULTI_QUOTE_VOTING.md](docs/MULTI_QUOTE_VOTING.md).
+
 ## Revisión, corrección y cierre
 
 `REVISION_REQUESTED` interrumpe la ronda, lleva la solicitud a `NEEDS_REVISION`, expira decisiones pendientes restantes y crea `CORRECT_REQUEST` para el solicitante.
@@ -219,7 +221,7 @@ PUBLIC_URL
 EMAIL_MODE
 ```
 
-Correo de producción: Brevo HTTPS API. Local: SMTP configurable.
+Correo de producción: Brevo HTTPS API. Docker local: console por defecto; SMTP requiere override explícito.
 
 ## Desarrollo local
 
@@ -227,7 +229,10 @@ Correo de producción: Brevo HTTPS API. Local: SMTP configurable.
 git switch main
 git pull origin main
 docker compose up -d --build
+docker compose exec -T backend python -m app.demo_monitoring
 ```
+
+Compose local usa `EMAIL_MODE=console` por defecto. Las pruebas unitarias eliminan sus fixtures y no dejan solicitudes visibles; `demo_monitoring` crea cinco escenarios persistentes SIMPLE/MULTI_QUOTE. Ver [docs/VALIDACION_LOCAL.md](docs/VALIDACION_LOCAL.md).
 
 Validación:
 
@@ -235,7 +240,7 @@ Validación:
 cd backend
 alembic heads
 # 20260821_0004
-python -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 
 cd ../frontend
 npm ci

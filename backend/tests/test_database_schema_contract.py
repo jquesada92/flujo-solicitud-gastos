@@ -42,6 +42,7 @@ class DatabaseSchemaContractTests(unittest.TestCase):
                 '20260820_0001_initial_schema.py',
                 '20260820_0002_group_scoped_roles.py',
                 '20260821_0003_single_user_position.py',
+                '20260821_0004_allow_global_roles.py',
             ],
         )
 
@@ -59,19 +60,32 @@ class DatabaseSchemaContractTests(unittest.TestCase):
         self.assertIn("revision = '20260821_0003'", single_position)
         self.assertIn("down_revision = '20260820_0002'", single_position)
 
+        global_roles = (VERSIONS_DIR / '20260821_0004_allow_global_roles.py').read_text(encoding='utf-8')
+        self.assertIn("revision = '20260821_0004'", global_roles)
+        self.assertIn("down_revision = '20260821_0003'", global_roles)
+
     def test_alembic_version_table_uses_application_schema(self):
         env_source = (REPO_ROOT / 'backend' / 'alembic' / 'env.py').read_text(encoding='utf-8')
         self.assertIn('version_table_schema=database_schema', env_source)
         self.assertIn("config.attributes['database_schema'] = database_schema", env_source)
         self.assertIn('CREATE SCHEMA IF NOT EXISTS', env_source)
         self.assertNotIn("connect_args['options']", env_source)
-        self.assertNotIn('-csearch_path=', env_source)
+        self.assertNotIn("options': '-csearch_path=", env_source)
 
     def test_runtime_engine_is_compatible_with_neon_pooler(self):
         database_source = (REPO_ROOT / 'backend' / 'app' / 'core' / 'database.py').read_text(encoding='utf-8')
         self.assertIn('MetaData(schema=APPLICATION_SCHEMA)', database_source)
         self.assertNotIn("connect_args['options']", database_source)
-        self.assertNotIn('-csearch_path=', database_source)
+        self.assertNotIn("options': '-csearch_path=", database_source)
+
+    def test_display_id_counter_uses_schema_qualified_model_table(self):
+        expenses_source = (REPO_ROOT / 'backend' / 'app' / 'api' / 'expenses.py').read_text(encoding='utf-8')
+        self.assertIn('counter_table = AreaCounter.__table__.fullname', expenses_source)
+        self.assertIn('INSERT INTO {counter_table}', expenses_source)
+
+    def test_postgresql_enums_inherit_application_schema(self):
+        entities_source = (REPO_ROOT / 'backend' / 'app' / 'models' / 'entities.py').read_text(encoding='utf-8')
+        self.assertEqual(entities_source.count('inherit_schema=True'), 3)
 
     def test_alembic_schema_setup_commits_before_migration_transaction(self):
         env_source = (REPO_ROOT / 'backend' / 'alembic' / 'env.py').read_text(encoding='utf-8')

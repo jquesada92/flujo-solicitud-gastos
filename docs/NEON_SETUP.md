@@ -27,6 +27,8 @@ El pooler puede rechazar ese startup parameter. El aislamiento se consigue con s
 - `MetaData(schema=APPLICATION_SCHEMA)` en runtime;
 - `version_table_schema=database_schema` en Alembic;
 - objetos/migraciones schema-qualified;
+- tipos ENUM ORM con `inherit_schema=True`;
+- SQL crudo con tabla calificada derivada de `Table.fullname`;
 - creación de `administracion` antes de migrar.
 
 ## Alembic
@@ -68,3 +70,5 @@ ORDER BY table_name;
 ```
 
 `alembic_version` y las tablas de aplicación deben estar en `administracion`.
+
+También deben existir allí `userrole`, `expensestatus` y `approvalstatus`. Una prueba real debe insertar una solicitud, incrementar `category_counters` y crear una aprobación; `alembic heads` por sí solo no valida estas operaciones runtime.

@@ -1,7 +1,7 @@
 # Spec 002 — IAM configurable y hardening FastAPI
 
 **Estado:** Implementada y evolucionada por Spec 006/011  
-**Constitución:** 2.12.0
+**Constitución:** 2.13.0
 
 ## Objetivo
 

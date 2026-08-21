@@ -1,7 +1,7 @@
 # Spec 009 — Configuración técnica, lectura y gestión de Áreas
 
 **Estado:** Implementada  
-**Constitución:** 2.12.0
+**Constitución:** 2.13.0
 
 ## Objetivo
 

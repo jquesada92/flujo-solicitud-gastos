@@ -1,7 +1,7 @@
 # Spec 010 — Notificaciones de acceso
 
 **Estado:** Implementada  
-**Constitución:** 2.12.0
+**Constitución:** 2.13.0
 
 ## Objetivo
 

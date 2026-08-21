@@ -16,6 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.application import create_app
 from app.core.database import Base, get_db
+from app.core.rate_limit import clear_rate_limits
 from app.core.security import create_token, hash_password
 from app.models.entities import AccessProfile, User, UserRole
 from app.models.iam import (
@@ -56,6 +57,7 @@ class LegacyCargoNotificationTests(unittest.TestCase):
         cls.engine.dispose()
 
     def setUp(self):
+        clear_rate_limits()
         with self.Session() as db:
             for table in reversed(Base.metadata.sorted_tables):
                 db.execute(table.delete())
@@ -150,7 +152,7 @@ class LegacyCargoNotificationTests(unittest.TestCase):
         _, positions, permissions = notification.call_args.args
         self.assertEqual(positions, ['Tesorero'])
         self.assertIn(('Consultar solicitudes', 'requests:read'), permissions)
-        self.assertIn(('Aprobar solicitudes', 'requests:approve'), permissions)
+        self.assertNotIn(('Aprobar solicitudes', 'requests:approve'), permissions)
 
         with self.Session() as db:
             user = db.get(User, self.member_id)

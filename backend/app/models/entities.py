@@ -51,7 +51,7 @@ class User(Base):
     second_last_name: Mapped[str | None] = mapped_column(String(70), nullable=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
+    role: Mapped[UserRole] = mapped_column(Enum(UserRole, inherit_schema=True), nullable=False)
     title: Mapped[str] = mapped_column(String(40), nullable=False, default='SIN_ASIGNAR')
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     can_request: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -142,7 +142,11 @@ class Expense(Base):
     item_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     requested_by: Mapped[str] = mapped_column(String(255), nullable=False)
     requester_analytics_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    status: Mapped[ExpenseStatus] = mapped_column(Enum(ExpenseStatus), default=ExpenseStatus.SUBMITTED, nullable=False)
+    status: Mapped[ExpenseStatus] = mapped_column(
+        Enum(ExpenseStatus, inherit_schema=True),
+        default=ExpenseStatus.SUBMITTED,
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cancelled_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -337,7 +341,11 @@ class Approval(Base):
     step: Mapped[int] = mapped_column(Integer, nullable=False)
     approval_mode: Mapped[str] = mapped_column(String(20), nullable=False, default='SEQUENTIAL')
     token: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
-    status: Mapped[ApprovalStatus] = mapped_column(Enum(ApprovalStatus), default=ApprovalStatus.WAITING, nullable=False)
+    status: Mapped[ApprovalStatus] = mapped_column(
+        Enum(ApprovalStatus, inherit_schema=True),
+        default=ApprovalStatus.WAITING,
+        nullable=False,
+    )
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

@@ -75,7 +75,7 @@ La corrección:
 
 ## Persistencia actual
 
-La instalación vigente parte de `20260820_0001_initial_schema` y evoluciona con 0002/0003 para reglas IAM/organizacionales. La corrección es una regla de negocio sobre el modelo actual y no depende de reconstruir una historia de migraciones anterior.
+La instalación vigente parte de `20260820_0001_initial_schema` y evoluciona con 0002/0003/0004 para reglas IAM/organizacionales y Roles globales. La corrección es una regla de negocio sobre el modelo actual y no depende de reconstruir una historia de migraciones anterior.
 
 ## Validación manual
 

@@ -1,7 +1,7 @@
 # Spec 006 — Acceso por Roles agrupados y globales
 
 **Estado:** Implementada  
-**Constitución:** 2.12.0
+**Constitución:** 2.13.0
 
 ## Objetivo
 

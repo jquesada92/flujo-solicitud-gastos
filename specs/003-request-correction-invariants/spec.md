@@ -1,7 +1,7 @@
 # Spec 003 — Corrección de solicitudes
 
 **Estado:** Implementada  
-**Constitución:** 2.11.0
+**Constitución:** 2.13.0
 
 ## Objetivo
 

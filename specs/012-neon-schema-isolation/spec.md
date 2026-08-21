@@ -1,7 +1,7 @@
 # Spec 012 — Neon y aislamiento de schema
 
 **Estado:** Implementada  
-**Constitución:** 2.11.0
+**Constitución:** 2.13.0
 
 ## Objetivo
 
@@ -24,6 +24,9 @@ Schema:   administracion
 6. SQLite de unit tests opera sin schema.
 7. La baseline 0001 requiere un schema de aplicación limpio en instalación nueva.
 8. Una revisión desplegada no se reescribe; se añade otra revisión.
+9. Los tipos ENUM del ORM heredan el schema de metadata.
+10. SQL crudo usa nombres de tabla calificados y no depende de `search_path`.
+11. La aceptación incluye una escritura PostgreSQL real de contador, solicitud y aprobación.
 
 ## Cadena vigente
 
@@ -31,6 +34,7 @@ Schema:   administracion
 20260820_0001_initial_schema
 → 20260820_0002_group_scoped_roles
 → 20260821_0003_single_user_position
+→ 20260821_0004_allow_global_roles
 ```
 
 ## Render

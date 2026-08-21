@@ -7,3 +7,6 @@
 5. Validar `alembic heads` y topología de revisiones.
 6. En despliegue, verificar `information_schema.tables` bajo `administracion`.
 7. Crear toda evolución física como nueva migración.
+8. Validar `AreaCounter.__table__.fullname` en generación de identificadores.
+9. Mantener `inherit_schema=True` en los Enum ORM.
+10. Ejecutar un escenario persistente Docker que inserte solicitud y aprobación.

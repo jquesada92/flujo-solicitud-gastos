@@ -32,6 +32,8 @@ Una acción existe solo si el backend confirma que sigue vigente.
 ### QUOTATION_VOTE
 `requests:approve` + invitación vigente + solicitud en `QUOTATION_VOTING` + voto aún pendiente.
 
+La invitación es una instantánea de la ronda. Después de votar desaparece la acción personal, aunque la solicitud continúa visible hasta que todos voten y exista ganador único.
+
 ### CORRECT_REQUEST
 Solicitud propia en `NEEDS_REVISION`.
 
