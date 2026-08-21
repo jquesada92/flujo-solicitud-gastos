@@ -137,7 +137,10 @@ def update_group_access(
     if payload.role_ids is not None:
         _replace_group_roles(db, group, payload.role_ids)
 
-    if payload.member_ids is not None:
+    # member_ids exists only for old clients. When role_ids is being changed,
+    # the freshly derived membership is authoritative and any stale member list
+    # in the same payload must not veto that recomputation.
+    if payload.member_ids is not None and payload.role_ids is None:
         current_member_ids = set(db.scalars(
             select(GroupMember.user_id).where(GroupMember.group_id == group.id)
         ).all())
