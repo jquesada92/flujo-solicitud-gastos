@@ -1,7 +1,7 @@
 # Spec 002 — IAM configurable y hardening FastAPI
 
 **Estado:** Implementada y evolucionada por Spec 006/011  
-**Constitución:** 2.11.0
+**Constitución:** 2.12.0
 
 ## Objetivo
 
@@ -10,12 +10,12 @@ Autorizar desde capacidades persistidas y proteger la API independientemente de 
 ## IAM vigente
 
 ```text
-Permission → Role → Group
+Permission → Role ── 0..1 Group
                ↑
             User
 ```
 
-Un usuario activo recibe `requests:read` como baseline. Los demás permisos ordinarios llegan por el Rol que ocupa dentro de un Grupo activo. `config:manage` es system-only.
+Un usuario activo recibe `requests:read` como baseline. Los demás permisos ordinarios pueden llegar por Roles globales activos o por el Rol que ocupa dentro de un Grupo activo. `config:manage` es system-only.
 
 Permisos:
 
@@ -28,7 +28,7 @@ config:read
 config:manage
 ```
 
-No forman parte del modelo operativo permisos directos a Usuario, Roles sin Grupo ni autorización por Cargo.
+No forman parte del modelo operativo permisos directos a Usuario ni autorización por Cargo. Un Rol sin Grupo es válido y se considera global; un Rol pertenece como máximo a un Grupo.
 
 ## Seguridad FastAPI
 
@@ -44,4 +44,4 @@ No forman parte del modelo operativo permisos directos a Usuario, Roles sin Grup
 
 ## Cuenta técnica
 
-Se identifica mediante `system_accounts`. En producción su política IAM es `requests:read + areas:manage + config:manage` y no participa en aprobación/votación.
+Se identifica mediante `system_accounts`. El Rol técnico `system-administrator` es global y `system_managed`, pero no sustituye la política protegida. En producción la política IAM efectiva es `requests:read + areas:manage + config:manage` y la cuenta técnica no participa en aprobación/votación.
