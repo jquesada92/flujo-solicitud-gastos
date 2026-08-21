@@ -1,6 +1,6 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.11.0**.
+> Constitución vigente: **2.12.0**.
 
 Aplicación web para registrar, evaluar, aprobar, votar, seguir, corregir, cancelar, cerrar y documentar solicitudes de gasto con trazabilidad. El producto es neutral respecto al tipo de organización: la estructura se configura como datos y los nombres organizacionales no forman parte de la lógica de autorización.
 
@@ -10,6 +10,7 @@ Aplicación web para registrar, evaluar, aprobar, votar, seguir, corregir, cance
 Usuario activo
 ├─ requests:read (baseline)
 ├─ 0..1 Cargo organizacional
+├─ 0..N Roles globales
 └─ 0..N Grupos
       └─ máximo 1 Rol por Grupo
             └─ Permisos
@@ -17,9 +18,12 @@ Usuario activo
 
 Reglas clave:
 
-- cada Rol pertenece a un único Grupo;
-- el Rol asignado al Usuario determina su membresía en ese Grupo;
-- no hay permisos individuales ni Roles sin Grupo en el modelo operativo;
+- un Grupo puede existir sin Roles;
+- cada Rol puede pertenecer a cero o un Grupo;
+- un Rol sin Grupo es global;
+- el Rol agrupado asignado al Usuario determina su membresía en ese Grupo;
+- un Usuario puede tener máximo un Rol por Grupo y varios Roles globales;
+- no hay permisos individuales;
 - Cargo no concede permisos;
 - un Usuario puede tener como máximo un Cargo;
 - FastAPI es la autoridad de autorización;
@@ -35,8 +39,9 @@ Ver [docs/CURRENT_PRODUCT_CONTRACT.md](docs/CURRENT_PRODUCT_CONTRACT.md).
 | Término | Significado |
 | --- | --- |
 | Usuario | Cuenta autenticable |
-| Grupo | Ámbito organizacional que contiene Roles disponibles |
-| Rol | Conjunto de Permisos, perteneciente a un Grupo |
+| Grupo | Ámbito organizacional opcional con cero o más Roles |
+| Rol | Conjunto de Permisos; puede ser global o pertenecer a un Grupo |
+| Rol global | Rol sin Grupo |
 | Permiso | Capacidad IAM atómica |
 | Cargo / Posición | Metadato organizacional, sin autoridad IAM |
 | Área | Contexto organizacional del gasto |
@@ -65,13 +70,14 @@ Permisos funcionales vigentes:
 ```text
 Usuario ordinario activo
 = requests:read
-+ Permisos de sus Roles asignados dentro de Grupos activos
++ Permisos de sus Roles globales activos
++ Permisos de sus Roles agrupados dentro de Grupos activos
 - config:manage
 ```
 
-Un Grupo no entrega todos sus Roles a todos sus miembros: cada Usuario tiene su Rol concreto dentro de ese Grupo.
+Un Grupo no entrega todos sus Roles a todos sus miembros: cada Usuario tiene como máximo un Rol concreto dentro de ese Grupo. Los Roles globales no crean membresía.
 
-La cuenta técnica se identifica con `system_accounts`. En producción su política efectiva es `requests:read + areas:manage + config:manage`.
+La cuenta técnica se identifica con `system_accounts`. En producción su política efectiva es `requests:read + areas:manage + config:manage`. El Rol `Administrador del sistema` es global, técnico y protegido; el bootstrap lo asigna como representación de responsabilidad, pero la autoridad real sigue siendo `SystemAccount`.
 
 Ver [docs/IAM_MODEL.md](docs/IAM_MODEL.md).
 
@@ -81,14 +87,17 @@ La consola muestra:
 
 ```text
 Usuarios → Acceso por grupo → selector de Rol
-Grupos   → Roles disponibles + miembros derivados
+         → Roles globales   → selección múltiple
+Grupos   → Roles opcionales + miembros derivados
 Roles    → Permisos
 Permisos → catálogo
 ```
 
 Seleccionar opciones no guarda inmediatamente. La persistencia ocurre al pulsar **Guardar cambios**. Al cambiar de usuario/grupo con cambios pendientes se solicita confirmación.
 
-Los miembros de un Grupo se derivan de las asignaciones de Rol. Cargo no forma parte de la autorización de esta consola.
+Los miembros de un Grupo se derivan de las asignaciones de Roles agrupados. Cargo no forma parte de la autorización de esta consola.
+
+Quitar un Rol de un Grupo lo convierte en global sin borrar sus asignaciones de Usuario. Vincular Roles globales a un Grupo se rechaza si eso produciría más de un Rol del mismo Grupo para algún Usuario.
 
 ## Inicio y Seguimiento
 
@@ -106,10 +115,12 @@ Vista rápida de la persona conectada:
 Vista de equipo de solo lectura:
 
 - Grupos activos;
-- miembros y sus Roles;
+- miembros y sus Roles agrupados;
 - pendientes por usuario;
 - pendientes agregados por Grupo;
 - búsqueda y filtro de usuarios con pendientes.
+
+Los Roles globales no generan membresía en Seguimiento.
 
 ## Nueva solicitud
 
@@ -178,9 +189,10 @@ Cadena actual:
 20260820_0001_initial_schema
 → 20260820_0002_group_scoped_roles
 → 20260821_0003_single_user_position
+→ 20260821_0004_allow_global_roles
 ```
 
-`0002` fija Rol→Grupo y un Rol por Usuario/Grupo. `0003` fija un Cargo por Usuario.
+`0002` fija que un Rol no puede pertenecer a más de un Grupo y un Usuario no puede tener dos Roles del mismo Grupo. `0003` fija un Cargo por Usuario. `0004` permite Roles globales sin relajar la restricción de un Rol por Grupo.
 
 ## Despliegue
 
@@ -222,7 +234,7 @@ Validación:
 ```text
 cd backend
 alembic heads
-# 20260821_0003
+# 20260821_0004
 python -m unittest discover -s tests -v
 
 cd ../frontend
