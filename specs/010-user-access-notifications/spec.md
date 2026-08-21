@@ -1,73 +1,39 @@
-# Especificación funcional — Notificaciones de Cargo y permisos efectivos
+# Spec 010 — Notificaciones de acceso
 
-**Feature:** 010  
-**Constitución vigente:** 2.9.0
+**Estado:** Implementada  
+**Constitución:** 2.11.0
 
 ## Objetivo
 
-Mantener informado al usuario sobre su configuración de acceso cuando se crea su cuenta o cambia su Cargo/Posición desde la superficie canónica **Configuración → Accesos**.
+Informar al usuario sobre su contexto organizacional y capacidades cuando se crea su cuenta o cambia su Cargo.
 
-## F-010-01 — Invitación de usuario
+## Invitación
 
-Cuando se crea un usuario activo desde **Accesos**, el correo que contiene la contraseña temporal incluye:
-
-- Cargo(s) activo(s) asignado(s);
-- permisos efectivos vigentes después de aplicar Cargo, Grupo, Rol y permisos directos;
-- código técnico del permiso junto a nombre legible;
-- enlace de acceso.
-
-La contraseña temporal conserva cambio obligatorio al primer inicio.
-
-## F-010-02 — Cambio de Cargo
-
-Cuando `position_ids` cambia realmente para un usuario activo desde **Accesos**, recibe **Actualización de cargo y permisos** con:
-
-- Cargo(s) activo(s) resultante(s);
-- permisos efectivos recalculados;
-- aclaración de que el acceso puede provenir de Cargo, Grupo, Rol o asignación directa;
-- enlace al sistema.
-
-Guardar exactamente el mismo conjunto de Cargos no genera correo duplicado.
-
-## F-010-03 — Fuente de verdad
-
-El correo nunca usa `can_*`, `UserRole`, `title` legacy ni nombres hardcodeados como fuente de permisos.
-
-Fuentes:
+Para usuario activo incluye:
 
 ```text
-Permisos → effective_permission_codes()
-Cargos   → UserPosition → Position
+correo
+contraseña temporal
+Cargo, si existe
+permisos efectivos
+URL pública
 ```
 
-## F-010-04 — Múltiples Cargos
+## Cambio de Cargo
 
-Si el usuario tiene varios Cargos, el correo lista todos los Cargos activos ordenados por nombre. Si no tiene Cargo, muestra **Sin cargo asignado**.
+Un Usuario tiene 0..1 Cargo. Si cambia realmente `position_ids`:
 
-## F-010-05 — Fallo de entrega
+1. se actualiza `UserPosition`;
+2. se calculan permisos efectivos vigentes;
+3. se envía “Actualización de cargo y permisos”.
 
-- invitación inicial fallida → creación no se confirma;
-- cambio de Cargo fallido → rollback + 502.
+Cargo y permisos son datos independientes: el Cargo no concede acceso.
 
-La política puede evolucionar a outbox/reintentos persistentes.
+Guardar el mismo Cargo no debe generar correo duplicado.
 
-## F-010-06 — Superficie administrativa vigente
+## Fuente de datos
 
-Feature 011 consolidó Usuarios/Personas y Organigrama en Accesos.
-
-Por tanto, esta feature no requiere ni documenta una pantalla Usuario independiente. Cualquier UX de creación/cambio de Cargo debe quedar disponible dentro de Accesos.
-
-## Seguridad
-
-- nunca incluir hashes o secretos internos;
-- contraseña temporal solo en invitación inicial;
-- correo de cambio de Cargo nunca incluye contraseña;
-- `config:manage` system-only no aparece como permiso efectivo de usuarios ordinarios;
-- notificar no sustituye autorización backend.
-
-## Fuera de alcance
-
-- notificar cada cambio de Grupo/Rol/permiso directo sin cambio de Cargo;
-- notificar cambios de Roles de un Cargo a todos sus ocupantes;
-- outbox/reintentos persistentes;
-- historial de emails dentro de UI.
+```text
+Cargo    = UserPosition → Position
+Permisos = effective_permission_codes()
+```

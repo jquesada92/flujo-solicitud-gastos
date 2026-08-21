@@ -1,70 +1,65 @@
-# Neon PostgreSQL setup — PH Torre Delta
+# Neon / PostgreSQL
 
-Configuración objetivo para producción:
+## Contrato
 
-- Proyecto Neon: `ph_torre_delta`
-- Base de datos PostgreSQL: `ph_torre_delta`
-- Schema de aplicación: `flujos_de_aprobacion`
-- Variable de aplicación: `DATABASE_SCHEMA=flujos_de_aprobacion`
-
-## Creación manual con psql
-
-Conéctate primero a la base administrativa/default del proyecto Neon con un rol propietario:
-
-```bash
-psql "$NEON_ADMIN_DATABASE_URL"
+```text
+Database: ph_torre_delta
+Schema:   administracion
 ```
 
-Crea la base:
+Variables:
 
-```sql
-CREATE DATABASE ph_torre_delta;
+```text
+DATABASE_URL=<connection string Neon o PostgreSQL local>
+DATABASE_SCHEMA=administracion
 ```
 
-Luego conéctate a la nueva base:
+## Endpoint pooled
 
-```bash
-psql "$NEON_PH_TORRE_DELTA_DATABASE_URL"
+El backend es compatible con el endpoint pooled de Neon. No añadir a SQLAlchemy/Alembic:
+
+```text
+options=-csearch_path=...
 ```
 
-Crea el schema y configura el `search_path`:
+El pooler puede rechazar ese startup parameter. El aislamiento se consigue con schema explícito:
 
-```sql
-CREATE SCHEMA IF NOT EXISTS flujos_de_aprobacion;
-ALTER DATABASE ph_torre_delta SET search_path TO flujos_de_aprobacion, public;
+- `MetaData(schema=APPLICATION_SCHEMA)` en runtime;
+- `version_table_schema=database_schema` en Alembic;
+- objetos/migraciones schema-qualified;
+- creación de `administracion` antes de migrar.
+
+## Alembic
+
+```text
+20260820_0001_initial_schema
+→ 20260820_0002_group_scoped_roles
+→ 20260821_0003_single_user_position
 ```
 
-Si se desea fijar también el `search_path` para el rol de la aplicación:
+`alembic heads` debe devolver `20260821_0003`.
 
-```sql
-ALTER ROLE neondb_owner IN DATABASE ph_torre_delta
-SET search_path TO flujos_de_aprobacion, public;
-```
+La baseline exige el schema de aplicación vacío en una instalación nueva. Una vez desplegada, no se reescribe; se agregan revisiones.
 
-## Variables de producción
+## Render
 
-No guardar la cadena real de Neon en Git. Configurarla como secreto/variable del runtime:
+`render.yaml` declara `DATABASE_SCHEMA=administracion`. `DATABASE_URL` es secreto/configuración del servicio.
 
-```dotenv
-DATABASE_URL=postgresql://<usuario>:<password>@<host>/ph_torre_delta?sslmode=require
-DATABASE_SCHEMA=flujos_de_aprobacion
-```
+Inicio:
 
-La aplicación añade el schema configurado al `search_path` de SQLAlchemy y Alembic. En desarrollo local, `DATABASE_SCHEMA` mantiene `public` como valor por defecto.
-
-## Migraciones
-
-Desde `backend/`, con las variables de producción cargadas:
-
-```bash
+```text
 alembic upgrade head
+python -m scripts.bootstrap_admin
+uvicorn app.application:app
 ```
 
-Para verificar dónde quedaron las tablas:
+## Verificación SQL
 
 ```sql
 SELECT table_schema, table_name
 FROM information_schema.tables
-WHERE table_schema = 'flujos_de_aprobacion'
+WHERE table_schema = 'administracion'
 ORDER BY table_name;
 ```
+
+`alembic_version` y las tablas de aplicación deben estar en `administracion`.
