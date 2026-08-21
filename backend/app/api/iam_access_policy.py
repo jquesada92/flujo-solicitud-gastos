@@ -38,18 +38,18 @@ def reject_independent_group_member_delete(group_id: int, user_id: int):
 
 
 @router.put('/users/{user_id}/roles/{role_id}')
-def reject_unscoped_user_role(user_id: int, role_id: int):
+def reject_legacy_user_role(user_id: int, role_id: int):
     raise HTTPException(
         status_code=409,
-        detail='Los roles de usuario se guardan por grupo desde el formulario de Accesos.',
+        detail='Los roles agrupados y globales se guardan desde la ficha del usuario en Accesos.',
     )
 
 
 @router.delete('/users/{user_id}/roles/{role_id}')
-def reject_unscoped_user_role_delete(user_id: int, role_id: int):
+def reject_legacy_user_role_delete(user_id: int, role_id: int):
     raise HTTPException(
         status_code=409,
-        detail='Los roles de usuario se guardan por grupo desde el formulario de Accesos.',
+        detail='Los roles agrupados y globales se guardan desde la ficha del usuario en Accesos.',
     )
 
 
