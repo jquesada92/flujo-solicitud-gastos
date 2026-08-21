@@ -10,7 +10,7 @@ EMAIL_MODE=brevo
 
 usa Brevo HTTPS API desde el backend.
 
-Local/desarrollo puede usar:
+Local/desarrollo puede usar SMTP de forma explícita:
 
 ```text
 EMAIL_MODE=smtp
@@ -21,7 +21,7 @@ SMTP_USER
 SMTP_PASSWORD
 ```
 
-Existe también modo console para pruebas que no requieren entrega real.
+Docker Compose local usa `EMAIL_MODE=console` por defecto para impedir entregas accidentales durante pruebas. Solo debe cambiarse con `LOCAL_EMAIL_MODE` cuando la entrega real sea el objetivo explícito.
 
 ## Seguridad
 

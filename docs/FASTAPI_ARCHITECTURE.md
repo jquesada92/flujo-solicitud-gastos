@@ -62,7 +62,7 @@ Los routers canónicos de acciones se registran antes de rutas legacy de compati
 
 ## Persistencia
 
-`DATABASE_SCHEMA` se aplica mediante metadata schema-qualified. Alembic corre fuera de lifespan y usa `version_table_schema`.
+`DATABASE_SCHEMA` se aplica mediante metadata schema-qualified. Los tipos `Enum` ORM usan `inherit_schema=True` y cualquier SQL crudo usa nombres completos derivados de tablas SQLAlchemy; no se depende de `search_path`. Alembic corre fuera de lifespan y usa `version_table_schema`.
 
 ## Tests
 
@@ -73,3 +73,5 @@ Los contratos críticos deben tener pruebas HTTP/modelo para:
 - workflow/capacidades;
 - schema PostgreSQL;
 - frontend contracts cuando haya bridges transitorios.
+
+La validación Docker/PostgreSQL es obligatoria para rutas que usan SQL específico del dialecto; SQLite no detecta referencias sin schema ni casts ENUM sin calificar.

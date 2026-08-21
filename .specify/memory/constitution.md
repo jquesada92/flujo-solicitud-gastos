@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.12.0  
+**Versión:** 2.13.0
 **Vigente desde:** 2026-08-21
 
 ## 1. Propósito
@@ -206,6 +206,8 @@ SIMPLE      → SIMPLE
 MULTI_QUOTE → MULTI_QUOTE
 ```
 
+Una ronda `MULTI_QUOTE` congela como participantes a usuarios activos con permiso efectivo `requests:approve`, excluye al solicitante y exige soporte válido en cada opción. Cada invitado mantiene un voto activo y todo cambio conserva evento. La ronda espera a todos los invitados: un ganador único lleva a `APPROVED`; un empate permanece en `QUOTATION_VOTING`.
+
 ## 12. Acciones pendientes
 
 Tipos actuales:
@@ -288,6 +290,8 @@ Compatibilidad Neon pooled:
 - Alembic usa schema explícito y `version_table_schema`;
 - no se envía `options=-csearch_path=...` como parámetro de startup al pooler;
 - las migraciones crean el schema si falta.
+- los tipos Enum ORM heredan el schema de metadata;
+- SQL crudo usa nombres de tabla calificados derivados de metadata.
 
 Cadena Alembic vigente:
 
@@ -332,9 +336,13 @@ Validaciones mínimas:
 cd backend
 alembic heads
 # esperado: 20260821_0004
-python -m unittest discover -s tests -v
+\.venv\Scripts\python.exe -m unittest discover -s tests -v
 
-cd ../frontend
+cd ..
+docker compose up -d --build
+docker compose exec -T backend python -m app.demo_monitoring
+
+cd frontend
 npm ci
 npm run build
 ```

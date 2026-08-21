@@ -1,5 +1,13 @@
 # Historia funcional
 
+## 2026-08-21 — validación local contra PostgreSQL real
+
+- La Constitución evoluciona a 2.13.0 para formalizar votaciones MULTI_QUOTE y persistencia PostgreSQL runtime.
+- La validación Docker reveló y corrigió dos diferencias que SQLite no detectaba: SQL crudo sin schema y Enum ORM sin herencia de schema.
+- El entorno local quedó protegido con correo en modo console.
+- El sembrador persistente se actualizó al IAM por Roles y agrega solicitudes SIMPLE y MULTI_QUOTE visibles.
+- Las votaciones demo cubren ronda abierta, múltiples opciones y voto parcial.
+
 Este archivo resume decisiones ya incorporadas sin redefinir el contrato vigente. Para implementación actual usar Constitución, `CURRENT_PRODUCT_CONTRACT.md` y Specs.
 
 ## 2026-08-21 — Roles globales y Grupos opcionales

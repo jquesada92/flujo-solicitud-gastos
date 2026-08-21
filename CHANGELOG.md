@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-21 — validación PostgreSQL y escenarios locales
+
+- Constitución 2.13.0 formaliza población, voto y resolución de MULTI_QUOTE;
+- se corrige generación de identificadores para calificar `category_counters` con el schema de aplicación;
+- los Enum ORM heredan `administracion`, evitando casts PostgreSQL contra tipos inexistentes en `public`;
+- Docker local fuerza correo `console` por defecto;
+- `demo_monitoring` se alinea con Roles IAM explícitos y correos válidos;
+- el sembrador crea escenarios persistentes SIMPLE y MULTI_QUOTE, incluida votación abierta y voto parcial;
+- se documentan pruebas adversas, límites, credenciales demo y diferencia entre fixtures unitarios y datos visibles;
+- suite local: 161 pruebas exitosas y build frontend exitoso.
+
 ## 2026-08-21
 
 ### IAM / contrato 2.12.0

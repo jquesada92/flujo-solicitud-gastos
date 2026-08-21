@@ -13,6 +13,7 @@
 - [Inicio y Seguimiento](REQUEST_TRACKING.md)
 - [Runtime frontend](FRONTEND_RUNTIME.md)
 - [Correcciones](REQUEST_CORRECTIONS.md)
+- [Solicitudes múltiples y votación](MULTI_QUOTE_VOTING.md)
 - [Delegación de cierre](CLOSURE_DELEGATION.md)
 - [Clasificación Área + Categoría](CLASSIFICATION_MODEL.md)
 
@@ -26,6 +27,7 @@
 
 - [FastAPI](FASTAPI_ARCHITECTURE.md)
 - [Neon](NEON_SETUP.md)
+- [Validación local con Docker](VALIDACION_LOCAL.md)
 - [Política documental](DOCUMENTATION_POLICY.md)
 - [Historia](HISTORY.md)
 

@@ -39,7 +39,7 @@ expense_category_catalog
 expense_area_categories
 ```
 
-La baseline vigente crea directamente el contrato canónico. Las revisiones posteriores 0002/0003 cambian cardinalidades IAM/organizacionales y no alteran este modelo.
+La baseline vigente crea directamente el contrato canónico. Las revisiones posteriores 0002/0003/0004 cambian cardinalidades IAM/organizacionales y no alteran este modelo. `category_counters` conserva su nombre físico de compatibilidad y toda consulta runtime debe referenciarlo con el schema configurado.
 
 ## Comportamiento de catálogo
 

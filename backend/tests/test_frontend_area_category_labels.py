@@ -14,8 +14,8 @@ class FrontendAreaCategoryLabelTests(unittest.TestCase):
 
     def test_legacy_terminology_adapter_preserves_canonical_expense_form(self):
         source = (REPO_ROOT / 'frontend' / 'src' / 'domain-normalization.js').read_text(encoding='utf-8')
-        self.assertIn("element?.closest?.('#expense-form')", source)
-        self.assertIn('isCanonicalExpenseFormNode(node) ? userTerminology(text) : productTerminology(text)', source)
+        self.assertIn("element?.closest?.('#expense-form, [data-canonical-classification-settings=", source)
+        self.assertIn('isCanonicalTerminologyNode(node) ? userTerminology(text) : productTerminology(text)', source)
         self.assertIn('terminologyForNode(node, node.nodeValue)', source)
         self.assertIn('terminologyForNode(element, value)', source)
 

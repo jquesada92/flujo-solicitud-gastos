@@ -1,7 +1,7 @@
 # Spec 004 — Entrega de correo por ambiente
 
 **Estado:** Implementada  
-**Constitución:** 2.11.0
+**Constitución:** 2.13.0
 
 ## Objetivo
 
@@ -17,10 +17,10 @@ Backend Render → Brevo HTTPS API
 ## Desarrollo/local
 
 ```text
-EMAIL_MODE=smtp
+EMAIL_MODE=console  # default seguro de Docker Compose
 ```
 
-con host/puerto/seguridad/credenciales en variables de entorno. `console` puede usarse en tests sin entrega real.
+SMTP solo se habilita explícitamente mediante `LOCAL_EMAIL_MODE=smtp` y host/puerto/seguridad/credenciales en variables de entorno. `console` es el transporte normal de pruebas sin entrega real.
 
 ## Seguridad
 

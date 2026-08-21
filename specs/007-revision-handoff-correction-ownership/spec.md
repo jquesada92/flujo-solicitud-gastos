@@ -1,7 +1,7 @@
 # Spec 007 — Enviar a revisión y propiedad de corrección
 
 **Estado:** Implementada  
-**Constitución:** 2.11.0
+**Constitución:** 2.13.0
 
 ## Objetivo
 

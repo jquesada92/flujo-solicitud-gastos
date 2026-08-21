@@ -1,7 +1,7 @@
 # Spec 005 — Inicio personal y Seguimiento de usuarios
 
 **Estado:** Implementada  
-**Constitución:** 2.12.0
+**Constitución:** 2.13.0
 
 ## Objetivo
 

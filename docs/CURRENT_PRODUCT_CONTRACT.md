@@ -73,6 +73,8 @@ SIMPLE
 MULTI_QUOTE
 ```
 
+`MULTI_QUOTE` congela por ronda a los usuarios activos con `requests:approve`, excluye al solicitante y requiere soporte en cada opción. Cada invitado tiene un voto activo; la ronda espera a todos y solo selecciona una cotización si existe ganador único. Los empates permanecen en `QUOTATION_VOTING`.
+
 Estados relevantes:
 
 ```text
@@ -138,7 +140,7 @@ Alembic:
 
 `0004` permite Roles globales manteniendo la protección de máximo un Rol por Usuario/Grupo.
 
-Neon pooled es compatible porque el schema se califica explícitamente y no se envía `search_path` mediante startup options.
+Neon pooled es compatible porque tablas, tipos ENUM y SQL crudo se califican explícitamente y no se envía `search_path` mediante startup options. Los contadores de identificadores usan el nombre completo derivado de `AreaCounter.__table__.fullname`; los Enum ORM usan `inherit_schema=True`.
 
 ## Archivos de referencia en código
 

@@ -30,6 +30,8 @@ services:
       UPLOAD_DIR: /app/uploads
       PUBLIC_URL: ${LOCAL_PUBLIC_URL:-http://localhost:3000}
       CORS_ALLOWED_ORIGINS: ${LOCAL_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      # Local containers must never deliver real email while exercising flows.
+      EMAIL_MODE: ${LOCAL_EMAIL_MODE:-console}
     volumes:
       - expense_uploads:/app/uploads
     depends_on:

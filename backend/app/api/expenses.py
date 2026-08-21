@@ -18,6 +18,7 @@ from app.models.entities import (
     Approval,
     ApprovalStatus,
     ApprovalStepEvent,
+    AreaCounter,
     Expense,
     ExpenseArea,
     ExpenseAttachment,
@@ -81,9 +82,13 @@ def _next_display_id(db: Session, area_code: str) -> str:
     """Generate a stable display identifier using the legacy counter table."""
     year = datetime.utcnow().year
     counter_key = f'{area_code}:{year}'
+    # Base.metadata owns the configured PostgreSQL schema, so fullname is
+    # administracion.category_counters in Docker/Neon and category_counters in
+    # schema-less SQLite tests.
+    counter_table = AreaCounter.__table__.fullname
     value = db.execute(
-        text('''INSERT INTO category_counters (category, last_value) VALUES (:area_key, 1)
-                ON CONFLICT (category) DO UPDATE SET last_value = category_counters.last_value + 1
+        text(f'''INSERT INTO {counter_table} (category, last_value) VALUES (:area_key, 1)
+                ON CONFLICT (category) DO UPDATE SET last_value = {counter_table}.last_value + 1
                 RETURNING last_value'''),
         {'area_key': counter_key},
     ).scalar_one()

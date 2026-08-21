@@ -16,6 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.application import create_app
 from app.core.database import Base, get_db
+from app.core.rate_limit import clear_rate_limits
 from app.core.security import create_token, hash_password
 from app.models.entities import (
     Expense,
@@ -29,7 +30,7 @@ from app.models.entities import (
     User,
     UserRole,
 )
-from app.models.iam import Permission, SystemAccount, UserPermission
+from app.models.iam import Permission, Role, RolePermission, SystemAccount, UserRoleAssignment
 
 
 class MultiQuoteRevisionTests(unittest.TestCase):
@@ -59,6 +60,7 @@ class MultiQuoteRevisionTests(unittest.TestCase):
         cls.engine.dispose()
 
     def setUp(self):
+        clear_rate_limits()
         with self.Session() as db:
             for table in reversed(Base.metadata.sorted_tables):
                 db.execute(table.delete())
@@ -86,7 +88,18 @@ class MultiQuoteRevisionTests(unittest.TestCase):
             approver = self._user(db, 'approver@example.com')
             db.flush()
             db.add(SystemAccount(user_id=admin.id, account_type='TECHNICAL_ADMIN'))
-            db.add(UserPermission(user_id=approver.id, permission_id=approve.id))
+            approver_role = Role(
+                code='test-approver',
+                name='Aprobador de pruebas',
+                active=True,
+                system_managed=False,
+            )
+            db.add(approver_role)
+            db.flush()
+            db.add_all([
+                RolePermission(role_id=approver_role.id, permission_id=approve.id),
+                UserRoleAssignment(user_id=approver.id, role_id=approver_role.id),
+            ])
             db.flush()
 
             expense = Expense(
