@@ -2,12 +2,24 @@
 
 ## 2026-08-21
 
-### Documentación / contrato 2.11.0
+### IAM / contrato 2.12.0
+
+- un Grupo puede existir con cero Roles;
+- un Rol puede pertenecer a cero o un Grupo; un Rol sin Grupo es global;
+- un Usuario mantiene máximo un Rol por Grupo y puede tener varios Roles globales ordinarios;
+- los Roles globales participan en permisos efectivos sin crear `GroupMember`;
+- quitar un Rol de un Grupo lo convierte en global sin borrar asignaciones de Usuario;
+- agrupar Roles se rechaza si produciría dos Roles del mismo Grupo para un Usuario;
+- `Administrador del sistema` se representa como Rol global técnico protegido, mientras `SystemAccount` conserva la autoridad de privilegios;
+- nueva revisión Alembic `20260821_0004_allow_global_roles`;
+- Accesos separa **Acceso por grupo** y **Roles globales**;
+- se corrige la prueba obsoleta de Seguimiento para usar `_group_role_names`.
+
+### Documentación / contrato 2.11.0 → 2.12.0
 
 - se actualiza Constitución, README y prompt maestro al modelo vigente;
-- se reescriben Specs 001–012 y se reemplaza Spec 006 por `006-group-scoped-role-access`;
-- se agrega `docs/CURRENT_PRODUCT_CONTRACT.md`;
-- se agrega `docs/FRONTEND_RUNTIME.md`;
+- se reescriben reglas IAM en Specs 006/011 y documentación de Accesos;
+- se mantienen `docs/CURRENT_PRODUCT_CONTRACT.md` y `docs/FRONTEND_RUNTIME.md` como mapas de contrato/runtime;
 - se alinean IAM, Configuración, Terminología, Seguimiento, Neon, FastAPI, Correo, Clasificación, Correcciones y Cierre;
 - se eliminan de documentación normativa modelos, ramas y cadenas de migración ya sustituidos.
 
@@ -21,7 +33,7 @@
 
 ### IAM
 
-- un Rol pertenece a un Grupo;
+- un Rol puede pertenecer como máximo a un Grupo;
 - un Usuario tiene máximo un Rol por Grupo;
 - membresía de Grupo derivada;
 - permisos solo en Roles;
