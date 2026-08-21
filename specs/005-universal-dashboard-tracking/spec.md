@@ -1,7 +1,7 @@
 # Spec 005 — Inicio personal y Seguimiento de usuarios
 
 **Estado:** Implementada  
-**Constitución:** 2.11.0
+**Constitución:** 2.12.0
 
 ## Objetivo
 
@@ -30,13 +30,13 @@ CLOSE_REQUEST
 Pantalla privada de solo lectura con:
 
 - Grupos activos;
-- miembros;
-- Roles del miembro en cada Grupo;
+- miembros derivados de Roles agrupados;
+- Rol del miembro en cada Grupo;
 - cantidad de acciones pendientes por usuario y Grupo;
 - KPIs de miembros, usuarios con pendientes y total pendiente;
 - búsqueda y filtro “solo con pendientes”.
 
-Seguimiento no permite editar accesos.
+Los Roles globales no crean membresía de Grupo y por tanto no agregan al Usuario a un Grupo en Seguimiento. Seguimiento no permite editar accesos.
 
 ## Refresco
 
