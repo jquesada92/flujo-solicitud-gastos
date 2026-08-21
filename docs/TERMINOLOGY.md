@@ -4,10 +4,13 @@
 Cuenta autenticable que interactúa con el producto.
 
 ## Grupo
-Ámbito organizacional que agrupa Roles disponibles. La membresía de un Usuario se deriva de su Rol en ese Grupo.
+Ámbito organizacional opcional que puede tener cero o más Roles. La membresía de un Usuario se deriva únicamente de sus Roles agrupados.
 
 ## Rol
-Conjunto de Permisos. Pertenece a un único Grupo. Un Usuario puede tener máximo un Rol por Grupo.
+Conjunto de Permisos. Puede ser global o pertenecer a máximo un Grupo. Un Usuario puede tener máximo un Rol por Grupo.
+
+## Rol global
+Rol sin Grupo. Puede asignarse a un Usuario sin crear membresía de Grupo. Un Usuario puede tener varios Roles globales ordinarios.
 
 ## Permiso
 Capacidad IAM atómica.
@@ -22,19 +25,19 @@ config:manage
 ```
 
 ## Permiso efectivo
-Baseline del usuario activo más Permisos de sus Roles dentro de Grupos activos, aplicando la política de cuenta técnica/system-only.
+Baseline del usuario activo más Permisos de sus Roles globales activos y de sus Roles agrupados dentro de Grupos activos, aplicando la política de cuenta técnica/system-only.
 
 ## Cargo / Posición
 Metadato organizacional descriptivo. Un Usuario puede tener máximo un Cargo. Cargo no concede acceso.
 
 ## Accesos
-Consola de Usuarios, Grupos, Roles y Permisos. El Usuario recibe acceso seleccionando un Rol dentro de cada Grupo y guardando explícitamente.
+Consola de Usuarios, Grupos, Roles y Permisos. El Usuario recibe acceso mediante máximo un Rol por Grupo y cero o más Roles globales, guardando explícitamente.
 
 ## Inicio
 Vista personal: mis acciones, mis solicitudes y métricas propias.
 
 ## Seguimiento
-Vista de equipo de solo lectura: Grupos, miembros, Roles y cantidades de acciones pendientes.
+Vista de equipo de solo lectura: Grupos, miembros derivados de Roles agrupados, Roles y cantidades de acciones pendientes. Los Roles globales no crean membresía en esta vista.
 
 ## Área
 Contexto organizacional asociado al gasto. Campo: `expense_area`.
@@ -70,7 +73,7 @@ No es un Permiso IAM.
 Autoridad explícita sobre una solicitud concreta para gestionar factura/cierre. No es un Rol ni un Permiso global.
 
 ## Administrador del sistema
-Cuenta protegida por `system_accounts`. En producción tiene política `requests:read + areas:manage + config:manage`.
+Cuenta protegida por `system_accounts`. También se representa mediante el Rol global técnico `system-administrator`, sin Grupo. En producción la autoridad protegida tiene política `requests:read + areas:manage + config:manage`.
 
 ## Compatibilidad
 
