@@ -59,14 +59,14 @@ def _system_account_policy_codes(db: Session) -> set[str]:
 
 
 def _role_permission_codes(db: Session, user_id: int) -> set[str]:
-    """Resolve permissions from the user's role inside each active group.
+    """Resolve permissions from grouped and global roles assigned to a user.
 
-    A group does not grant every role configured in that group. Instead, each
-    user owns at most one explicit role in that group; GroupRole only provides
-    the scope/binding for that role. Cargos and direct user permissions do not
-    participate in authorization.
+    A role may belong to at most one group. Group-scoped roles only grant while
+    their group is active; a role with no GroupRole row is global and grants
+    directly from the explicit UserRoleAssignment. Cargos and direct user
+    permissions never participate in authorization.
     """
-    return set(db.scalars(
+    grouped = set(db.scalars(
         select(Permission.code)
         .join(RolePermission, RolePermission.permission_id == Permission.id)
         .join(Role, Role.id == RolePermission.role_id)
@@ -81,10 +81,26 @@ def _role_permission_codes(db: Session, user_id: int) -> set[str]:
         )
     ).all())
 
+    global_roles = set(db.scalars(
+        select(Permission.code)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .join(Role, Role.id == RolePermission.role_id)
+        .join(UserRoleAssignment, UserRoleAssignment.role_id == Role.id)
+        .where(
+            UserRoleAssignment.user_id == user_id,
+            Role.active.is_(True),
+            Permission.active.is_(True),
+            ~exists(select(GroupRole.id).where(GroupRole.role_id == Role.id)),
+        )
+    ).all())
+    return grouped | global_roles
+
 
 def effective_permission_codes(db: Session, user_id: int) -> set[str]:
     baseline = _baseline_permission_codes(db, user_id)
     if is_system_account(db, user_id):
+        # SystemAccount policy remains the authority even though the protected
+        # system-administrator role is represented as a global role assignment.
         return _system_account_policy_codes(db) | baseline
     inherited = _role_permission_codes(db, user_id) - SYSTEM_ONLY_PERMISSION_CODES
     return inherited | baseline
@@ -128,7 +144,7 @@ def users_with_permission(
             stmt = stmt.where(User.email.ilike(exclude_email).is_(False))
         return list(db.scalars(stmt.order_by(User.id)).all())
 
-    role_assignment = (
+    grouped_role_assignment = (
         select(UserRoleAssignment.user_id.label('user_id'))
         .join(Role, Role.id == UserRoleAssignment.role_id)
         .join(GroupRole, GroupRole.role_id == Role.id)
@@ -142,9 +158,21 @@ def users_with_permission(
             UserGroup.active.is_(True),
         )
     )
+    global_role_assignment = (
+        select(UserRoleAssignment.user_id.label('user_id'))
+        .join(Role, Role.id == UserRoleAssignment.role_id)
+        .join(RolePermission, RolePermission.role_id == Role.id)
+        .join(Permission, Permission.id == RolePermission.permission_id)
+        .where(
+            Permission.code == permission_code,
+            Permission.active.is_(True),
+            Role.active.is_(True),
+            ~exists(select(GroupRole.id).where(GroupRole.role_id == Role.id)),
+        )
+    )
 
     policy_codes = _system_account_policy_codes(db)
-    permitted_queries = [role_assignment]
+    permitted_queries = [grouped_role_assignment, global_role_assignment]
     if permission_code in policy_codes:
         permitted_queries.append(select(SystemAccount.user_id.label('user_id')))
 
@@ -184,6 +212,22 @@ def permission_sources(db: Session, user_id: int) -> dict[str, list[str]]:
     for code, group_name, role_name in scoped_rows:
         if code in effective:
             sources[code].add(f'Grupo {group_name} → Rol {role_name}')
+
+    global_rows = db.execute(
+        select(Permission.code, Role.name)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .join(Role, Role.id == RolePermission.role_id)
+        .join(UserRoleAssignment, UserRoleAssignment.role_id == Role.id)
+        .where(
+            UserRoleAssignment.user_id == user_id,
+            Role.active.is_(True),
+            Permission.active.is_(True),
+            ~exists(select(GroupRole.id).where(GroupRole.role_id == Role.id)),
+        )
+    ).all()
+    for code, role_name in global_rows:
+        if code in effective:
+            sources[code].add(f'Rol global {role_name}')
 
     if is_system_account(db, user_id):
         policy_source = (
