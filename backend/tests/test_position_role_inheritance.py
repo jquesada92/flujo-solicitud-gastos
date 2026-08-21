@@ -152,6 +152,21 @@ class PositionRoleIsolationTests(unittest.TestCase):
             eligible = users_with_permission(db, 'requests:approve')
             self.assertEqual([item.id for item in eligible], [user.id])
 
+    def test_explicit_global_role_is_an_authorization_source(self):
+        with self.Session() as db:
+            role = self._approver_role(db)
+            user = self._user(db, 'global-approver@example.com')
+            db.add(UserRoleAssignment(user_id=user.id, role_id=role.id))
+            db.commit()
+
+            self.assertIn('requests:approve', effective_permission_codes(db, user.id))
+            self.assertIn(
+                'Rol global Aprobador',
+                permission_sources(db, user.id)['requests:approve'],
+            )
+            eligible = users_with_permission(db, 'requests:approve')
+            self.assertEqual([item.id for item in eligible], [user.id])
+
 
 if __name__ == '__main__':
     unittest.main()

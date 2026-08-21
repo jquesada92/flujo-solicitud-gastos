@@ -73,8 +73,20 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn('!SAFE_METHODS.has(method)', source)
         self.assertIn("'Tienes acceso de solo lectura a Configuración.'", source)
         self.assertIn("readJson('/api/iam/users')", source)
-        self.assertIn("readJson('/api/iam/positions')", source)
+        self.assertIn("readJson('/api/iam/roles')", source)
+        self.assertIn("readJson('/api/iam/groups')", source)
+        self.assertNotIn("readJson('/api/iam/positions')", source)
         self.assertIn('/src/config-readonly.js', index)
+
+    def test_access_console_distinguishes_grouped_and_global_roles(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        self.assertIn('<h3>Acceso por grupo</h3>', source)
+        self.assertIn('<h3>Roles globales</h3>', source)
+        self.assertIn('const globalRoles = useMemo(() =>', source)
+        self.assertIn('const toggleGlobalRole = (roleId, checked)', source)
+        self.assertIn('Los roles sin grupo se asignan independientemente', source)
+        self.assertIn('Un grupo puede existir sin roles', source)
+        self.assertIn('rol técnico global', source)
 
     def test_iam_checkboxes_have_larger_click_target_and_visible_selected_state(self):
         css = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.css').read_text(encoding='utf-8')

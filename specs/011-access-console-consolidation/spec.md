@@ -1,7 +1,7 @@
 # Spec 011 — Consola de Accesos y runtime seguro
 
 **Estado:** Implementada  
-**Constitución:** 2.11.0
+**Constitución:** 2.12.0
 
 ## Objetivo
 
@@ -18,15 +18,22 @@ Permisos
 
 ### Usuario
 
-“Acceso por grupo” ofrece un selector de Rol por Grupo. No hay checkboxes independientes de Grupo, permisos individuales ni Roles directos.
+La ficha separa:
+
+- **Acceso por grupo**: selector de máximo un Rol por Grupo;
+- **Roles globales**: selección de cero o más Roles sin Grupo.
+
+No hay checkboxes independientes de Grupo ni permisos individuales. Los Roles técnicos `system_managed` no son editables desde la consola ordinaria.
 
 ### Grupo
 
-Administra Roles disponibles. Miembros son derivados y de solo lectura.
+Administra Roles opcionales. Un Grupo puede existir sin Roles. Miembros son derivados únicamente de Roles agrupados y son de solo lectura.
+
+Quitar un Rol del Grupo lo convierte en global; agregar Roles globales a un Grupo debe preservar la regla de máximo un Rol por Grupo para cada Usuario.
 
 ### Rol
 
-Administra Permisos. Al guardar, la respuesta del PATCH actualiza inmediatamente la tarjeta/lista local.
+Administra Permisos. Un Rol puede ser global o pertenecer a máximo un Grupo. Al guardar, la respuesta del PATCH actualiza inmediatamente la tarjeta/lista local.
 
 ## Persistencia explícita
 

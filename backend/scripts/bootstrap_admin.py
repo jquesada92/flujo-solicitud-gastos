@@ -5,7 +5,7 @@ from app.core.database import SessionLocal
 from app.core.privacy import analytics_identifier
 from app.core.security import hash_password, normalize_email
 from app.models.entities import User, UserRole
-from app.models.iam import Role, SystemAccount
+from app.models.iam import Role, SystemAccount, UserRoleAssignment
 
 
 def main() -> None:
@@ -13,9 +13,10 @@ def main() -> None:
     email = normalize_email(settings.admin_email)
 
     with SessionLocal() as db:
-        # The technical role is still seeded as protected product metadata, but
-        # technical accounts do not receive ordinary group-scoped role grants.
-        # Their authorization comes exclusively from SystemAccount policy.
+        # The protected technical role is a global role: it deliberately has no
+        # GroupRole binding. The assignment makes that role visible as the
+        # account's responsibility, while SystemAccount policy remains the only
+        # authorization authority for config:manage in production.
         role = db.scalar(select(Role).where(Role.code == 'system-administrator'))
         if not role:
             raise RuntimeError('IAM migrations must run before bootstrap_admin.py')
@@ -42,8 +43,15 @@ def main() -> None:
         if not db.scalar(select(SystemAccount.id).where(SystemAccount.user_id == user.id)):
             db.add(SystemAccount(user_id=user.id, account_type='TECHNICAL_ADMIN'))
 
+        if not db.scalar(select(UserRoleAssignment.id).where(
+            UserRoleAssignment.user_id == user.id,
+            UserRoleAssignment.role_id == role.id,
+        )):
+            db.add(UserRoleAssignment(user_id=user.id, role_id=role.id))
+
         # Compatibility fields mirror the technical account policy for the
-        # legacy frontend only. No UserRoleAssignment is created here.
+        # legacy frontend only. The global role assignment does not replace the
+        # protected SystemAccount policy.
         user.can_request = False
         user.can_approve = False
         user.can_view = True

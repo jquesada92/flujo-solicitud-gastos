@@ -40,6 +40,12 @@ def _out(db: Session, group: UserGroup) -> dict:
 
 
 def _replace_group_roles(db: Session, group: UserGroup, role_ids: list[int]) -> None:
+    """Set the optional group binding for roles and rebuild derived membership.
+
+    A group may have zero roles and a role may have zero or one group. Removing
+    a role from this list turns it into a global role; existing user role
+    assignments remain intact but no longer create membership in this group.
+    """
     unique_ids = list(dict.fromkeys(role_ids))
     roles = list(db.scalars(select(Role).where(
         Role.id.in_(unique_ids),
@@ -49,7 +55,7 @@ def _replace_group_roles(db: Session, group: UserGroup, role_ids: list[int]) -> 
     if len(roles) != len(unique_ids):
         raise HTTPException(status_code=422, detail='Uno o más roles no existen, están inactivos o son técnicos')
 
-    # One role belongs to one group. A role cannot be reused in several groups.
+    # One role belongs to at most one group. A role cannot be reused in several groups.
     conflicting = db.execute(
         select(GroupRole.role_id, UserGroup.name)
         .join(UserGroup, UserGroup.id == GroupRole.group_id)
@@ -66,25 +72,36 @@ def _replace_group_roles(db: Session, group: UserGroup, role_ids: list[int]) -> 
             detail=f'El rol {role_name} ya pertenece al grupo {other_group_name}',
         )
 
-    current_role_ids = set(db.scalars(
-        select(GroupRole.role_id).where(GroupRole.group_id == group.id)
-    ).all())
-    removed_role_ids = current_role_ids - set(unique_ids)
-    if removed_role_ids:
-        assigned_role = db.scalar(
-            select(UserRoleAssignment.role_id)
-            .where(UserRoleAssignment.role_id.in_(removed_role_ids))
-            .limit(1)
+    # Converting global roles into grouped roles must not create two roles from
+    # the same group for an already-assigned user.
+    duplicate_user = db.execute(
+        select(UserRoleAssignment.user_id, func.count(UserRoleAssignment.id))
+        .where(UserRoleAssignment.role_id.in_(unique_ids))
+        .group_by(UserRoleAssignment.user_id)
+        .having(func.count(UserRoleAssignment.id) > 1)
+        .limit(1)
+    ).first() if unique_ids else None
+    if duplicate_user:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                'No puedes agrupar estos roles porque al menos un usuario ya tiene '
+                'más de uno de ellos. Un usuario solo puede tener un rol por grupo.'
+            ),
         )
-        if assigned_role is not None:
-            role_name = db.scalar(select(Role.name).where(Role.id == assigned_role)) or str(assigned_role)
-            raise HTTPException(
-                status_code=409,
-                detail=f'No puedes quitar el rol {role_name} del grupo mientras tenga usuarios asignados',
-            )
 
     db.execute(delete(GroupRole).where(GroupRole.group_id == group.id))
     db.add_all(GroupRole(group_id=group.id, role_id=role.id) for role in roles)
+
+    # Membership is a projection of grouped role assignments, never an
+    # independent grant. Rebuild this group's projection after every catalog edit.
+    db.execute(delete(GroupMember).where(GroupMember.group_id == group.id))
+    member_ids = list(db.scalars(
+        select(UserRoleAssignment.user_id)
+        .where(UserRoleAssignment.role_id.in_(unique_ids))
+        .distinct()
+    ).all()) if unique_ids else []
+    db.add_all(GroupMember(group_id=group.id, user_id=user_id) for user_id in member_ids)
 
 
 @router.patch('/groups/{group_id}')
@@ -93,10 +110,10 @@ def update_group_access(
     payload: GroupAccessUpdate,
     db: Session = Depends(get_db),
 ):
-    """Persist group metadata and its role catalog in one transaction.
+    """Persist group metadata and its optional role catalog in one transaction.
 
-    Users are not added to a group directly. Selecting one role from that group
-    on the user screen creates/removes the membership atomically.
+    Users are not added to a group directly. Selecting one grouped role on the
+    user screen creates membership; global roles do not create group membership.
     """
     group = db.get(UserGroup, group_id)
     if not group:
@@ -120,7 +137,10 @@ def update_group_access(
     if payload.role_ids is not None:
         _replace_group_roles(db, group, payload.role_ids)
 
-    if payload.member_ids is not None:
+    # member_ids exists only for old clients. When role_ids is being changed,
+    # the freshly derived membership is authoritative and any stale member list
+    # in the same payload must not veto that recomputation.
+    if payload.member_ids is not None and payload.role_ids is None:
         current_member_ids = set(db.scalars(
             select(GroupMember.user_id).where(GroupMember.group_id == group.id)
         ).all())

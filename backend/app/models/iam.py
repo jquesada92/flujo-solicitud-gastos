@@ -62,8 +62,9 @@ class GroupRole(Base):
     __tablename__ = 'group_roles'
     __table_args__ = (
         UniqueConstraint('group_id', 'role_id', name='uq_group_role'),
-        # A business role belongs to one group only. The user receives the group
-        # membership through the role assignment, never as an independent grant.
+        # At most one row may exist for a role. No row means the role is global;
+        # one row scopes it to that group. Group membership remains derived from
+        # the user's grouped role assignment, never an independent grant.
         UniqueConstraint('role_id', name='uq_group_role_role'),
     )
 

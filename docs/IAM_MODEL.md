@@ -2,20 +2,23 @@
 
 ## Principio
 
-Los permisos se asignan a Roles; los Roles se acotan a Grupos; los Usuarios reciben un Rol concreto dentro de cada Grupo donde participan.
+Los permisos se asignan a Roles. Un Rol puede ser global o pertenecer a un único Grupo. Los Usuarios pueden combinar Roles globales con máximo un Rol por cada Grupo.
 
 ```text
-Permission → Role → Group
+Permission → Role ── 0..1 Group
                ↑
             User
 ```
 
 ## Cardinalidades
 
-- `GroupRole.role_id` es único: un Rol pertenece a un Grupo.
-- un Usuario puede tener varios Roles solo si pertenecen a Grupos diferentes;
-- máximo un Rol del Usuario por Grupo;
-- `GroupMember` se deriva/reconstruye desde `UserRoleAssignment + GroupRole`;
+- `GroupRole.role_id` es único: un Rol puede pertenecer a cero o un Grupo, nunca a varios;
+- un Grupo puede existir con cero Roles;
+- un Rol sin `GroupRole` es global;
+- un Usuario puede tener máximo un Rol por Grupo;
+- un Usuario puede tener cero o más Roles globales ordinarios;
+- `GroupMember` se deriva/reconstruye solo desde `UserRoleAssignment + GroupRole`;
+- un Rol global no crea `GroupMember`;
 - Cargo/Posición no es fuente IAM;
 - un Usuario tiene máximo un Cargo.
 
@@ -28,9 +31,9 @@ permissions
 roles
 role_permissions
 user_groups
-group_roles
+group_roles          # opcional por Rol
 user_role_assignments
-group_members
+group_members        # proyección de Roles agrupados
 system_accounts
 ```
 
@@ -51,10 +54,17 @@ Para usuario ordinario activo:
 
 ```text
 baseline = {requests:read}
-role_permissions = permisos de Roles asignados
-                   cuyo GroupRole apunta a un Grupo activo
 
-effective = baseline ∪ role_permissions - {config:manage}
+global_role_permissions = permisos de Roles asignados
+                          que no tienen GroupRole
+
+group_role_permissions = permisos de Roles asignados
+                         cuyo GroupRole apunta a un Grupo activo
+
+effective = baseline
+          ∪ global_role_permissions
+          ∪ group_role_permissions
+          - {config:manage}
 ```
 
 Para `system_accounts`, se aplica la política técnica del ambiente. En producción:
@@ -65,13 +75,15 @@ areas:manage
 config:manage
 ```
 
+El Rol `system-administrator` es global y `system_managed`. El bootstrap lo asigna a la cuenta técnica para representar su responsabilidad, pero `SystemAccount` continúa siendo la autoridad protegida para sus privilegios.
+
 ## `config:read`
 
 Es un permiso ordinario de lectura. `require_permission('config:manage')` acepta `config:read` solo para métodos `GET`/`HEAD`; una mutación continúa exigiendo `config:manage`.
 
 ## `areas:manage`
 
-Permite mutar Área/Categoría. Puede estar en un Rol de negocio ligado a un Grupo. No concede gestión IAM.
+Permite mutar Área/Categoría. Puede estar en un Rol global o en un Rol de negocio ligado a un Grupo. No concede gestión IAM.
 
 ## Prohibiciones de acceso
 
@@ -80,29 +92,54 @@ Permite mutar Área/Categoría. Puede estar en un Rol de negocio ligado a un Gru
 - permisos directos a Usuario;
 - Cargo→Rol;
 - membresía de Grupo independiente;
-- Rol de Usuario sin el contexto del formulario por Grupo.
+- mutaciones legacy de Roles de Usuario fuera del payload canónico de Accesos.
 
-`iam_users.py` vuelve a validar que los Roles seleccionados pertenezcan a Grupos activos y que no se repita Grupo.
+`iam_users.py` valida que:
+
+- un Rol agrupado pertenezca a un Grupo activo para ser asignado;
+- no se repita el mismo Grupo entre los Roles agrupados de un Usuario;
+- un Rol global ordinario pueda asignarse sin crear membresía de Grupo;
+- Roles técnicos `system_managed` no puedan asignarse desde la consola ordinaria.
+
+## Cambio de scope de un Rol
+
+Un Rol puede moverse entre:
+
+```text
+Global ↔ Grupo
+```
+
+sin borrar `UserRoleAssignment` existentes.
+
+Al agregar Roles a un Grupo, el backend comprueba que ningún Usuario terminaría con dos de esos Roles dentro del mismo Grupo. Después reconstruye `GroupMember` para reflejar las asignaciones vigentes. Quitar todos los Roles de un Grupo es válido y puede dejar el Grupo vacío.
 
 ## Accesos UI
 
 Usuarios:
 
 ```text
+Acceso por grupo
 Grupo A → [Rol A1 | Rol A2 | Sin rol]
 Grupo B → [Rol B1 | Rol B2 | Sin rol]
+
+Roles globales
+[x] Rol Global 1
+[x] Rol Global 2
 ```
 
-Cambiar el selector es local. **Guardar cambios** envía la lista de `role_ids` en una única actualización; el backend deriva `group_ids`.
+Cambiar selectores o checks es local. **Guardar cambios** envía la lista completa de `role_ids` en una única actualización; el backend deriva `group_ids` solo desde los Roles agrupados.
 
 Grupos:
 
-- se administran los Roles permitidos del Grupo;
-- miembros son solo lectura y reflejan asignaciones de Usuario.
+- pueden tener cero Roles;
+- se administran los Roles opcionalmente vinculados al Grupo;
+- miembros son solo lectura y reflejan asignaciones de Roles agrupados;
+- quitar un Rol del Grupo lo convierte en global.
 
 Roles:
 
 - contienen Permisos;
+- pueden ser globales o pertenecer a máximo un Grupo;
 - guardar usa la respuesta del backend para actualizar el estado local y evitar GET innecesario.
 
 ## Fuentes explicables
@@ -112,10 +149,11 @@ Roles:
 ```text
 Acceso base del producto para usuarios activos
 Grupo <nombre> → Rol <nombre>
+Rol global <nombre>
 Política de cuenta técnica (...)
 ```
 
-No produce fuentes de Cargo ni de asignación directa.
+No produce fuentes de Cargo ni de permisos directos.
 
 ## Cargo y notificaciones
 

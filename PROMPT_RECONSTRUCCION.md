@@ -1,6 +1,6 @@
 # Prompt maestro de reconstrucción
 
-> Constitución vigente: **2.11.0**.
+> Constitución vigente: **2.12.0**.
 
 Reconstruye **Flujo de Control de Gastos** como una aplicación web neutral respecto al tipo de organización, lista para desplegar con React/Vite, FastAPI, SQLAlchemy, Alembic y PostgreSQL/Neon.
 
@@ -28,6 +28,7 @@ Conceptos visibles:
 Usuario
 Grupo
 Rol
+Rol global
 Permiso
 Cargo / Posición
 Área
@@ -42,22 +43,25 @@ Accesos
 Modelo exacto:
 
 ```text
-Permiso → Rol → Grupo
+Permiso → Rol ── 0..1 Grupo
              ↑
           Usuario
 
 Usuario activo → requests:read
 Cargo          → metadato organizacional
-SystemAccount  → política técnica
+SystemAccount  → política técnica + Rol global protegido
 ```
 
 Invariantes:
 
-- un Rol pertenece a un solo Grupo;
+- un Grupo puede existir con cero Roles;
+- un Rol pertenece a cero o un Grupo, nunca a varios;
+- un Rol sin Grupo es global;
 - un Usuario puede tener máximo un Rol por Grupo;
-- la membresía de Grupo se deriva del Rol asignado;
+- un Usuario puede tener cero o más Roles globales ordinarios;
+- la membresía de Grupo se deriva únicamente de Roles agrupados;
+- un Rol global no crea membresía de Grupo;
 - no se asignan Permisos directamente a Usuarios;
-- no se usan Roles de Usuario sin Grupo;
 - Cargo no concede Permisos;
 - un Usuario tiene 0..1 Cargo;
 - nombres/códigos no autorizan.
@@ -78,7 +82,11 @@ config:manage
 Para usuario ordinario:
 
 ```text
-effective_permissions = requests:read + role_permissions_of_active_group_roles - config:manage
+effective_permissions =
+    requests:read
+  + role_permissions_of_active_global_roles
+  + role_permissions_of_roles_in_active_groups
+  - config:manage
 ```
 
 ## 3. Accesos
@@ -89,21 +97,27 @@ Construye una única consola administrativa:
 Usuarios
   → Acceso por grupo
      → selector único de Rol por Grupo
+  → Roles globales
+     → selección de cero o más Roles sin Grupo
 
 Grupos
-  → Roles del Grupo editables
-  → miembros derivados, solo lectura
+  → pueden existir sin Roles
+  → Roles opcionales del Grupo editables
+  → miembros derivados de Roles agrupados, solo lectura
 
 Roles
   → Permisos
+  → pueden ser globales o pertenecer a máximo un Grupo
 
 Permisos
   → catálogo de capacidades
 ```
 
-No agregues controles de permisos individuales ni Roles directos. Cargo no es mecanismo de acceso.
+No agregues controles de permisos individuales. Cargo no es mecanismo de acceso.
 
 Todas las ediciones de acceso son staged. No hagas requests de mutación al seleccionar una opción. Persiste con **Guardar cambios** y advierte antes de descartar cambios pendientes.
+
+Quitar un Rol de un Grupo lo convierte en global sin borrar `UserRoleAssignment`. Vincular Roles globales a un Grupo debe rechazarse si produciría más de un Rol del mismo Grupo para algún Usuario. Después de cambiar el catálogo de Roles de un Grupo, reconstruye `GroupMember` desde las asignaciones de Roles agrupados.
 
 ## 4. Configuración
 
@@ -116,6 +130,8 @@ Nunca conviertas `config:read` en autoridad de escritura.
 ## 5. Cuenta técnica
 
 Identifica al Administrador del sistema con `system_accounts`.
+
+`system-administrator` es un Rol global `system_managed` sin Grupo. El bootstrap lo asigna a la cuenta técnica para representar su responsabilidad, pero la autoridad de privilegios sigue siendo la política `SystemAccount`; el Rol técnico no puede editarse/asignarse desde la consola ordinaria.
 
 En producción su política efectiva es:
 
@@ -150,14 +166,14 @@ CLOSE_REQUEST
 Crea una pantalla privada, de solo lectura, para seguimiento del equipo:
 
 - Grupos activos;
-- miembros de cada Grupo;
+- miembros derivados de Roles agrupados;
 - Rol de cada miembro en ese Grupo;
 - pendientes por usuario y Grupo;
 - KPIs de miembros, usuarios con pendientes y carga total;
 - búsqueda por usuario/grupo/rol;
 - filtro de usuarios con pendientes.
 
-No permitas editar IAM desde Seguimiento.
+Los Roles globales no crean membresía ni filas por Grupo en Seguimiento. No permitas editar IAM desde Seguimiento.
 
 ## 8. Sesión y rutas privadas
 
@@ -280,9 +296,10 @@ Cadena:
 20260820_0001_initial_schema
 → 20260820_0002_group_scoped_roles
 → 20260821_0003_single_user_position
+→ 20260821_0004_allow_global_roles
 ```
 
-`0001` crea la instalación limpia. `0002` agrega las cardinalidades de Roles/Grupos. `0003` garantiza un Cargo por Usuario.
+`0001` crea la instalación limpia. `0002` impide múltiples Grupos por Rol y dos Roles del mismo Grupo por Usuario. `0003` garantiza un Cargo por Usuario. `0004` permite Roles sin Grupo manteniendo la protección para Roles agrupados.
 
 ## 16. Correo
 
@@ -324,7 +341,7 @@ Gates:
 ```text
 cd backend
 alembic heads
-# 20260821_0003
+# 20260821_0004
 python -m unittest discover -s tests -v
 
 cd ../frontend

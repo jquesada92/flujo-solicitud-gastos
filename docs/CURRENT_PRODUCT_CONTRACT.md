@@ -12,20 +12,23 @@ Flujo de Control de Gastos digitaliza solicitudes y decisiones con evidencia, au
 Usuario
 ├─ requests:read si está activo
 ├─ 0..1 Cargo (informativo)
-└─ Roles asignados
-     └─ cada Rol pertenece a un Grupo
+├─ 0..N Roles globales
+└─ Roles agrupados
+     └─ máximo 1 Rol por Grupo
           └─ cada Rol contiene Permisos
 ```
 
 Cardinalidades:
 
 ```text
-Rol     N:1 Grupo
+Grupo   0..N Roles
+Rol     0..1 Grupo
 Usuario 0..1 Rol por Grupo
+Usuario 0..N Roles globales
 Usuario 0..1 Cargo
 ```
 
-La membresía del Grupo es una proyección de la asignación de Rol del Usuario. Cargo no participa en autorización.
+Un Rol sin Grupo es global. La membresía del Grupo es una proyección únicamente de Roles agrupados. Cargo no participa en autorización.
 
 ## Permisos
 
@@ -40,6 +43,8 @@ config:manage
 
 `config:manage` está protegido para `system_accounts`; `config:read` es lectura ordinaria. `requests:close` no es una capacidad operativa vigente.
 
+Los permisos efectivos ordinarios pueden venir de Roles globales o de Roles agrupados cuyo Grupo esté activo. `config:manage` continúa reservado a la política técnica protegida.
+
 ## UX principal
 
 ```text
@@ -52,10 +57,12 @@ Configuración → Accesos / Áreas / Reglas / Auditoría según permisos
 Accesos:
 
 ```text
-Usuario → selector de Rol por Grupo → Guardar cambios
-Grupo   → Roles disponibles; miembros derivados
-Rol     → Permisos
+Usuario → selector de Rol por Grupo + Roles globales → Guardar cambios
+Grupo   → Roles opcionales; miembros derivados de Roles agrupados
+Rol     → Permisos; puede ser global o pertenecer a un Grupo
 ```
+
+El Rol global técnico `Administrador del sistema` no pertenece a ningún Grupo. El bootstrap lo asigna a la cuenta técnica como representación, pero la autorización privilegiada sigue dependiendo de `system_accounts`.
 
 ## Flujo
 
@@ -126,7 +133,10 @@ Alembic:
 0001 initial_schema
 → 0002 group_scoped_roles
 → 0003 single_user_position
+→ 0004 allow_global_roles
 ```
+
+`0004` permite Roles globales manteniendo la protección de máximo un Rol por Usuario/Grupo.
 
 Neon pooled es compatible porque el schema se califica explícitamente y no se envía `search_path` mediante startup options.
 
@@ -137,6 +147,7 @@ Backend:
 ```text
 app/services/iam_service.py
 app/api/iam_users.py
+app/api/iam_group_assignments.py
 app/api/iam_access_policy.py
 app/core/security.py
 app/api/organization_overview.py

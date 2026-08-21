@@ -237,7 +237,7 @@ async function openAccessViewer() {
   heading.append(
     node('p', 'iam-eyebrow', 'CONFIGURACIÓN · ACCESOS · SOLO LECTURA'),
     node('h1', '', 'Usuarios, grupos, roles y permisos'),
-    node('p', 'iam-muted', 'Modelo de acceso: Usuario → Grupo/Rol → Permisos. Esta vista es informativa.'),
+    node('p', 'iam-muted', 'Modelo de acceso: Usuario → Roles agrupados/globales → Permisos. Esta vista es informativa.'),
   );
   const actions = node('div', 'iam-actions');
   const close = node('button', 'iam-button primary', 'Volver');
@@ -264,6 +264,10 @@ async function openAccessViewer() {
     const roleById = new Map(roles.map((item) => [item.id, item]));
     const userById = new Map(users.map((item) => [item.id, item]));
     const permissionByCode = new Map(permissions.map((item) => [item.code, item]));
+    const groupNameByRoleId = new Map();
+    groups.forEach((group) => {
+      (group.role_ids || []).forEach((roleId) => groupNameByRoleId.set(roleId, group.name));
+    });
 
     const tabs = [
       ['users', 'Usuarios'],
@@ -301,7 +305,13 @@ async function openAccessViewer() {
       } else if (active === 'roles') {
         roles.forEach((role) => {
           const labels = (role.permission_codes || []).map((code) => permissionByCode.get(code)?.name || code);
-          list.appendChild(accessRow(role.name, [role.description || 'Sin descripción', `Permisos: ${labels.join(', ') || 'Ninguno'}`], role.system_managed ? 'SISTEMA' : role.active ? 'ACTIVO' : 'INACTIVO'));
+          const groupName = groupNameByRoleId.get(role.id);
+          const scope = groupName ? `Grupo: ${groupName}` : 'Rol global';
+          list.appendChild(accessRow(
+            role.name,
+            [role.description || 'Sin descripción', scope, `Permisos: ${labels.join(', ') || 'Ninguno'}`],
+            role.system_managed ? 'SISTEMA' : role.active ? 'ACTIVO' : 'INACTIVO',
+          ));
         });
       } else if (active === 'permissions') {
         permissions.forEach((permission) => {

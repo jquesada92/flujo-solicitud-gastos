@@ -12,8 +12,9 @@ class MigrationTopologyTests(unittest.TestCase):
         config.set_main_option('script_location', str(backend_dir / 'alembic'))
         script = ScriptDirectory.from_config(config)
 
-        self.assertEqual(script.get_heads(), ['20260821_0003'])
+        self.assertEqual(script.get_heads(), ['20260821_0004'])
         revisions = {revision.revision: revision.down_revision for revision in script.walk_revisions()}
+        self.assertEqual(revisions['20260821_0004'], '20260821_0003')
         self.assertEqual(revisions['20260821_0003'], '20260820_0002')
         self.assertEqual(revisions['20260820_0002'], '20260820_0001')
         self.assertIsNone(revisions['20260820_0001'])
@@ -64,6 +65,25 @@ class MigrationTopologyTests(unittest.TestCase):
         self.assertIn("GROUP BY user_id", migration)
         self.assertIn("drop_constraint('uq_user_position'", migration)
         self.assertIn("create_unique_constraint('uq_user_position_user', ['user_id'])", migration)
+
+    def test_global_role_migration_allows_ungrouped_roles_without_relaxing_group_guard(self):
+        backend_dir = Path(__file__).resolve().parents[1]
+        migration = (
+            backend_dir
+            / 'alembic'
+            / 'versions'
+            / '20260821_0004_allow_global_roles.py'
+        ).read_text(encoding='utf-8')
+
+        self.assertIn("revision = '20260821_0004'", migration)
+        self.assertIn("down_revision = '20260821_0003'", migration)
+        self.assertIn('IF target_group_id IS NULL THEN', migration)
+        self.assertIn('RETURN NEW;', migration)
+        self.assertIn("RAISE EXCEPTION 'A user can only have one role per group'", migration)
+        self.assertIn('CREATE OR REPLACE FUNCTION', migration)
+        self.assertIn('trg_group_role_user_cardinality', migration)
+        self.assertIn('enforce_group_role_user_cardinality', migration)
+        self.assertIn('Grouping this role would give a user multiple roles in the same group', migration)
 
 
 if __name__ == '__main__':

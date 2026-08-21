@@ -35,9 +35,12 @@ El pooler puede rechazar ese startup parameter. El aislamiento se consigue con s
 20260820_0001_initial_schema
 → 20260820_0002_group_scoped_roles
 → 20260821_0003_single_user_position
+→ 20260821_0004_allow_global_roles
 ```
 
-`alembic heads` debe devolver `20260821_0003`.
+`alembic heads` debe devolver `20260821_0004`.
+
+`0004` permite asignaciones de Roles globales (sin Grupo) y conserva el guard de máximo un Rol del mismo Grupo por Usuario.
 
 La baseline exige el schema de aplicación vacío en una instalación nueva. Una vez desplegada, no se reescribe; se agregan revisiones.
 
@@ -52,6 +55,8 @@ alembic upgrade head
 python -m scripts.bootstrap_admin
 uvicorn app.application:app
 ```
+
+El bootstrap asigna el Rol global técnico `system-administrator` a la cuenta protegida y registra `SystemAccount`; la política técnica sigue siendo la autoridad de privilegios.
 
 ## Verificación SQL
 

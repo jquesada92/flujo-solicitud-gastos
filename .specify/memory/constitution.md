@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.11.0  
+**Versión:** 2.12.0  
 **Vigente desde:** 2026-08-21
 
 ## 1. Propósito
@@ -28,8 +28,9 @@ Un cambio funcional, de seguridad, persistencia, UX o arquitectura no está term
 ## 3. Terminología canónica
 
 - **Usuario**: cuenta autenticable del producto.
-- **Grupo**: ámbito organizacional que contiene uno o más Roles disponibles.
-- **Rol**: conjunto reutilizable de Permisos y perteneciente a un único Grupo.
+- **Grupo**: ámbito organizacional opcional que puede contener cero o más Roles.
+- **Rol**: conjunto reutilizable de Permisos. Puede ser global o pertenecer como máximo a un Grupo.
+- **Rol global**: Rol sin Grupo. No crea membresía de Grupo.
 - **Permiso**: capacidad IAM atómica implementada por el producto.
 - **Cargo / Posición**: dato organizacional descriptivo. No concede acceso.
 - **Área**: unidad, función o contexto organizacional asociado al gasto.
@@ -48,26 +49,29 @@ No se crearán sinónimos funcionales para estos conceptos.
 Modelo normativo:
 
 ```text
-Permiso → Rol → Grupo
+Permiso → Rol ── 0..1 Grupo
              ↑
           Usuario
 
 Usuario activo → requests:read (baseline)
 Cargo          → dato organizacional, sin autorización
-SystemAccount  → política técnica protegida
+SystemAccount  → política técnica protegida + Rol global técnico
 ```
 
 Reglas obligatorias:
 
-1. Un Rol pertenece a exactamente un Grupo de negocio.
-2. Un Usuario puede tener como máximo un Rol dentro de cada Grupo.
-3. Asignar un Rol al Usuario determina automáticamente su membresía en ese Grupo.
-4. Quitar el Rol de ese Grupo elimina esa membresía derivada.
-5. No se asignan Permisos directamente a Usuarios.
-6. No existen Roles de Usuario sin Grupo en el modelo operativo.
-7. Un Cargo no hereda Roles ni Permisos y no participa en `effective_permission_codes()`.
-8. Cada Usuario puede tener como máximo un Cargo activo asociado.
-9. El nombre/código de Grupo, Rol, Cargo, Área o Usuario nunca autoriza por sí mismo.
+1. Un Grupo puede existir con cero Roles y cero miembros.
+2. Un Rol puede pertenecer a cero o un Grupo; nunca a más de uno.
+3. Un Rol sin Grupo es un Rol global.
+4. Un Usuario puede tener como máximo un Rol dentro de cada Grupo.
+5. Un Usuario puede tener cero o más Roles globales ordinarios.
+6. Asignar un Rol agrupado al Usuario determina automáticamente su membresía en ese Grupo.
+7. Quitar o volver global ese Rol elimina la membresía derivada cuando el Usuario ya no conserva otro Rol de ese Grupo.
+8. Un Rol global no crea membresía de Grupo.
+9. No se asignan Permisos directamente a Usuarios.
+10. Un Cargo no hereda Roles ni Permisos y no participa en `effective_permission_codes()`.
+11. Cada Usuario puede tener como máximo un Cargo activo asociado.
+12. El nombre/código de Grupo, Rol, Cargo, Área o Usuario nunca autoriza por sí mismo.
 
 Permisos vigentes:
 
@@ -87,28 +91,32 @@ Para un usuario ordinario activo:
 ```text
 effective_permissions =
     {requests:read}
-  ∪ permisos de sus Roles asignados dentro de Grupos activos
+  ∪ permisos de sus Roles globales activos
+  ∪ permisos de sus Roles agrupados cuyo Grupo esté activo
   - {config:manage}
 ```
 
-`config:manage` solo es efectivo conforme a la política de `system_accounts`. `config:read` y `areas:manage` pueden llegar por un Rol asignado al usuario dentro de un Grupo.
+`config:manage` solo es efectivo conforme a la política de `system_accounts`. `config:read` y `areas:manage` pueden llegar por un Rol global o por un Rol dentro de un Grupo.
 
 ## 5. Accesos
 
 `Configuración → Accesos` es la superficie administrativa de IAM. Su modelo visible es:
 
 ```text
-Usuarios → Acceso por grupo → un Rol por Grupo
-Grupos   → Roles disponibles + miembros derivados (solo lectura)
+Usuarios → Acceso por grupo → máximo un Rol por Grupo
+         → Roles globales   → cero o más
+Grupos   → Roles opcionales + miembros derivados (solo lectura)
 Roles    → Permisos
 Permisos → catálogo de capacidades
 ```
 
-No se muestran permisos individuales ni Roles directos. Cargo no forma parte de la matriz de autorización de Accesos.
+No se muestran permisos individuales. Cargo no forma parte de la matriz de autorización de Accesos.
 
 Toda edición de acceso se prepara localmente y se persiste únicamente mediante un botón explícito **Guardar cambios**. Marcar, desmarcar o seleccionar opciones no debe producir mutaciones por sí solo. Si se abandona una edición con cambios pendientes, la UI debe pedir confirmación.
 
 La edición de un Rol puede actualizar el estado local con la respuesta del `PATCH`; no requiere un GET adicional para reflejar su nombre o estado.
+
+Mover un Rol entre “global” y un Grupo no elimina sus asignaciones de Usuario. La aplicación debe recalcular la membresía derivada y rechazar el cambio si produciría dos Roles del mismo Grupo para un mismo Usuario.
 
 ## 6. Configuración
 
@@ -122,7 +130,7 @@ Una mutación nunca se autoriza por `config:read`.
 
 Cargo/Posición es metadato organizacional opcional, con cardinalidad `Usuario 0..1 Cargo`. Puede aparecer en comunicaciones y vistas organizacionales, pero cambiar Cargo no cambia los permisos efectivos.
 
-Las notificaciones de creación/cambio pueden incluir el Cargo y siempre deben calcular los permisos desde el IAM vigente de Grupos/Roles.
+Las notificaciones de creación/cambio pueden incluir el Cargo y siempre deben calcular los permisos desde el IAM vigente de Roles globales y Roles agrupados.
 
 ## 8. Inicio y Seguimiento
 
@@ -140,13 +148,13 @@ Responde a: **“¿Qué tengo que atender yo?”**
 Responde a: **“¿Cómo está la carga del equipo?”**
 
 - Grupos activos;
-- miembros derivados de Roles;
+- miembros derivados de Roles agrupados;
 - Rol de cada miembro dentro del Grupo;
 - cantidad de acciones pendientes por usuario y por Grupo;
 - búsqueda por usuario/grupo/rol;
 - filtro de usuarios con pendientes.
 
-Es de solo lectura y no modifica accesos.
+Los Roles globales no crean filas de membresía en Seguimiento. Es de solo lectura y no modifica accesos.
 
 ## 9. Sesión y rutas privadas
 
@@ -251,6 +259,8 @@ OR delegado activo de esa solicitud
 
 La identidad técnica se persiste en `system_accounts`; no se deriva de nombre, correo, Cargo o `UserRole`.
 
+`Administrador del sistema` es un **Rol global técnico** (`system_managed`) y no pertenece a ningún Grupo. El bootstrap lo asigna a la cuenta técnica para representar su responsabilidad, pero esa asignación no sustituye la política protegida de `system_accounts`.
+
 En producción, la política técnica vigente es:
 
 ```text
@@ -259,7 +269,7 @@ areas:manage
 config:manage
 ```
 
-No participa en aprobación ni votación. Conserva excepciones administrativas por recurso donde el backend las define.
+No participa en aprobación ni votación. Conserva excepciones administrativas por recurso donde el backend las define. El Rol global técnico no puede asignarse, quitarse ni modificarse desde la consola ordinaria.
 
 ## 16. Persistencia y Neon
 
@@ -285,6 +295,7 @@ Cadena Alembic vigente:
 20260820_0001_initial_schema
 → 20260820_0002_group_scoped_roles
 → 20260821_0003_single_user_position
+→ 20260821_0004_allow_global_roles
 ```
 
 La baseline `0001` permanece congelada después de desplegarse; los cambios físicos posteriores se agregan como nuevas revisiones.
@@ -320,7 +331,7 @@ Validaciones mínimas:
 ```text
 cd backend
 alembic heads
-# esperado: 20260821_0003
+# esperado: 20260821_0004
 python -m unittest discover -s tests -v
 
 cd ../frontend
