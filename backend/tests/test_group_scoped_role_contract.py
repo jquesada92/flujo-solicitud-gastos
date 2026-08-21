@@ -65,13 +65,17 @@ class GroupScopedRoleContractTests(unittest.TestCase):
         self.assertIn("RAISE EXCEPTION 'A user can only have one role per group'", migration)
         self.assertIn('IF target_group_id IS NULL THEN', migration)
 
-    def test_user_access_ui_supports_group_and_global_roles(self):
+    def test_user_access_ui_assigns_one_role_and_reports_group_membership(self):
         frontend = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
-        self.assertIn('<h3>Acceso por grupo</h3>', frontend)
-        self.assertIn('<h3>Roles globales</h3>', frontend)
-        self.assertIn('const toggleGlobalRole = (roleId, checked)', frontend)
+        self.assertIn('<h3>Rol</h3>', frontend)
+        self.assertIn('const assignableRoles = useMemo(() =>', frontend)
+        self.assertIn('setDraftRoleIds(nextRoleId ? [nextRoleId] : []);', frontend)
         self.assertIn('body: JSON.stringify({ role_ids: draftRoleIds })', frontend)
         self.assertIn('Sin rol / sin acceso', frontend)
+        self.assertIn('`Miembro — ${selectedRoleGroup.name}`', frontend)
+        self.assertIn('Sin grupo — Rol global', frontend)
+        self.assertNotIn('<h3>Acceso por grupo</h3>', frontend)
+        self.assertNotIn('<h3>Roles globales</h3>', frontend)
         self.assertNotIn('<h3>Roles directos</h3>', frontend)
 
     def test_group_may_have_zero_roles_and_detaching_makes_role_global(self):
