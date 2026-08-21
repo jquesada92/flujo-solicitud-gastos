@@ -41,6 +41,7 @@ class DatabaseSchemaContractTests(unittest.TestCase):
             [
                 '20260820_0001_initial_schema.py',
                 '20260820_0002_group_scoped_roles.py',
+                '20260821_0003_single_user_position.py',
             ],
         )
 
@@ -53,6 +54,10 @@ class DatabaseSchemaContractTests(unittest.TestCase):
         group_roles = (VERSIONS_DIR / '20260820_0002_group_scoped_roles.py').read_text(encoding='utf-8')
         self.assertIn("revision = '20260820_0002'", group_roles)
         self.assertIn("down_revision = '20260820_0001'", group_roles)
+
+        single_position = (VERSIONS_DIR / '20260821_0003_single_user_position.py').read_text(encoding='utf-8')
+        self.assertIn("revision = '20260821_0003'", single_position)
+        self.assertIn("down_revision = '20260820_0002'", single_position)
 
     def test_alembic_version_table_uses_application_schema(self):
         env_source = (REPO_ROOT / 'backend' / 'alembic' / 'env.py').read_text(encoding='utf-8')
