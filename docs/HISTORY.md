@@ -2,14 +2,24 @@
 
 Este archivo resume decisiones ya incorporadas sin redefinir el contrato vigente. Para implementación actual usar Constitución, `CURRENT_PRODUCT_CONTRACT.md` y Specs.
 
+## 2026-08-21 — Roles globales y Grupos opcionales
+
+- Grupo puede existir con cero Roles.
+- Rol puede pertenecer a cero o un Grupo; sin Grupo es global.
+- Usuario mantiene máximo un Rol por Grupo y puede acumular Roles globales ordinarios.
+- Roles globales conceden sus Permisos sin crear membresía de Grupo.
+- mover un Rol Global↔Grupo conserva asignaciones y reconstruye membresía derivada.
+- Administrador del sistema se representa como Rol global técnico protegido, con `SystemAccount` como autoridad privilegiada.
+- Constitución evoluciona a 2.12.0 y Alembic agrega `20260821_0004_allow_global_roles`.
+
 ## 2026-08-21 — Contrato organizacional consolidado
 
-- Rol pertenece a un único Grupo.
+- Rol pertenece como máximo a un Grupo.
 - Usuario tiene máximo un Rol por Grupo.
-- membresía de Grupo se deriva del Rol del Usuario.
+- membresía de Grupo se deriva del Rol agrupado del Usuario.
 - Permisos se asignan a Roles, no a Usuarios.
 - Cargo queda como metadato organizacional sin autoridad y con cardinalidad máxima de uno por Usuario.
-- documentación normativa se consolidó en Constitución 2.11.0.
+- documentación normativa se consolidó inicialmente en Constitución 2.11.0.
 
 ## 2026-08-20 — UX de acceso y seguimiento
 
