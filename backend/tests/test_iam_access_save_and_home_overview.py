@@ -6,17 +6,23 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class IamAccessSaveAndHomeOverviewTests(unittest.TestCase):
-    def test_user_access_is_staged_and_saved_once_per_role_set(self):
+    def test_user_access_is_staged_and_saved_once_for_single_role(self):
         source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
         self.assertIn('const [draftRoleIds, setDraftRoleIds] = useState([]);', source)
-        self.assertIn('const setGroupRole = (group, rawRoleId) => {', source)
-        self.assertIn('const toggleGlobalRole = (roleId, checked)', source)
+        self.assertIn('const selectedRoleId = draftRoleIds[0] || "";', source)
+        self.assertIn('const setRole = (rawRoleId) => {', source)
+        self.assertIn('setDraftRoleIds(nextRoleId ? [nextRoleId] : []);', source)
         self.assertIn('const saveAccess = async () => {', source)
         self.assertIn('body: JSON.stringify({ role_ids: draftRoleIds })', source)
-        self.assertIn('Acceso por grupo', source)
-        self.assertIn('Roles globales', source)
+        self.assertIn('<h3>Rol</h3>', source)
+        self.assertIn('`Miembro — ${selectedRoleGroup.name}`', source)
+        self.assertIn('Sin grupo — Rol global', source)
         self.assertIn('Sin rol / sin acceso', source)
         self.assertIn('Guardar cambios', source)
+        self.assertNotIn('const setGroupRole = (group, rawRoleId) => {', source)
+        self.assertNotIn('const toggleGlobalRole = (roleId, checked)', source)
+        self.assertNotIn('Acceso por grupo', source)
+        self.assertNotIn('Roles globales', source)
         self.assertNotIn('const updateAssignment = async', source)
         self.assertNotIn('<h3>Roles directos</h3>', source)
         self.assertNotIn('Permisos individuales', source)
