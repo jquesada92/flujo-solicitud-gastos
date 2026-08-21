@@ -46,3 +46,63 @@ jobs:
         run: |
           test -n "$DEPLOY_HOOK"
           curl --fail --silent --show-error --request POST "$DEPLOY_HOOK"
+
+  verify-production:
+    name: Verify production
+    needs: deploy-frontend
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Validate production URLs
+        env:
+          BACKEND_URL: ${{ vars.PRODUCTION_BACKEND_URL }}
+          FRONTEND_URL: ${{ vars.PRODUCTION_FRONTEND_URL }}
+        run: |
+          test -n "$BACKEND_URL"
+          test -n "$FRONTEND_URL"
+          case "$BACKEND_URL" in https://*) ;; *) echo "PRODUCTION_BACKEND_URL must use HTTPS"; exit 1;; esac
+          case "$FRONTEND_URL" in https://*) ;; *) echo "PRODUCTION_FRONTEND_URL must use HTTPS"; exit 1;; esac
+
+      - name: Wait for backend deployment and verify health
+        env:
+          BACKEND_URL: ${{ vars.PRODUCTION_BACKEND_URL }}
+        run: |
+          for attempt in $(seq 1 36); do
+            if curl --fail --silent --show-error --max-time 15 "$BACKEND_URL/api/health" | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+              exit 0
+            fi
+            echo "Backend not ready yet (attempt $attempt/36)"
+            sleep 10
+          done
+          echo "Backend did not become healthy"
+          exit 1
+
+      - name: Verify anonymous production security boundaries
+        env:
+          BACKEND_URL: ${{ vars.PRODUCTION_BACKEND_URL }}
+        run: |
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 "$BACKEND_URL/api/iam/users")
+          test "$status" = "401"
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15 --request DELETE "$BACKEND_URL/api/health")
+          test "$status" = "405"
+
+      - name: Wait for frontend deployment and verify security headers
+        env:
+          FRONTEND_URL: ${{ vars.PRODUCTION_FRONTEND_URL }}
+        run: |
+          for attempt in $(seq 1 36); do
+            headers=$(mktemp)
+            body=$(mktemp)
+            if curl --fail --silent --show-error --max-time 15 --dump-header "$headers" --output "$body" "$FRONTEND_URL" \
+              && grep -qi '<div id="root"></div>' "$body" \
+              && grep -qi '^content-security-policy:' "$headers" \
+              && grep -qi '^x-content-type-options:[[:space:]]*nosniff' "$headers"; then
+              rm -f "$headers" "$body"
+              exit 0
+            fi
+            rm -f "$headers" "$body"
+            echo "Frontend not ready yet (attempt $attempt/36)"
+            sleep 10
+          done
+          echo "Frontend did not become ready with required security headers"
+          exit 1
