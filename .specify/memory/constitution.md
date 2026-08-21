@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.13.0
+**Versión:** 2.15.0
 **Vigente desde:** 2026-08-21
 
 ## 1. Propósito
@@ -300,7 +300,29 @@ Cadena Alembic vigente:
 → 20260820_0002_group_scoped_roles
 → 20260821_0003_single_user_position
 → 20260821_0004_allow_global_roles
+→ 20260821_0005_activity_periods
+→ 20260821_0006_period_snapshot_values
+→ 20260821_0007_period_audit_metadata
+→ 20260821_0008_normalize_period_timestamps
 ```
+
+Usuarios, Áreas, Roles y Grupos mantienen historial temporal versionado. Cada
+alta crea una fila cuyo `active_from` coincide con `created_at`; toda modificación
+relevante cierra la versión vigente y abre otra con una instantánea JSON. Siempre
+existe como máximo una versión abierta, también cuando `active=false`; el valor
+JSON permite distinguir períodos activos e inactivos. Usuario conserva cédula,
+contacto, nombre y Roles; Rol conserva el Grupo asociado. Las restricciones
+físicas impiden fechas invertidas y más de una versión abierta por entidad.
+Cada versión identifica además quién realizó el cambio, cuándo ocurrió, el tipo
+de evento, los campos modificados y el valor anterior/nuevo. Las acciones
+autenticadas registran ID, correo y cédula del actor; procesos sin sesión usan
+un identificador `SYSTEM:*`. La auditoría nunca almacena contraseñas o secretos.
+
+Las pantallas operativas y de configuración no muestran entidades inactivas.
+Intentar crear nuevamente un Usuario por cédula, o un Área/Rol/Grupo por su
+clave o nombre normalizado, debe ofrecer recuperar la entidad inactiva: el
+backend devuelve su ID y datos, la UI completa el formulario con confirmación y
+la reactivación conserva la identidad y el historial en vez de insertar un duplicado.
 
 La baseline `0001` permanece congelada después de desplegarse; los cambios físicos posteriores se agregan como nuevas revisiones.
 

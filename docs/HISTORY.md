@@ -1,5 +1,22 @@
 # Historia funcional
 
+## 2026-08-21 — recuperación segura de entidades inactivas
+
+- La Constitución evoluciona a 2.15.0.
+- Usuario, Área, Rol y Grupo desaparecen de la GUI al inactivarse.
+- Los formularios recuperan ID y datos por cédula, código o nombre y reactivan sin duplicar.
+- La reactivación conserva y extiende el historial temporal auditado.
+
+## 2026-08-21 — períodos temporales de actividad
+
+- La Constitución evoluciona a 2.14.0.
+- Usuario, Área, Rol y Grupo obtienen historial de períodos activos con llave propia.
+- Crear abre el período desde `created_at`; desactivar cierra y reactivar abre una nueva fila.
+- La migración `20260821_0005_activity_periods` rellena entidades existentes y evita dos períodos abiertos.
+- `20260821_0006_period_snapshot_values` agrega instantáneas JSON y versiona cada cambio, incluidos Usuario→Rol y Rol→Grupo.
+- `20260821_0007_period_audit_metadata` identifica actor, timestamp y diferencias anterior/nuevo de cada versión.
+- `20260821_0008_normalize_period_timestamps` normaliza vigencias y eventos a timestamps UTC con zona horaria.
+
 ## 2026-08-21 — validación local contra PostgreSQL real
 
 - La Constitución evoluciona a 2.13.0 para formalizar votaciones MULTI_QUOTE y persistencia PostgreSQL runtime.

@@ -43,6 +43,10 @@ class DatabaseSchemaContractTests(unittest.TestCase):
                 '20260820_0002_group_scoped_roles.py',
                 '20260821_0003_single_user_position.py',
                 '20260821_0004_allow_global_roles.py',
+                '20260821_0005_activity_periods.py',
+                '20260821_0006_period_snapshot_values.py',
+                '20260821_0007_period_audit_metadata.py',
+                '20260821_0008_normalize_period_timestamps.py',
             ],
         )
 
@@ -58,6 +62,22 @@ class DatabaseSchemaContractTests(unittest.TestCase):
 
         single_position = (VERSIONS_DIR / '20260821_0003_single_user_position.py').read_text(encoding='utf-8')
         self.assertIn("revision = '20260821_0003'", single_position)
+
+        activity_periods = (VERSIONS_DIR / '20260821_0005_activity_periods.py').read_text(encoding='utf-8')
+        self.assertIn("revision = '20260821_0005'", activity_periods)
+        self.assertIn("down_revision = '20260821_0004'", activity_periods)
+
+        snapshots = (VERSIONS_DIR / '20260821_0006_period_snapshot_values.py').read_text(encoding='utf-8')
+        self.assertIn("revision = '20260821_0006'", snapshots)
+        self.assertIn("down_revision = '20260821_0005'", snapshots)
+
+        audit_metadata = (VERSIONS_DIR / '20260821_0007_period_audit_metadata.py').read_text(encoding='utf-8')
+        self.assertIn("revision = '20260821_0007'", audit_metadata)
+        self.assertIn("down_revision = '20260821_0006'", audit_metadata)
+
+        timestamps = (VERSIONS_DIR / '20260821_0008_normalize_period_timestamps.py').read_text(encoding='utf-8')
+        self.assertIn("revision = '20260821_0008'", timestamps)
+        self.assertIn("down_revision = '20260821_0007'", timestamps)
         self.assertIn("down_revision = '20260820_0002'", single_position)
 
         global_roles = (VERSIONS_DIR / '20260821_0004_allow_global_roles.py').read_text(encoding='utf-8')

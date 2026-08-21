@@ -33,6 +33,7 @@ from app.api import (
 from app.core.config import get_settings
 from app.core.rate_limit import authenticated_subject, consume_user_request, policy_for_request
 from app.core.security import require_permission
+import app.models.activity_periods  # noqa: F401  Ensures temporal-history hooks are registered.
 
 
 @asynccontextmanager

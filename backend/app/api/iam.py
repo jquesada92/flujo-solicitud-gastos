@@ -148,8 +148,24 @@ def list_permissions(db: Session = Depends(get_db)):
 
 
 @router.get('/roles', response_model=list[RoleOut], dependencies=[Depends(require_permission('config:manage'))])
-def list_roles(db: Session = Depends(get_db)):
-    return [_role_out(db, role) for role in db.scalars(select(Role).order_by(Role.name)).all()]
+def list_roles(include_inactive: bool = False, db: Session = Depends(get_db)):
+    stmt = select(Role).order_by(Role.name)
+    if not include_inactive:
+        stmt = stmt.where(Role.active.is_(True))
+    return [_role_out(db, role) for role in db.scalars(stmt).all()]
+
+
+@router.get('/roles/recovery', response_model=RoleOut | None, dependencies=[Depends(require_permission('config:manage'))])
+def recover_role(name: str | None = None, code: str | None = None, db: Session = Depends(get_db)):
+    if not (name and name.strip()) and not (code and code.strip()):
+        raise HTTPException(status_code=422, detail='Indica el nombre o código del rol')
+    identity_filter = Role.code == code.strip().lower() if code and code.strip() else func.lower(func.trim(Role.name)) == name.strip().lower()
+    role = db.scalar(select(Role).where(
+        identity_filter,
+        Role.active.is_(False),
+        Role.system_managed.is_(False),
+    ))
+    return _role_out(db, role) if role else None
 
 
 @router.post('/roles', response_model=RoleOut, status_code=201, dependencies=[Depends(require_permission('config:manage'))])
@@ -194,8 +210,23 @@ def update_role(role_id: int, payload: RoleUpdate, db: Session = Depends(get_db)
 
 
 @router.get('/groups', response_model=list[GroupOut], dependencies=[Depends(require_permission('config:manage'))])
-def list_groups(db: Session = Depends(get_db)):
-    return [_group_out(db, group) for group in db.scalars(select(UserGroup).order_by(UserGroup.name)).all()]
+def list_groups(include_inactive: bool = False, db: Session = Depends(get_db)):
+    stmt = select(UserGroup).order_by(UserGroup.name)
+    if not include_inactive:
+        stmt = stmt.where(UserGroup.active.is_(True))
+    return [_group_out(db, group) for group in db.scalars(stmt).all()]
+
+
+@router.get('/groups/recovery', response_model=GroupOut | None, dependencies=[Depends(require_permission('config:manage'))])
+def recover_group(name: str | None = None, code: str | None = None, db: Session = Depends(get_db)):
+    if not (name and name.strip()) and not (code and code.strip()):
+        raise HTTPException(status_code=422, detail='Indica el nombre o código del grupo')
+    identity_filter = UserGroup.code == code.strip().lower() if code and code.strip() else func.lower(func.trim(UserGroup.name)) == name.strip().lower()
+    group = db.scalar(select(UserGroup).where(
+        identity_filter,
+        UserGroup.active.is_(False),
+    ))
+    return _group_out(db, group) if group else None
 
 
 @router.post('/groups', response_model=GroupOut, status_code=201, dependencies=[Depends(require_permission('config:manage'))])

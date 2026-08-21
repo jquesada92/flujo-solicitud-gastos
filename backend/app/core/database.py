@@ -1,4 +1,4 @@
-from sqlalchemy import MetaData, create_engine
+from sqlalchemy import MetaData, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.core.config import get_settings
@@ -31,7 +31,22 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+@event.listens_for(engine, 'checkout')
+def _clear_pooled_audit_actor(dbapi_connection, connection_record, connection_proxy):
+    connection_record.info.pop('audit_actor', None)
+
+
+@event.listens_for(SessionLocal.class_, 'after_begin')
+def _restore_session_audit_actor(session, transaction, connection):
+    actor = session.info.get('audit_actor')
+    if actor:
+        connection.info['audit_actor'] = actor
+
+
 def get_db():
     """Provide one SQLAlchemy session per request and always close it."""
     with SessionLocal() as db:
-        yield db
+        try:
+            yield db
+        finally:
+            db.info.pop('audit_actor', None)

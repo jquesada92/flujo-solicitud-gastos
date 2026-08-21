@@ -235,8 +235,21 @@ def _sync_legacy_display_fields(db: Session, user: User) -> None:
 
 
 @router.get('', response_model=list[IamUserOut])
-def list_users(db: Session = Depends(get_db)):
-    return [_out(db, user) for user in db.scalars(select(User).order_by(User.name)).all()]
+def list_users(include_inactive: bool = False, db: Session = Depends(get_db)):
+    stmt = select(User).order_by(User.name)
+    if not include_inactive:
+        stmt = stmt.where(User.active.is_(True))
+    return [_out(db, user) for user in db.scalars(stmt).all()]
+
+
+@router.get('/recovery', response_model=IamUserOut | None)
+def recover_user(identity_document: str, db: Session = Depends(get_db)):
+    document = identity_document.strip().upper()
+    user = db.scalar(select(User).where(
+        func.upper(func.trim(User.identity_document)) == document,
+        User.active.is_(False),
+    ))
+    return _out(db, user) if user else None
 
 
 @router.post('', response_model=IamUserOut, status_code=201)

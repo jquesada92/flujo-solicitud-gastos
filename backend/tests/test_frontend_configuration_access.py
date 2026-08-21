@@ -6,6 +6,21 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class FrontendConfigurationAccessTests(unittest.TestCase):
+    def test_inactive_iam_records_disappear_and_can_be_recovered(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        self.assertIn('/api/iam/users/recovery?identity_document=', source)
+        self.assertIn('/api/iam/roles/recovery?name=', source)
+        self.assertIn('/api/iam/groups/recovery?name=', source)
+        self.assertIn('users.filter((user) => user.active)', source)
+        self.assertIn('roles.filter((role) => role.active)', source)
+        self.assertIn('groups.filter((group) => group.active)', source)
+        self.assertIn('recovery ? "Reactivar usuario"', source)
+        self.assertIn('recovery ? "Reactivar rol"', source)
+        self.assertIn('recovery ? "Reactivar grupo"', source)
+        main = (REPO_ROOT / 'frontend' / 'src' / 'main.jsx').read_text(encoding='utf-8')
+        self.assertIn('/api/users/recovery?identity_document=', main)
+        self.assertIn('onBlur={recoverPerson}', main)
+
     def test_vite_bridge_separates_configuration_read_from_manage(self):
         vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')
         self.assertIn('isSystemAdmin = user.is_system_account === true', vite)

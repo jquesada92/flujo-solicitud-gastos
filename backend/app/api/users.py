@@ -121,8 +121,11 @@ def _ensure_title_available(
 
 
 @router.get('', response_model=list[UserOut])
-def list_users(db: Session = Depends(get_db), viewer: User = Depends(current_user)):
-    users = list(db.scalars(select(User).order_by(User.name)).all())
+def list_users(include_inactive: bool = False, db: Session = Depends(get_db), viewer: User = Depends(current_user)):
+    stmt = select(User).order_by(User.name)
+    if not include_inactive:
+        stmt = stmt.where(User.active.is_(True))
+    users = list(db.scalars(stmt).all())
     if can_view_personal_data(viewer):
         return users
     output = []
@@ -163,6 +166,21 @@ def search_users(
         .limit(min(max(limit, 1), 20))
     )
     return list(db.scalars(stmt).all())
+
+
+@router.get('/recovery', response_model=UserOut | None)
+def recover_user(
+    identity_document: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_people_write),
+):
+    document = identity_document.strip().upper()
+    user = db.scalar(select(User).where(
+        func.upper(func.trim(User.identity_document)) == document,
+        User.active.is_(False),
+        User.role != UserRole.ADMIN,
+    ))
+    return user
 
 
 @router.get('/changes', response_model=list[UserChangeEventOut])

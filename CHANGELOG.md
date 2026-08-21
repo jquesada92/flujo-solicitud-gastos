@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.15.0 — 2026-08-21
+
+- listas GUI activas para Usuario, Área, Rol y Grupo;
+- recuperación backend de entidades inactivas por llave de negocio;
+- autocompletado confirmado y reactivación con el mismo ID;
+- preservación integral del historial de auditoría.
+
+## 2.14.0 — 2026-08-21
+
+- historial temporal de actividad para Usuarios, Áreas, Roles y Grupos;
+- migración `20260821_0005_activity_periods` con backfill y restricciones;
+- migración `20260821_0006_period_snapshot_values` con instantáneas JSON;
+- migración `20260821_0007_period_audit_metadata` con actor, timestamp y diferencias;
+- migración `20260821_0008_normalize_period_timestamps` para vigencias UTC;
+- registro transaccional de altas y toda modificación relevante, incluidas relaciones IAM;
+- pruebas unitarias y PostgreSQL local para integridad y períodos múltiples.
+
 ## 2026-08-21 — validación PostgreSQL y escenarios locales
 
 - Constitución 2.13.0 formaliza población, voto y resolución de MULTI_QUOTE;

@@ -84,7 +84,7 @@ function hasAssignmentChanges() {
 
 async function refreshCatalogs({ resetAssignments = true } = {}) {
   const [areas, categories] = await Promise.all([
-    request('/api/areas?include_inactive=true'),
+    request('/api/areas'),
     request('/api/areas/categories?include_inactive=true'),
   ]);
   state.areas = areas;
@@ -186,11 +186,29 @@ function buildCreateCard(kind) {
   const label = node('label', '');
   label.appendChild(node('span', '', isArea ? 'Nombre del área' : 'Nombre de la categoría'));
   const input = node('input');
+  let recovery = null;
   input.required = true;
   input.minLength = 2;
   input.maxLength = 150;
   input.placeholder = isArea ? 'Ej. Administración' : 'Ej. Equipo, Insumo o Servicios / Consultoría';
   label.appendChild(input);
+  if (isArea) {
+    input.addEventListener('input', () => { recovery = null; submit.textContent = 'Crear área'; });
+    input.addEventListener('blur', async () => {
+      if (input.value.trim().length < 2) return;
+      try {
+        const candidate = await request(`/api/areas/recovery?name=${encodeURIComponent(input.value.trim())}`);
+        if (candidate && window.confirm(`El área “${candidate.name}” ya existe inactiva. ¿Deseas recuperar sus datos?`)) {
+          recovery = candidate;
+          input.value = candidate.name;
+          submit.textContent = 'Reactivar área';
+        }
+      } catch (error) {
+        state.message = { type: 'error', text: error.message };
+        renderMounted();
+      }
+    });
+  }
   const submit = node('button', 'primary', isArea ? 'Crear área' : 'Crear categoría');
   submit.type = 'submit';
   form.append(label, submit);
@@ -198,12 +216,14 @@ function buildCreateCard(kind) {
     event.preventDefault();
     const name = input.value.trim();
     if (!name) return;
-    const path = isArea ? '/api/areas' : '/api/areas/categories';
+    const path = recovery ? `/api/areas/${recovery.id}` : isArea ? '/api/areas' : '/api/areas/categories';
     await mutate(
-      () => request(path, { method: 'POST', body: JSON.stringify({ name }) }),
-      `${isArea ? 'Área' : 'Categoría'} creada correctamente.`,
+      () => request(path, { method: recovery ? 'PATCH' : 'POST', body: JSON.stringify(recovery ? { name, active: true } : { name }) }),
+      recovery ? 'Área reactivada correctamente.' : `${isArea ? 'Área' : 'Categoría'} creada correctamente.`,
     );
     input.value = '';
+    recovery = null;
+    submit.textContent = isArea ? 'Crear área' : 'Crear categoría';
   });
   card.append(form, renderMasterList(isArea ? state.areas : state.categories, kind));
   return card;

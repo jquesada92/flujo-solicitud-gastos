@@ -2,10 +2,12 @@ from sqlalchemy import func, select
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
+from app.core.audit_context import set_system_audit_actor
 from app.core.privacy import analytics_identifier
 from app.core.security import hash_password, normalize_email
 from app.models.entities import User, UserRole
 from app.models.iam import Role, SystemAccount, UserRoleAssignment
+import app.models.activity_periods  # noqa: F401  Register transactional history hooks.
 
 
 def main() -> None:
@@ -13,6 +15,7 @@ def main() -> None:
     email = normalize_email(settings.admin_email)
 
     with SessionLocal() as db:
+        set_system_audit_actor(db, 'SYSTEM:bootstrap_admin')
         # The protected technical role is a global role: it deliberately has no
         # GroupRole binding. The assignment makes that role visible as the
         # account's responsibility, while SystemAccount policy remains the only

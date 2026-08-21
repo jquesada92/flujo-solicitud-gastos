@@ -1,6 +1,6 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.13.0**.
+> Constitución vigente: **2.15.0**.
 
 Aplicación web para registrar, evaluar, aprobar, votar, seguir, corregir, cancelar, cerrar y documentar solicitudes de gasto con trazabilidad. El producto es neutral respecto al tipo de organización: la estructura se configura como datos y los nombres organizacionales no forman parte de la lógica de autorización.
 
@@ -192,7 +192,22 @@ Cadena actual:
 → 20260820_0002_group_scoped_roles
 → 20260821_0003_single_user_position
 → 20260821_0004_allow_global_roles
+→ 20260821_0005_activity_periods
+→ 20260821_0006_period_snapshot_values
+→ 20260821_0007_period_audit_metadata
+→ 20260821_0008_normalize_period_timestamps
 ```
+
+Usuarios, Áreas, Roles y Grupos conservan versiones temporales en tablas
+separadas. El alta abre una versión desde el mismo `created_at`; cada cambio
+cierra la anterior y abre otra con los valores JSON actuales. Un índice único
+parcial impide dos versiones abiertas para la misma entidad.
+Cada versión registra actor, timestamp del evento, tipo y diferencias
+`before/after` por campo; procesos automáticos usan un actor `SYSTEM:*`.
+
+Los catálogos de Usuario, Área, Rol y Grupo muestran solo activos. Al volver a
+introducir la cédula, código o nombre de una entidad inactiva, el formulario
+ofrece recuperar sus datos y reactivarla con el mismo ID.
 
 `0002` fija que un Rol no puede pertenecer a más de un Grupo y un Usuario no puede tener dos Roles del mismo Grupo. `0003` fija un Cargo por Usuario. `0004` permite Roles globales sin relajar la restricción de un Rol por Grupo.
 
