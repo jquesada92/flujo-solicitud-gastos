@@ -1,0 +1,170 @@
+.iam-shell,
+.iam-shell * {
+  box-sizing: border-box;
+}
+
+.iam-grid > *,
+.iam-form,
+.iam-section,
+.iam-checks,
+.iam-check,
+.iam-check > span,
+.iam-effective-summary,
+.iam-permission-row,
+.iam-toolbar > div,
+.iam-toolbar > h2,
+.iam-toolbar > span {
+  min-width: 0;
+}
+
+.iam-toolbar {
+  flex-wrap: wrap;
+}
+
+.iam-toolbar > div,
+.iam-toolbar > h2,
+.iam-toolbar > span,
+.iam-notice,
+.iam-check strong,
+.iam-check small,
+.iam-effective-summary small,
+.iam-permission-row code,
+.iam-permission-row small {
+  overflow-wrap: anywhere;
+}
+
+.iam-checks {
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+}
+
+.iam-two-col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.iam-system {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: normal;
+}
+
+.iam-role-list-card .iam-role-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  padding: 14px;
+}
+
+.iam-role-list-card .iam-role-select {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
+
+.iam-role-list-card .iam-role-select:hover .iam-list-main strong {
+  color: #275da8;
+}
+
+.iam-role-list-card .iam-role-select:focus-visible {
+  border-radius: 6px;
+  outline: 2px solid #667085;
+  outline-offset: 3px;
+}
+
+.iam-role-list-card .iam-list-main small {
+  display: none;
+}
+
+.iam-role-list-card .iam-role-status {
+  justify-self: end;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #f8fafc;
+}
+
+.iam-permissions-card .iam-list-main strong,
+.iam-permissions-card .iam-list-main small,
+#config-readonly-access .iam-list-main strong,
+#config-readonly-access .iam-list-main small {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+@media (min-width: 1025px) and (max-width: 1180px) {
+  .iam-grid {
+    grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  }
+
+  .iam-card {
+    padding: 22px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .iam-grid,
+  .iam-two-col {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .iam-group-role {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .iam-page-nav {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .iam-refresh {
+    align-self: flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .iam-overlay {
+    top: 117px;
+  }
+}
+
+@media (max-width: 640px) {
+  .iam-shell {
+    width: 100%;
+    padding: 24px 14px 48px;
+  }
+
+  .iam-card {
+    border-radius: 14px;
+    padding: 18px;
+  }
+
+  .iam-checks {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .iam-toolbar {
+    align-items: stretch;
+  }
+
+  .iam-toolbar > .iam-button {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 440px) {
+  .iam-role-list-card .iam-role-list-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .iam-role-list-card .iam-role-status {
+    justify-self: start;
+  }
+}

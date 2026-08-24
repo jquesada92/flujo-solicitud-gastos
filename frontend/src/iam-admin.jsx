@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./iam-admin.css";
 import "./iam-inheritance.css";
+import "./iam-responsive.css";
 
 const API_BASE_URL = String(import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
@@ -176,13 +177,13 @@ function RolesPanel({ permissions, roles, groups, onRoleSaved, setError }) {
     } catch (error) { setError(error.message); }
   };
 
-  return <div className="iam-grid">
+  return <div className="iam-grid iam-roles-grid">
     <span hidden data-unsaved={roleDirty ? "true" : "false"} />
-    <section className="iam-card">
+    <section className="iam-card iam-role-list-card">
       <div className="iam-toolbar"><h2>Roles</h2><button className="iam-button" onClick={startNewRole}>+ Nuevo</button></div>
-      <div className="iam-list">{roles.filter((role) => role.active).map((role) => <div className={`iam-list-item ${selectedId === role.id ? "selected" : ""}`} key={role.id}>
-        <button className="iam-button" style={{ textAlign: "left", flex: 1 }} onClick={() => selectRole(role.id)}><span className="iam-list-main"><strong>{displayRoleName(role)}</strong><small>{role.permission_codes.join(" · ") || "Sin permisos"}</small></span></button>
-        {role.system_managed ? <span className="iam-system">SISTEMA</span> : <button className="iam-button" onClick={() => toggleActive(role)}>{role.active ? "Activo" : "Inactivo"}</button>}
+      <div className="iam-list iam-role-list">{roles.filter((role) => role.active).map((role) => <div className={`iam-list-item iam-role-list-item ${selectedId === role.id ? "selected" : ""}`} key={role.id}>
+        <button className="iam-button iam-role-select" onClick={() => selectRole(role.id)}><span className="iam-list-main"><strong>{displayRoleName(role)}</strong><small>{role.permission_codes.join(" · ") || "Sin permisos"}</small></span></button>
+        {role.system_managed ? <span className="iam-system iam-role-status">SISTEMA</span> : <button className="iam-button iam-role-status" onClick={() => toggleActive(role)}>{role.active ? "Activo" : "Inactivo"}</button>}
       </div>)}</div>
     </section>
     <section className="iam-card">
@@ -476,7 +477,7 @@ function UsersPanel({ users, groups, roles, permissions, reload, setError }) {
 }
 
 function PermissionsPanel({ permissions }) {
-  return <section className="iam-card"><h2>Permisos del producto</h2><p className="iam-muted">Los permisos son capacidades atómicas del producto. Se asignan como base a grupos o como permisos propios de roles; el usuario recibe la unión mediante su rol asignado.</p><div className="iam-list">{permissions.map((permission) => <div className="iam-list-item" key={permission.code}><span className="iam-list-main"><strong>{permission.name}</strong><small>{permission.code}</small><small>{permission.description}</small></span><span>{permission.active ? "Activo" : "Inactivo"}</span></div>)}</div></section>;
+  return <section className="iam-card iam-permissions-card"><h2>Permisos del producto</h2><p className="iam-muted">Los permisos son capacidades atómicas del producto. Se asignan como base a grupos o como permisos propios de roles; el usuario recibe la unión mediante su rol asignado.</p><div className="iam-list">{permissions.map((permission) => <div className="iam-list-item" key={permission.code}><span className="iam-list-main"><strong>{permission.name}</strong><small>{permission.code}</small><small>{permission.description}</small></span><span>{permission.active ? "Activo" : "Inactivo"}</span></div>)}</div></section>;
 }
 
 function IamConsole() {

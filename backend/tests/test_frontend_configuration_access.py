@@ -178,13 +178,42 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn('/src/action-state.css', index)
 
     def test_role_master_list_uses_clean_single_surface_rows(self):
-        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.css').read_text(encoding='utf-8')
-        role_scope = '.iam-page-nav:has(.iam-tabs button:nth-child(3).active)+.iam-grid>.iam-card:first-child'
-        self.assertIn(f'{role_scope} .iam-list-main small{{display:none}}', css)
-        self.assertIn(f'{role_scope} .iam-list-item>.iam-button:first-child', css)
-        self.assertIn('border:0;background:transparent;padding:0;border-radius:0;box-shadow:none;text-align:left', css)
-        self.assertIn(f'{role_scope} .iam-list-item{{align-items:center;padding:14px}}', css)
-        self.assertIn(f'{role_scope} .iam-system{{margin-left:auto}}', css)
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-responsive.css').read_text(encoding='utf-8')
+        self.assertIn('className="iam-card iam-role-list-card"', source)
+        self.assertIn('className="iam-button iam-role-select"', source)
+        self.assertIn('className="iam-button iam-role-status"', source)
+        self.assertNotIn('style={{ textAlign: "left", flex: 1 }}', source)
+        self.assertIn('.iam-role-list-card .iam-role-list-item {', css)
+        self.assertIn('grid-template-columns: minmax(0, 1fr) auto;', css)
+        self.assertIn('.iam-role-list-card .iam-role-select {', css)
+        self.assertIn('.iam-role-list-card .iam-list-main small {', css)
+        self.assertIn('.iam-role-list-card .iam-role-status {', css)
+
+    def test_iam_detail_content_wraps_without_widening_cards(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-responsive.css').read_text(encoding='utf-8')
+        self.assertIn('import "./iam-responsive.css";', source)
+        self.assertIn('.iam-shell * {', css)
+        self.assertIn('box-sizing: border-box;', css)
+        self.assertIn('.iam-toolbar {\n  flex-wrap: wrap;', css)
+        self.assertIn('.iam-check > span,', css)
+        self.assertIn('.iam-effective-summary,', css)
+        self.assertIn('overflow-wrap: anywhere;', css)
+        self.assertIn('grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));', css)
+        self.assertIn('grid-template-columns: repeat(2, minmax(0, 1fr));', css)
+
+    def test_iam_layout_stacks_before_panels_overflow(self):
+        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-responsive.css').read_text(encoding='utf-8')
+        self.assertIn('@media (min-width: 1025px) and (max-width: 1180px)', css)
+        self.assertIn('grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);', css)
+        self.assertIn('@media (max-width: 1024px)', css)
+        self.assertIn('@media (max-width: 720px)', css)
+        self.assertIn('top: 117px;', css)
+        self.assertIn('@media (max-width: 640px)', css)
+        self.assertIn('padding: 24px 14px 48px;', css)
+        self.assertIn('.iam-checks {\n    grid-template-columns: minmax(0, 1fr);', css)
+        self.assertIn('@media (max-width: 440px)', css)
 
     def test_group_assignments_are_staged_until_explicit_save(self):
         source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
