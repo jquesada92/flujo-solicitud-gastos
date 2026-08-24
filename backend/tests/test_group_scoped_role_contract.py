@@ -39,12 +39,24 @@ class GroupScopedRoleContractTests(unittest.TestCase):
         self.assertIn('IF target_group_id IS NULL THEN', migration)
         self.assertIn('RETURN NEW;', migration)
 
-    def test_group_membership_does_not_grant_every_group_role(self):
+    def test_group_permissions_require_an_assigned_group_role(self):
         service = (REPO_ROOT / 'backend' / 'app' / 'services' / 'iam_service.py').read_text(encoding='utf-8')
         self.assertIn('.join(UserRoleAssignment, UserRoleAssignment.role_id == Role.id)', service)
         self.assertIn('.join(GroupRole, GroupRole.role_id == Role.id)', service)
-        self.assertNotIn('group_role_permissions =', service)
+        self.assertIn('.join(GroupPermission, GroupPermission.group_id == UserGroup.id)', service)
         self.assertIn("sources[code].add(f'Grupo {group_name} → Rol {role_name}')", service)
+        self.assertIn("sources[code].add(f'Grupo {group_name} (heredado por Rol {role_name})')", service)
+
+    def test_group_permission_relation_is_unique_and_migrated_forward(self):
+        model = (REPO_ROOT / 'backend' / 'app' / 'models' / 'iam.py').read_text(encoding='utf-8')
+        migration = (
+            REPO_ROOT / 'backend' / 'alembic' / 'versions'
+            / '20260824_0009_group_permission_inheritance.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("class GroupPermission(Base):", model)
+        self.assertIn("UniqueConstraint('group_id', 'permission_id', name='uq_group_permission')", model)
+        self.assertIn("down_revision = '20260821_0008'", migration)
+        self.assertIn("'group_permissions'", migration)
 
     def test_global_role_permissions_have_explicit_source(self):
         service = (REPO_ROOT / 'backend' / 'app' / 'services' / 'iam_service.py').read_text(encoding='utf-8')

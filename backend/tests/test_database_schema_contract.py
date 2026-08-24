@@ -47,6 +47,7 @@ class DatabaseSchemaContractTests(unittest.TestCase):
                 '20260821_0006_period_snapshot_values.py',
                 '20260821_0007_period_audit_metadata.py',
                 '20260821_0008_normalize_period_timestamps.py',
+                '20260824_0009_group_permission_inheritance.py',
             ],
         )
 
@@ -78,6 +79,9 @@ class DatabaseSchemaContractTests(unittest.TestCase):
         timestamps = (VERSIONS_DIR / '20260821_0008_normalize_period_timestamps.py').read_text(encoding='utf-8')
         self.assertIn("revision = '20260821_0008'", timestamps)
         self.assertIn("down_revision = '20260821_0007'", timestamps)
+        group_permissions = (VERSIONS_DIR / '20260824_0009_group_permission_inheritance.py').read_text(encoding='utf-8')
+        self.assertIn("revision = '20260824_0009'", group_permissions)
+        self.assertIn("down_revision = '20260821_0008'", group_permissions)
         self.assertIn("down_revision = '20260820_0002'", single_position)
 
         global_roles = (VERSIONS_DIR / '20260821_0004_allow_global_roles.py').read_text(encoding='utf-8')

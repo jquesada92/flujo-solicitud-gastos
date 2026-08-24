@@ -1,7 +1,7 @@
 # Spec 002 — IAM configurable y hardening FastAPI
 
 **Estado:** Implementada y evolucionada por Spec 006/011  
-**Constitución:** 2.13.0
+**Constitución:** 2.16.0
 
 ## Objetivo
 
@@ -10,12 +10,12 @@ Autorizar desde capacidades persistidas y proteger la API independientemente de 
 ## IAM vigente
 
 ```text
-Permission → Role ── 0..1 Group
-               ↑
-            User
+Permission propia    → Role ── 0..1 Group ← Permission heredable
+                          ↑
+                         User
 ```
 
-Un usuario activo recibe `requests:read` como baseline. Los demás permisos ordinarios pueden llegar por Roles globales activos o por el Rol que ocupa dentro de un Grupo activo. `config:manage` es system-only.
+Un usuario activo recibe `requests:read` como baseline. Los demás permisos ordinarios pueden llegar como Permisos propios de Roles globales activos o, para cada Rol agrupado activo dentro de un Grupo activo, como la unión `RolePermission ∪ GroupPermission`. `config:manage` es system-only.
 
 Permisos:
 
@@ -28,7 +28,9 @@ config:read
 config:manage
 ```
 
-No forman parte del modelo operativo permisos directos a Usuario ni autorización por Cargo. Un Rol sin Grupo es válido y se considera global; un Rol pertenece como máximo a un Grupo.
+No forman parte del modelo operativo permisos directos a Usuario ni autorización por Cargo o por `GroupMember`. Un Rol sin Grupo es válido y se considera global; un Rol pertenece como máximo a un Grupo.
+
+La herencia es exclusivamente aditiva: un Rol conserva sus Permisos propios y suma los de su Grupo. Un checkbox propio ausente no niega un Permiso heredado y no existe estado `DENY`. Editar el Grupo o desvincular el Rol no elimina `RolePermission`; al quedar global, el Rol pierde solo la herencia del Grupo.
 
 ## Seguridad FastAPI
 

@@ -1,19 +1,50 @@
+import importlib.util
+from io import StringIO
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from alembic.script import ScriptDirectory
 
 
 class MigrationTopologyTests(unittest.TestCase):
+    @staticmethod
+    def _render_group_permission_sql(*, url: str, schema: str | None, operation: str) -> str:
+        backend_dir = Path(__file__).resolve().parents[1]
+        migration_path = (
+            backend_dir / 'alembic' / 'versions'
+            / '20260824_0009_group_permission_inheritance.py'
+        )
+        spec = importlib.util.spec_from_file_location(
+            f'group_permission_migration_{operation}_{schema or "sqlite"}',
+            migration_path,
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError('No se pudo cargar la migracion de permisos de grupo')
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+
+        output = StringIO()
+        context = MigrationContext.configure(
+            url=url,
+            opts={'as_sql': True, 'output_buffer': output},
+        )
+        with Operations.context(context), patch.object(migration, '_schema', return_value=schema):
+            getattr(migration, operation)()
+        return output.getvalue()
+
     def test_alembic_has_single_head_and_expected_chain(self):
         backend_dir = Path(__file__).resolve().parents[1]
         config = Config(str(backend_dir / 'alembic.ini'))
         config.set_main_option('script_location', str(backend_dir / 'alembic'))
         script = ScriptDirectory.from_config(config)
 
-        self.assertEqual(script.get_heads(), ['20260821_0008'])
+        self.assertEqual(script.get_heads(), ['20260824_0009'])
         revisions = {revision.revision: revision.down_revision for revision in script.walk_revisions()}
+        self.assertEqual(revisions['20260824_0009'], '20260821_0008')
         self.assertEqual(revisions['20260821_0008'], '20260821_0007')
         self.assertEqual(revisions['20260821_0007'], '20260821_0006')
         self.assertEqual(revisions['20260821_0006'], '20260821_0005')
@@ -131,6 +162,52 @@ class MigrationTopologyTests(unittest.TestCase):
         self.assertIn("down_revision = '20260821_0007'", migration)
         self.assertIn("type_=sa.DateTime(timezone=True)", migration)
         self.assertIn("AT TIME ZONE \\'UTC\\'", migration)
+
+    def test_group_permission_inheritance_has_forward_migration(self):
+        backend_dir = Path(__file__).resolve().parents[1]
+        migration = (
+            backend_dir / 'alembic' / 'versions'
+            / '20260824_0009_group_permission_inheritance.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("revision = '20260824_0009'", migration)
+        self.assertIn("down_revision = '20260821_0008'", migration)
+        self.assertIn("'group_permissions'", migration)
+        self.assertIn("sa.UniqueConstraint('group_id', 'permission_id'", migration)
+        self.assertIn("_fk('user_groups', 'id')", migration)
+        self.assertIn("_fk('permissions', 'id')", migration)
+        self.assertIn('_backfill_open_activity_snapshots()', migration)
+        self.assertIn("values['permission_codes'] = codes", migration)
+        self.assertIn("values['permission_codes'] = []", migration)
+        self.assertIn('_remove_permission_codes_from_activity_snapshots()', migration)
+
+    def test_group_permission_migration_renders_offline_upgrade_and_downgrade(self):
+        postgres_upgrade = self._render_group_permission_sql(
+            url='postgresql://', schema='administracion', operation='upgrade',
+        )
+        self.assertIn('CREATE TABLE administracion.group_permissions', postgres_upgrade)
+        self.assertIn('UPDATE administracion.role_activity_periods AS period', postgres_upgrade)
+        self.assertIn('jsonb_agg(permission_row.code ORDER BY permission_row.code)', postgres_upgrade)
+        self.assertIn('UPDATE administracion.group_activity_periods AS period', postgres_upgrade)
+        self.assertIn("'{permission_codes}'", postgres_upgrade)
+
+        postgres_downgrade = self._render_group_permission_sql(
+            url='postgresql://', schema='administracion', operation='downgrade',
+        )
+        self.assertIn("- 'permission_codes'", postgres_downgrade)
+        self.assertIn('DROP TABLE administracion.group_permissions', postgres_downgrade)
+
+        sqlite_upgrade = self._render_group_permission_sql(
+            url='sqlite://', schema=None, operation='upgrade',
+        )
+        self.assertIn('CREATE TABLE group_permissions', sqlite_upgrade)
+        self.assertIn('json_group_array(permission_code)', sqlite_upgrade)
+        self.assertIn("'$.permission_codes'", sqlite_upgrade)
+
+        sqlite_downgrade = self._render_group_permission_sql(
+            url='sqlite://', schema=None, operation='downgrade',
+        )
+        self.assertIn("json_remove", sqlite_downgrade)
+        self.assertIn('DROP TABLE group_permissions', sqlite_downgrade)
 
 
 if __name__ == '__main__':

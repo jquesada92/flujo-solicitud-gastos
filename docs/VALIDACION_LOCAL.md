@@ -82,7 +82,7 @@ docker compose exec -T backend alembic current
 docker compose exec -T backend alembic heads
 ```
 
-Ambos deben indicar `20260821_0004 (head)`.
+Ambos deben indicar `20260824_0009 (head)`.
 
 Las tablas, tipos ENUM, contadores e `alembic_version` deben resolverse dentro de `administracion`. Toda consulta SQL cruda debe usar el nombre calificado derivado del modelo; no debe depender de `search_path`.
 

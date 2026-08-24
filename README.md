@@ -1,6 +1,6 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.15.0**.
+> Constitución vigente: **2.16.0**.
 
 Aplicación web para registrar, evaluar, aprobar, votar, seguir, corregir, cancelar, cerrar y documentar solicitudes de gasto con trazabilidad. El producto es neutral respecto al tipo de organización: la estructura se configura como datos y los nombres organizacionales no forman parte de la lógica de autorización.
 
@@ -12,8 +12,10 @@ Usuario activo
 ├─ 0..1 Cargo organizacional
 ├─ 0..N Roles globales
 └─ 0..N Grupos
+      ├─ Permisos heredables
       └─ máximo 1 Rol por Grupo
-            └─ Permisos
+            ├─ Permisos propios
+            └─ hereda Permisos del Grupo
 ```
 
 Reglas clave:
@@ -23,7 +25,9 @@ Reglas clave:
 - un Rol sin Grupo es global;
 - el Rol agrupado asignado al Usuario determina su membresía en ese Grupo;
 - un Usuario puede tener máximo un Rol por Grupo y varios Roles globales;
-- no hay permisos individuales;
+- los Permisos de un Rol agrupado son la unión aditiva de los propios y los del Grupo;
+- la ausencia a nivel de Rol hereda y no existe `DENY`;
+- no hay permisos directos a Usuario y `GroupMember` aislado no autoriza;
 - Cargo no concede permisos;
 - un Usuario puede tener como máximo un Cargo;
 - FastAPI es la autoridad de autorización;
@@ -39,8 +43,8 @@ Ver [docs/CURRENT_PRODUCT_CONTRACT.md](docs/CURRENT_PRODUCT_CONTRACT.md).
 | Término | Significado |
 | --- | --- |
 | Usuario | Cuenta autenticable |
-| Grupo | Ámbito organizacional opcional con cero o más Roles |
-| Rol | Conjunto de Permisos; puede ser global o pertenecer a un Grupo |
+| Grupo | Ámbito organizacional opcional con Permisos heredables y cero o más Roles |
+| Rol | Conjunto de Permisos propios; si está agrupado suma los de su Grupo |
 | Rol global | Rol sin Grupo |
 | Permiso | Capacidad IAM atómica |
 | Cargo / Posición | Metadato organizacional, sin autoridad IAM |
@@ -70,12 +74,13 @@ Permisos funcionales vigentes:
 ```text
 Usuario ordinario activo
 = requests:read
-+ Permisos de sus Roles globales activos
-+ Permisos de sus Roles agrupados dentro de Grupos activos
++ Permisos propios de sus Roles globales activos
++ Permisos propios de sus Roles agrupados dentro de Grupos activos
++ Permisos heredados de esos Grupos activos
 - config:manage
 ```
 
-Un Grupo no entrega todos sus Roles a todos sus miembros: cada Usuario tiene como máximo un Rol concreto dentro de ese Grupo. Los Roles globales no crean membresía.
+Para cada Rol agrupado se aplica `RolePermission ∪ GroupPermission`; los duplicados se colapsan y un checkbox propio desmarcado no niega la herencia. Un Grupo no entrega todos sus Roles a todos sus miembros: cada Usuario tiene como máximo un Rol concreto dentro de ese Grupo. Los Roles globales no crean membresía y una fila `GroupMember` sin Rol asignado no concede acceso.
 
 La cuenta técnica se identifica con `system_accounts`. En producción su política efectiva es `requests:read + areas:manage + config:manage`. El Rol `Administrador del sistema` es global, técnico y protegido; el bootstrap lo asigna como representación de responsabilidad, pero la autoridad real sigue siendo `SystemAccount`.
 
@@ -88,16 +93,16 @@ La consola muestra:
 ```text
 Usuarios → Acceso por grupo → selector de Rol
          → Roles globales   → selección múltiple
-Grupos   → Roles opcionales + miembros derivados
-Roles    → Permisos
+Grupos   → Permisos heredables + Roles opcionales + miembros derivados
+Roles    → Permisos propios + herencia visible
 Permisos → catálogo
 ```
 
 Seleccionar opciones no guarda inmediatamente. La persistencia ocurre al pulsar **Guardar cambios**. Al cambiar de usuario/grupo con cambios pendientes se solicita confirmación.
 
-Los miembros de un Grupo se derivan de las asignaciones de Roles agrupados. Cargo no forma parte de la autorización de esta consola.
+Los miembros de un Grupo se derivan de las asignaciones de Roles agrupados y son informativos; `GroupMember` no es una fuente de autorización. Cargo tampoco forma parte de la autorización de esta consola.
 
-Quitar un Rol de un Grupo lo convierte en global sin borrar sus asignaciones de Usuario. Vincular Roles globales a un Grupo se rechaza si eso produciría más de un Rol del mismo Grupo para algún Usuario.
+Quitar un Rol de un Grupo lo convierte en global sin borrar sus asignaciones de Usuario ni Permisos propios; pierde solo la herencia. Vincular Roles globales a un Grupo se rechaza si eso produciría más de un Rol del mismo Grupo para algún Usuario.
 
 ## Inicio y Seguimiento
 
@@ -196,6 +201,7 @@ Cadena actual:
 → 20260821_0006_period_snapshot_values
 → 20260821_0007_period_audit_metadata
 → 20260821_0008_normalize_period_timestamps
+→ 20260824_0009_group_permission_inheritance
 ```
 
 Usuarios, Áreas, Roles y Grupos conservan versiones temporales en tablas
@@ -209,7 +215,7 @@ Los catálogos de Usuario, Área, Rol y Grupo muestran solo activos. Al volver a
 introducir la cédula, código o nombre de una entidad inactiva, el formulario
 ofrece recuperar sus datos y reactivarla con el mismo ID.
 
-`0002` fija que un Rol no puede pertenecer a más de un Grupo y un Usuario no puede tener dos Roles del mismo Grupo. `0003` fija un Cargo por Usuario. `0004` permite Roles globales sin relajar la restricción de un Rol por Grupo.
+`0002` fija que un Rol no puede pertenecer a más de un Grupo y un Usuario no puede tener dos Roles del mismo Grupo. `0003` fija un Cargo por Usuario. `0004` permite Roles globales sin relajar la restricción de un Rol por Grupo. `0009` agrega Permisos heredables de Grupo sin backfill de grants, conserva `role_permissions` y normaliza `permission_codes` en las instantáneas temporales abiertas.
 
 ## Despliegue
 
@@ -254,7 +260,7 @@ Validación:
 ```text
 cd backend
 alembic heads
-# 20260821_0004
+# 20260824_0009
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 
 cd ../frontend

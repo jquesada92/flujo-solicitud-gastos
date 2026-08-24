@@ -38,4 +38,4 @@ Cargo    = UserPosition → Position
 Permisos = effective_permission_codes()
 ```
 
-Los permisos efectivos pueden provenir de Roles globales ordinarios y de Roles agrupados cuyo Grupo esté activo. La política técnica de `SystemAccount` continúa separada y protegida.
+Los permisos efectivos pueden provenir de Permisos propios de Roles globales o, para Roles agrupados cuyo Grupo esté activo, de la unión aditiva de Permisos propios y heredados del Grupo. `GroupMember` aislado no autoriza y la política técnica de `SystemAccount` continúa separada y protegida.

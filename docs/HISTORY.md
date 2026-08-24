@@ -1,5 +1,14 @@
 # Historia funcional
 
+## 2026-08-24 — herencia aditiva de Permisos por Grupo
+
+- La Constitución evoluciona a 2.16.0.
+- Los Grupos pueden aportar Permisos heredables a todos sus Roles activos.
+- Un Rol agrupado conserva sus Permisos propios y suma los del Grupo; la ausencia a nivel de Rol hereda y no existe `DENY`.
+- Editar o desvincular el Grupo conserva `RolePermission`; `GroupMember` continúa siendo una proyección sin autoridad propia.
+- `config:manage` permanece reservado a `system_accounts`.
+- Alembic agrega `20260824_0009_group_permission_inheritance` sin backfill de grants para no cambiar accesos existentes y normaliza `permission_codes` en las instantáneas temporales abiertas.
+
 ## 2026-08-21 — recuperación segura de entidades inactivas
 
 - La Constitución evoluciona a 2.15.0.
@@ -42,7 +51,7 @@ Este archivo resume decisiones ya incorporadas sin redefinir el contrato vigente
 - Rol pertenece como máximo a un Grupo.
 - Usuario tiene máximo un Rol por Grupo.
 - membresía de Grupo se deriva del Rol agrupado del Usuario.
-- Permisos se asignan a Roles, no a Usuarios.
+- En esa consolidación se eliminaron los Permisos directos a Usuarios; desde 2.16.0 los grants se configuran como propios de Rol o heredables de Grupo.
 - Cargo queda como metadato organizacional sin autoridad y con cardinalidad máxima de uno por Usuario.
 - documentación normativa se consolidó inicialmente en Constitución 2.11.0.
 

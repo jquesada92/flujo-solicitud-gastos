@@ -2,12 +2,12 @@
 
 ## Principio
 
-Los permisos se asignan a Roles. Un Rol puede ser global o pertenecer a un único Grupo. Los Usuarios pueden combinar Roles globales con máximo un Rol por cada Grupo.
+Los Permisos son grants positivos configurables como propios de un Rol o heredables desde un Grupo. Un Rol puede ser global o pertenecer a un único Grupo. Los Usuarios pueden combinar Roles globales con máximo un Rol por cada Grupo.
 
 ```text
-Permission → Role ── 0..1 Group
-               ↑
-            User
+Permission propia    → Role ── 0..1 Group ← Permission heredable
+                          ↑
+                         User
 ```
 
 ## Cardinalidades
@@ -17,7 +17,10 @@ Permission → Role ── 0..1 Group
 - un Rol sin `GroupRole` es global;
 - un Usuario puede tener máximo un Rol por Grupo;
 - un Usuario puede tener cero o más Roles globales ordinarios;
+- un Grupo puede tener cero o más Permisos heredables;
+- un Rol agrupado suma sus Permisos propios y los del Grupo, sin `DENY`;
 - `GroupMember` se deriva/reconstruye solo desde `UserRoleAssignment + GroupRole`;
+- una fila `GroupMember` por sí sola no concede ningún Permiso;
 - un Rol global no crea `GroupMember`;
 - Cargo/Posición no es fuente IAM;
 - un Usuario tiene máximo un Cargo.
@@ -31,6 +34,7 @@ permissions
 roles
 role_permissions
 user_groups
+group_permissions     # grants heredables para Roles del Grupo
 group_roles          # opcional por Rol
 user_role_assignments
 group_members        # proyección de Roles agrupados
@@ -66,17 +70,23 @@ Para usuario ordinario activo:
 ```text
 baseline = {requests:read}
 
-global_role_permissions = permisos de Roles asignados
+global_role_permissions = permisos propios de Roles asignados
                           que no tienen GroupRole
 
-group_role_permissions = permisos de Roles asignados
-                         cuyo GroupRole apunta a un Grupo activo
+grouped_own_permissions = permisos propios de Roles asignados
+                          cuyo GroupRole apunta a un Grupo activo
+
+inherited_group_permissions = permisos del Grupo activo alcanzado mediante
+                              UserRoleAssignment + GroupRole activo
 
 effective = baseline
           ∪ global_role_permissions
-          ∪ group_role_permissions
+          ∪ grouped_own_permissions
+          ∪ inherited_group_permissions
           - {config:manage}
 ```
+
+Para cada Rol agrupado se calcula `RolePermission ∪ GroupPermission`. Es una unión aditiva: no duplica códigos, un Permiso propio adicional se conserva y la ausencia de un Permiso propio hereda el del Grupo. No existe estado `DENY`. `GroupMember` no aparece en la consulta de autorización.
 
 Para `system_accounts`, se aplica la política técnica del ambiente. En producción:
 
@@ -120,9 +130,9 @@ Un Rol puede moverse entre:
 Global ↔ Grupo
 ```
 
-sin borrar `UserRoleAssignment` existentes.
+sin borrar `UserRoleAssignment` ni `RolePermission` existentes. Al quedar global desaparece solo la herencia; al vincularse a un Grupo suma la nueva herencia a sus Permisos propios.
 
-Al agregar Roles a un Grupo, el backend comprueba que ningún Usuario terminaría con dos de esos Roles dentro del mismo Grupo. Después reconstruye `GroupMember` para reflejar las asignaciones vigentes. Quitar todos los Roles de un Grupo es válido y puede dejar el Grupo vacío.
+Al agregar Roles a un Grupo, el backend comprueba que ningún Usuario terminaría con dos de esos Roles dentro del mismo Grupo. Después reconstruye `GroupMember` para reflejar las asignaciones vigentes. Quitar todos los Roles de un Grupo es válido y puede dejar el Grupo vacío. Editar los Permisos del Grupo reemplaza solo sus `GroupPermission` y nunca modifica los Permisos propios de sus Roles.
 
 ## Accesos UI
 
@@ -143,13 +153,15 @@ Cambiar selectores o checks es local. **Guardar cambios** envía la lista comple
 Grupos:
 
 - pueden tener cero Roles;
+- tienen cero o más Permisos heredables editables;
 - se administran los Roles opcionalmente vinculados al Grupo;
 - miembros son solo lectura y reflejan asignaciones de Roles agrupados;
 - quitar un Rol del Grupo lo convierte en global.
 
 Roles:
 
-- contienen Permisos;
+- contienen Permisos propios;
+- muestran por separado los Permisos heredados del Grupo; un heredado sigue efectivo aunque el checkbox propio esté desmarcado;
 - pueden ser globales o pertenecer a máximo un Grupo;
 - guardar usa la respuesta del backend para actualizar el estado local y evitar GET innecesario.
 
@@ -160,11 +172,12 @@ Roles:
 ```text
 Acceso base del producto para usuarios activos
 Grupo <nombre> → Rol <nombre>
+Grupo <nombre> (heredado por Rol <nombre>)
 Rol global <nombre>
 Política de cuenta técnica (...)
 ```
 
-No produce fuentes de Cargo ni de permisos directos.
+No produce fuentes de Cargo, `GroupMember` ni permisos directos a Usuario.
 
 ## Cargo y notificaciones
 

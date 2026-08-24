@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models.entities import User
 from app.models.iam import (
+    GroupPermission,
     GroupRole,
     Permission,
     Role,
@@ -59,12 +60,13 @@ def _system_account_policy_codes(db: Session) -> set[str]:
 
 
 def _role_permission_codes(db: Session, user_id: int) -> set[str]:
-    """Resolve permissions from grouped and global roles assigned to a user.
+    """Resolve direct and inherited permissions from roles assigned to a user.
 
     A role may belong to at most one group. Group-scoped roles only grant while
-    their group is active; a role with no GroupRole row is global and grants
-    directly from the explicit UserRoleAssignment. Cargos and direct user
-    permissions never participate in authorization.
+    their group is active and add that group's permissions to their own. A role
+    with no GroupRole row is global and grants directly from the explicit
+    UserRoleAssignment. Cargos and direct user permissions never participate in
+    authorization.
     """
     grouped = set(db.scalars(
         select(Permission.code)
@@ -73,6 +75,21 @@ def _role_permission_codes(db: Session, user_id: int) -> set[str]:
         .join(UserRoleAssignment, UserRoleAssignment.role_id == Role.id)
         .join(GroupRole, GroupRole.role_id == Role.id)
         .join(UserGroup, UserGroup.id == GroupRole.group_id)
+        .where(
+            UserRoleAssignment.user_id == user_id,
+            UserGroup.active.is_(True),
+            Role.active.is_(True),
+            Permission.active.is_(True),
+        )
+    ).all())
+
+    inherited_from_groups = set(db.scalars(
+        select(Permission.code)
+        .join(GroupPermission, GroupPermission.permission_id == Permission.id)
+        .join(UserGroup, UserGroup.id == GroupPermission.group_id)
+        .join(GroupRole, GroupRole.group_id == UserGroup.id)
+        .join(Role, Role.id == GroupRole.role_id)
+        .join(UserRoleAssignment, UserRoleAssignment.role_id == Role.id)
         .where(
             UserRoleAssignment.user_id == user_id,
             UserGroup.active.is_(True),
@@ -93,7 +110,7 @@ def _role_permission_codes(db: Session, user_id: int) -> set[str]:
             ~exists(select(GroupRole.id).where(GroupRole.role_id == Role.id)),
         )
     ).all())
-    return grouped | global_roles
+    return grouped | inherited_from_groups | global_roles
 
 
 def effective_permission_codes(db: Session, user_id: int) -> set[str]:
@@ -158,6 +175,20 @@ def users_with_permission(
             UserGroup.active.is_(True),
         )
     )
+    inherited_group_assignment = (
+        select(UserRoleAssignment.user_id.label('user_id'))
+        .join(Role, Role.id == UserRoleAssignment.role_id)
+        .join(GroupRole, GroupRole.role_id == Role.id)
+        .join(UserGroup, UserGroup.id == GroupRole.group_id)
+        .join(GroupPermission, GroupPermission.group_id == UserGroup.id)
+        .join(Permission, Permission.id == GroupPermission.permission_id)
+        .where(
+            Permission.code == permission_code,
+            Permission.active.is_(True),
+            Role.active.is_(True),
+            UserGroup.active.is_(True),
+        )
+    )
     global_role_assignment = (
         select(UserRoleAssignment.user_id.label('user_id'))
         .join(Role, Role.id == UserRoleAssignment.role_id)
@@ -172,7 +203,7 @@ def users_with_permission(
     )
 
     policy_codes = _system_account_policy_codes(db)
-    permitted_queries = [grouped_role_assignment, global_role_assignment]
+    permitted_queries = [grouped_role_assignment, inherited_group_assignment, global_role_assignment]
     if permission_code in policy_codes:
         permitted_queries.append(select(SystemAccount.user_id.label('user_id')))
 
@@ -212,6 +243,24 @@ def permission_sources(db: Session, user_id: int) -> dict[str, list[str]]:
     for code, group_name, role_name in scoped_rows:
         if code in effective:
             sources[code].add(f'Grupo {group_name} → Rol {role_name}')
+
+    inherited_rows = db.execute(
+        select(Permission.code, UserGroup.name, Role.name)
+        .join(GroupPermission, GroupPermission.permission_id == Permission.id)
+        .join(UserGroup, UserGroup.id == GroupPermission.group_id)
+        .join(GroupRole, GroupRole.group_id == UserGroup.id)
+        .join(Role, Role.id == GroupRole.role_id)
+        .join(UserRoleAssignment, UserRoleAssignment.role_id == Role.id)
+        .where(
+            UserRoleAssignment.user_id == user_id,
+            UserGroup.active.is_(True),
+            Role.active.is_(True),
+            Permission.active.is_(True),
+        )
+    ).all()
+    for code, group_name, role_name in inherited_rows:
+        if code in effective:
+            sources[code].add(f'Grupo {group_name} (heredado por Rol {role_name})')
 
     global_rows = db.execute(
         select(Permission.code, Role.name)

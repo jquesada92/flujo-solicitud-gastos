@@ -5,7 +5,16 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import require_permission
-from app.models.iam import GroupMember, GroupRole, Role, UserGroup, UserRoleAssignment
+from app.models.iam import (
+    GroupMember,
+    GroupPermission,
+    GroupRole,
+    Permission,
+    Role,
+    UserGroup,
+    UserRoleAssignment,
+)
+from app.schemas.iam import GroupOut
 
 router = APIRouter(dependencies=[Depends(require_permission('config:manage'))])
 
@@ -14,6 +23,7 @@ class GroupAccessUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=150)
     description: str | None = Field(default=None, max_length=1000)
     active: bool | None = None
+    permission_codes: list[str] | None = Field(default=None, max_length=100)
     role_ids: list[int] | None = Field(default=None, max_length=100)
     # Compatibility input only. Membership is derived from user role assignments.
     member_ids: list[int] | None = Field(default=None, max_length=500)
@@ -26,6 +36,12 @@ def _out(db: Session, group: UserGroup) -> dict:
         'name': group.name,
         'description': group.description,
         'active': group.active,
+        'permission_codes': list(db.scalars(
+            select(Permission.code)
+            .join(GroupPermission, GroupPermission.permission_id == Permission.id)
+            .where(GroupPermission.group_id == group.id)
+            .order_by(Permission.code)
+        ).all()),
         'role_ids': list(db.scalars(
             select(GroupRole.role_id)
             .where(GroupRole.group_id == group.id)
@@ -37,6 +53,36 @@ def _out(db: Session, group: UserGroup) -> dict:
             .order_by(GroupMember.user_id)
         ).all()),
     }
+
+
+def _replace_group_permissions(db: Session, group: UserGroup, permission_codes: list[str]) -> None:
+    """Replace the permissions inherited by every role bound to this group."""
+    unique_codes = list(dict.fromkeys(permission_codes))
+    permissions = list(db.scalars(select(Permission).where(
+        Permission.code.in_(unique_codes),
+        Permission.active.is_(True),
+    )).all()) if unique_codes else []
+    found_codes = {permission.code for permission in permissions}
+    unknown_codes = [code for code in unique_codes if code not in found_codes]
+    if unknown_codes:
+        raise HTTPException(
+            status_code=422,
+            detail=f'Permiso desconocido o inactivo: {unknown_codes[0]}',
+        )
+
+    desired_ids = {permission.id for permission in permissions}
+    current = list(db.scalars(
+        select(GroupPermission).where(GroupPermission.group_id == group.id)
+    ).all())
+    current_ids = {assignment.permission_id for assignment in current}
+    for assignment in current:
+        if assignment.permission_id not in desired_ids:
+            db.delete(assignment)
+    db.add_all(
+        GroupPermission(group_id=group.id, permission_id=permission.id)
+        for permission in permissions
+        if permission.id not in current_ids
+    )
 
 
 def _replace_group_roles(db: Session, group: UserGroup, role_ids: list[int]) -> None:
@@ -90,8 +136,19 @@ def _replace_group_roles(db: Session, group: UserGroup, role_ids: list[int]) -> 
             ),
         )
 
-    db.execute(delete(GroupRole).where(GroupRole.group_id == group.id))
-    db.add_all(GroupRole(group_id=group.id, role_id=role.id) for role in roles)
+    desired_ids = {role.id for role in roles}
+    current = list(db.scalars(
+        select(GroupRole).where(GroupRole.group_id == group.id)
+    ).all())
+    current_ids = {assignment.role_id for assignment in current}
+    for assignment in current:
+        if assignment.role_id not in desired_ids:
+            db.delete(assignment)
+    db.add_all(
+        GroupRole(group_id=group.id, role_id=role.id)
+        for role in roles
+        if role.id not in current_ids
+    )
 
     # Membership is a projection of grouped role assignments, never an
     # independent grant. Rebuild this group's projection after every catalog edit.
@@ -104,7 +161,7 @@ def _replace_group_roles(db: Session, group: UserGroup, role_ids: list[int]) -> 
     db.add_all(GroupMember(group_id=group.id, user_id=user_id) for user_id in member_ids)
 
 
-@router.patch('/groups/{group_id}')
+@router.patch('/groups/{group_id}', response_model=GroupOut)
 def update_group_access(
     group_id: int,
     payload: GroupAccessUpdate,
@@ -136,6 +193,8 @@ def update_group_access(
 
     if payload.role_ids is not None:
         _replace_group_roles(db, group, payload.role_ids)
+    if payload.permission_codes is not None:
+        _replace_group_permissions(db, group, payload.permission_codes)
 
     # member_ids exists only for old clients. When role_ids is being changed,
     # the freshly derived membership is authoritative and any stale member list

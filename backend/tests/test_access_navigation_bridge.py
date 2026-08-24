@@ -20,6 +20,11 @@ class AccessNavigationBridgeTests(unittest.TestCase):
         self.assertIn('target?.closest(".topbar button")', source)
         self.assertIn('button.dataset.iamAccess === "true"', source)
         self.assertIn('button.closest(".config-menu-items")', source)
+        self.assertIn('document.getElementById("iam-admin-root")', source)
+        self.assertIn('iamRoot?.querySelectorAll(\'[data-unsaved="true"]\')', source)
+        self.assertIn('window.confirm("Hay cambios sin guardar.', source)
+        self.assertIn('event.stopImmediatePropagation()', source)
+        self.assertIn('marker.dataset.unsaved = "false"', source)
         self.assertIn('window.location.hash = ""', source)
         self.assertIn('document.addEventListener("click", leaveAccessConsoleOnTopbarNavigation, true)', source)
 

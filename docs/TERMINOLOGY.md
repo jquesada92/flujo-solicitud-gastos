@@ -4,10 +4,10 @@
 Cuenta autenticable que interactúa con el producto.
 
 ## Grupo
-Ámbito organizacional opcional que puede tener cero o más Roles. La membresía de un Usuario se deriva únicamente de sus Roles agrupados.
+Ámbito organizacional opcional que puede tener cero o más Roles y Permisos heredables. La membresía de un Usuario se deriva únicamente de sus Roles agrupados y no autoriza por sí sola.
 
 ## Rol
-Conjunto de Permisos. Puede ser global o pertenecer a máximo un Grupo. Un Usuario puede tener máximo un Rol por Grupo.
+Conjunto de Permisos propios. Puede ser global o pertenecer a máximo un Grupo. Un Usuario puede tener máximo un Rol por Grupo; si está agrupado, suma los Permisos del Grupo sin `DENY`.
 
 ## Rol global
 Rol sin Grupo. Puede asignarse a un Usuario sin crear membresía de Grupo. Un Usuario puede tener varios Roles globales ordinarios.
@@ -25,7 +25,7 @@ config:manage
 ```
 
 ## Permiso efectivo
-Baseline del usuario activo más Permisos de sus Roles globales activos y de sus Roles agrupados dentro de Grupos activos, aplicando la política de cuenta técnica/system-only.
+Baseline del usuario activo, más Permisos propios de sus Roles globales activos y la unión de Permisos propios/heredados de sus Roles agrupados activos dentro de Grupos activos, aplicando la política de cuenta técnica/system-only. Un Grupo inactivo suspende ambas contribuciones de sus Roles agrupados.
 
 ## Cargo / Posición
 Metadato organizacional descriptivo. Un Usuario puede tener máximo un Cargo. Cargo no concede acceso.
