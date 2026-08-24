@@ -31,11 +31,11 @@ app/core/                config, DB, security, rate limit
 Autoridad actual:
 
 ```text
-UserRoleAssignment → GroupRole → UserGroup
-RolePermission     → Permission
+UserRoleAssignment → Role → RolePermission → Permission
+                          └→ GroupRole → UserGroup → GroupPermission → Permission
 ```
 
-`effective_permission_codes()` no usa Cargo ni permisos directos.
+`effective_permission_codes()` suma `RolePermission` y `GroupPermission` para Roles agrupados activos dentro de Grupos activos. No usa Cargo, permisos directos a Usuario ni `GroupMember` como fuente de autoridad; `config:manage` se elimina para Usuarios ordinarios y solo llega por la política `SystemAccount`.
 
 `iam_access_policy.py` se registra antes del router IAM de compatibilidad para bloquear rutas que contradigan el modelo actual.
 

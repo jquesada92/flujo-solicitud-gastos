@@ -1,7 +1,7 @@
 # Spec 006 — Acceso por Roles agrupados y globales
 
 **Estado:** Implementada  
-**Constitución:** 2.13.0
+**Constitución:** 2.16.0
 
 ## Objetivo
 
@@ -10,8 +10,9 @@ Representar responsabilidades de Usuario mediante Roles reutilizables que pueden
 ## Modelo
 
 ```text
-Grupo 1 ─ Rol A ─ Permisos
-        └ Rol B ─ Permisos
+Grupo 1 ─ Permisos heredables
+        ├ Rol A ─ Permisos propios
+        └ Rol B ─ Permisos propios
 
 Rol Global X ─ Permisos
 Rol Global Y ─ Permisos
@@ -35,10 +36,13 @@ Usuario X ─ Rol A del Grupo 1
 10. Cargo/Posición es información organizacional y no concede acceso.
 11. Un Usuario tiene máximo un Cargo.
 12. El Rol técnico `Administrador del sistema` es global y protegido; `SystemAccount` sigue siendo la autoridad de privilegios técnicos.
+13. Un Rol agrupado concede la unión de sus Permisos propios y los Permisos de su Grupo activo.
+14. La ausencia de un Permiso propio no lo niega: se hereda si el Grupo lo aporta y no existe `DENY`.
+15. `GroupMember` es una proyección derivada y nunca una fuente autónoma de autorización.
 
 ## Cambio de scope
 
-Quitar un Rol de un Grupo lo convierte en global sin borrar las asignaciones existentes del Usuario. Agregar Roles globales a un Grupo debe rechazarse si produciría dos Roles del mismo Grupo para un Usuario ya asignado.
+Quitar un Rol de un Grupo lo convierte en global sin borrar las asignaciones existentes del Usuario ni sus `RolePermission`; desaparecen únicamente los Permisos heredados del Grupo. Agregar Roles globales a un Grupo debe rechazarse si produciría dos Roles del mismo Grupo para un Usuario ya asignado y, si es válido, suma la herencia del nuevo Grupo sin reemplazar los Permisos propios.
 
 Después de cambiar el catálogo de Roles de un Grupo, `GroupMember` se reconstruye desde las asignaciones de Roles agrupados.
 
@@ -49,6 +53,7 @@ Después de cambiar el catálogo de Roles de un Grupo, `GroupMember` se reconstr
 - trigger PostgreSQL sobre `user_role_assignments` para impedir dos Roles del mismo Grupo al asignar/cambiar un Rol de Usuario;
 - trigger PostgreSQL sobre `group_roles` para impedir que un cambio Global→Grupo cree retrospectivamente dos Roles del mismo Grupo para un Usuario;
 - revisión `20260821_0004_allow_global_roles` permite Roles sin Grupo sin relajar ninguno de esos guards;
+- revisión `20260824_0009_group_permission_inheritance` agrega `group_permissions` como grants positivos y deja intactas las filas `role_permissions`;
 - `iam_group_assignments.py` valida cambios Global↔Grupo y reconstruye membresía;
 - política de compatibilidad bloquea endpoints legacy;
 - `user_positions.user_id` único desde revisión 0003.
@@ -66,4 +71,4 @@ Roles globales
 [ ] Rol global 2
 ```
 
-Los cambios se guardan en una sola operación explícita. La cuenta técnica muestra su Rol global protegido sin permitir edición ordinaria.
+Los cambios se guardan en una sola operación explícita. La ficha del Grupo permite editar Permisos heredables; la ficha del Rol distingue sus Permisos propios de los heredados y no ofrece una negación. La cuenta técnica muestra su Rol global protegido sin permitir edición ordinaria.

@@ -42,11 +42,14 @@ El pooler puede rechazar ese startup parameter. El aislamiento se consigue con s
 → 20260821_0006_period_snapshot_values
 → 20260821_0007_period_audit_metadata
 → 20260821_0008_normalize_period_timestamps
+→ 20260824_0009_group_permission_inheritance
 ```
 
-`alembic heads` debe devolver `20260821_0004`.
+`alembic heads` debe devolver `20260824_0009`.
 
 `0004` permite asignaciones de Roles globales (sin Grupo) y conserva el guard de máximo un Rol del mismo Grupo por Usuario.
+
+`0009` agrega `group_permissions` para herencia aditiva y deja la tabla vacía al migrar, sin modificar `role_permissions`.
 
 La baseline exige el schema de aplicación vacío en una instalación nueva. Una vez desplegada, no se reescribe; se agregan revisiones.
 

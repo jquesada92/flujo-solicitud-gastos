@@ -1,8 +1,8 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.15.0
-**Vigente desde:** 2026-08-21
+**Versión:** 2.16.0
+**Vigente desde:** 2026-08-24
 
 ## 1. Propósito
 
@@ -28,8 +28,8 @@ Un cambio funcional, de seguridad, persistencia, UX o arquitectura no está term
 ## 3. Terminología canónica
 
 - **Usuario**: cuenta autenticable del producto.
-- **Grupo**: ámbito organizacional opcional que puede contener cero o más Roles.
-- **Rol**: conjunto reutilizable de Permisos. Puede ser global o pertenecer como máximo a un Grupo.
+- **Grupo**: ámbito organizacional opcional que puede contener cero o más Roles y aportar Permisos heredables a esos Roles.
+- **Rol**: conjunto reutilizable de Permisos propios. Puede ser global o pertenecer como máximo a un Grupo; si está agrupado suma los Permisos de su Grupo.
 - **Rol global**: Rol sin Grupo. No crea membresía de Grupo.
 - **Permiso**: capacidad IAM atómica implementada por el producto.
 - **Cargo / Posición**: dato organizacional descriptivo. No concede acceso.
@@ -49,9 +49,9 @@ No se crearán sinónimos funcionales para estos conceptos.
 Modelo normativo:
 
 ```text
-Permiso → Rol ── 0..1 Grupo
-             ↑
-          Usuario
+Permiso propio    → Rol ── 0..1 Grupo ← Permiso heredable
+                       ↑
+                    Usuario
 
 Usuario activo → requests:read (baseline)
 Cargo          → dato organizacional, sin autorización
@@ -72,6 +72,10 @@ Reglas obligatorias:
 10. Un Cargo no hereda Roles ni Permisos y no participa en `effective_permission_codes()`.
 11. Cada Usuario puede tener como máximo un Cargo activo asociado.
 12. El nombre/código de Grupo, Rol, Cargo, Área o Usuario nunca autoriza por sí mismo.
+13. Un Grupo puede tener cero o más Permisos; cada Rol activo vinculado a ese Grupo hereda esos Permisos mientras el Grupo esté activo.
+14. Para un Rol agrupado, los Permisos aplicables son la unión aditiva de sus Permisos propios y los de su Grupo. La ausencia de un Permiso propio significa “heredar si el Grupo lo aporta”; no existe `DENY` ni precedencia negativa a nivel de Rol.
+15. Editar los Permisos de un Grupo o mover un Rol entre Grupo y scope global no borra ni reemplaza sus filas `RolePermission`. Al desvincularlo solo deja de heredar del Grupo y conserva sus Permisos propios y sus asignaciones de Usuario.
+16. `GroupMember` es una proyección organizacional. Una fila de membresía sin `UserRoleAssignment` a un Rol activo de ese Grupo no concede ningún Permiso.
 
 Permisos vigentes:
 
@@ -91,12 +95,15 @@ Para un usuario ordinario activo:
 ```text
 effective_permissions =
     {requests:read}
-  ∪ permisos de sus Roles globales activos
-  ∪ permisos de sus Roles agrupados cuyo Grupo esté activo
+  ∪ permisos propios de sus Roles globales activos
+  ∪ permisos propios de sus Roles agrupados activos cuyo Grupo esté activo
+  ∪ permisos de cada Grupo activo alcanzado por uno de esos Roles agrupados
   - {config:manage}
 ```
 
-`config:manage` solo es efectivo conforme a la política de `system_accounts`. `config:read` y `areas:manage` pueden llegar por un Rol global o por un Rol dentro de un Grupo.
+Para cada Rol agrupado, la operación es `RolePermission ∪ GroupPermission`: los duplicados se colapsan y un Permiso heredado no puede negarse desde el Rol. La mera existencia de `GroupMember` no participa en esta resolución.
+
+`config:manage` solo es efectivo conforme a la política de `system_accounts`, aunque figure en un Grupo o Rol ordinario. `config:read` y `areas:manage` pueden llegar como Permiso propio de un Rol o por herencia de Grupo.
 
 ## 5. Accesos
 
@@ -105,8 +112,8 @@ effective_permissions =
 ```text
 Usuarios → Acceso por grupo → máximo un Rol por Grupo
          → Roles globales   → cero o más
-Grupos   → Roles opcionales + miembros derivados (solo lectura)
-Roles    → Permisos
+Grupos   → Permisos heredables + Roles opcionales + miembros derivados (solo lectura)
+Roles    → Permisos propios + herencia visible del Grupo
 Permisos → catálogo de capacidades
 ```
 
@@ -116,7 +123,7 @@ Toda edición de acceso se prepara localmente y se persiste únicamente mediante
 
 La edición de un Rol puede actualizar el estado local con la respuesta del `PATCH`; no requiere un GET adicional para reflejar su nombre o estado.
 
-Mover un Rol entre “global” y un Grupo no elimina sus asignaciones de Usuario. La aplicación debe recalcular la membresía derivada y rechazar el cambio si produciría dos Roles del mismo Grupo para un mismo Usuario.
+Mover un Rol entre “global” y un Grupo no elimina sus asignaciones de Usuario ni sus `RolePermission`. La aplicación debe recalcular la membresía derivada y rechazar el cambio si produciría dos Roles del mismo Grupo para un mismo Usuario. Al quedar global, el Rol deja de recibir `GroupPermission`; al vincularse a otro Grupo, suma la herencia de ese Grupo a sus Permisos propios.
 
 ## 6. Configuración
 
@@ -130,7 +137,7 @@ Una mutación nunca se autoriza por `config:read`.
 
 Cargo/Posición es metadato organizacional opcional, con cardinalidad `Usuario 0..1 Cargo`. Puede aparecer en comunicaciones y vistas organizacionales, pero cambiar Cargo no cambia los permisos efectivos.
 
-Las notificaciones de creación/cambio pueden incluir el Cargo y siempre deben calcular los permisos desde el IAM vigente de Roles globales y Roles agrupados.
+Las notificaciones de creación/cambio pueden incluir el Cargo y siempre deben calcular los permisos desde el IAM vigente: Permisos propios de Roles globales o agrupados, más la herencia aditiva de sus Grupos activos.
 
 ## 8. Inicio y Seguimiento
 
@@ -304,7 +311,10 @@ Cadena Alembic vigente:
 → 20260821_0006_period_snapshot_values
 → 20260821_0007_period_audit_metadata
 → 20260821_0008_normalize_period_timestamps
+→ 20260824_0009_group_permission_inheritance
 ```
+
+`20260824_0009_group_permission_inheritance` agrega `group_permissions` vacía para no alterar accesos existentes durante la migración. La tabla relaciona Grupo y Permiso de forma única; no introduce denegaciones ni modifica `role_permissions`.
 
 Usuarios, Áreas, Roles y Grupos mantienen historial temporal versionado. Cada
 alta crea una fila cuyo `active_from` coincide con `created_at`; toda modificación
@@ -357,7 +367,7 @@ Validaciones mínimas:
 ```text
 cd backend
 alembic heads
-# esperado: 20260821_0004
+# esperado: 20260824_0009
 \.venv\Scripts\python.exe -m unittest discover -s tests -v
 
 cd ..
@@ -368,5 +378,7 @@ cd frontend
 npm ci
 npm run build
 ```
+
+Para cambios IAM, la aceptación debe cubrir además la unión aditiva Rol ∪ Grupo, ausencia de `DENY`, conservación de `RolePermission` al editar o desvincular, ausencia de autoridad por `GroupMember` aislado y exclusión de `config:manage` para usuarios ordinarios.
 
 GitHub Actions puede ser un gate adicional cuando exista cuota disponible; su indisponibilidad no convierte un run sin steps en evidencia de fallo del código.

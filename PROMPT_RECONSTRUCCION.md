@@ -1,6 +1,6 @@
 # Prompt maestro de reconstrucción
 
-> Constitución vigente: **2.15.0**.
+> Constitución vigente: **2.16.0**.
 
 Reconstruye **Flujo de Control de Gastos** como una aplicación web neutral respecto al tipo de organización, lista para desplegar con React/Vite, FastAPI, SQLAlchemy, Alembic y PostgreSQL/Neon.
 
@@ -43,9 +43,9 @@ Accesos
 Modelo exacto:
 
 ```text
-Permiso → Rol ── 0..1 Grupo
-             ↑
-          Usuario
+Permiso propio    → Rol ── 0..1 Grupo ← Permiso heredable
+                       ↑
+                    Usuario
 
 Usuario activo → requests:read
 Cargo          → metadato organizacional
@@ -62,6 +62,9 @@ Invariantes:
 - la membresía de Grupo se deriva únicamente de Roles agrupados;
 - un Rol global no crea membresía de Grupo;
 - no se asignan Permisos directamente a Usuarios;
+- un Rol agrupado suma sus Permisos propios y los de su Grupo activo;
+- la ausencia a nivel de Rol hereda, no niega; no existe `DENY`;
+- `GroupMember` aislado no autoriza;
 - Cargo no concede Permisos;
 - un Usuario tiene 0..1 Cargo;
 - nombres/códigos no autorizan.
@@ -84,10 +87,13 @@ Para usuario ordinario:
 ```text
 effective_permissions =
     requests:read
-  + role_permissions_of_active_global_roles
-  + role_permissions_of_roles_in_active_groups
+  + own_permissions_of_active_global_roles
+  + own_permissions_of_roles_in_active_groups
+  + permissions_of_their_active_groups
   - config:manage
 ```
+
+Para cada Rol agrupado aplica una unión de grants positivos: `RolePermission ∪ GroupPermission`. Conserva los Permisos propios adicionales, colapsa duplicados y no permite que un checkbox propio desmarcado niegue la herencia. `config:manage` continúa excluido para todo Usuario ordinario sin importar su fuente.
 
 ## 3. Accesos
 
@@ -102,22 +108,23 @@ Usuarios
 
 Grupos
   → pueden existir sin Roles
+  → Permisos heredables editables
   → Roles opcionales del Grupo editables
   → miembros derivados de Roles agrupados, solo lectura
 
 Roles
-  → Permisos
+  → Permisos propios + herencia visible del Grupo
   → pueden ser globales o pertenecer a máximo un Grupo
 
 Permisos
   → catálogo de capacidades
 ```
 
-No agregues controles de permisos individuales. Cargo no es mecanismo de acceso.
+No agregues controles de permisos directos a Usuario ni controles `DENY`. Cargo y `GroupMember` no son mecanismos de acceso.
 
 Todas las ediciones de acceso son staged. No hagas requests de mutación al seleccionar una opción. Persiste con **Guardar cambios** y advierte antes de descartar cambios pendientes.
 
-Quitar un Rol de un Grupo lo convierte en global sin borrar `UserRoleAssignment`. Vincular Roles globales a un Grupo debe rechazarse si produciría más de un Rol del mismo Grupo para algún Usuario. Después de cambiar el catálogo de Roles de un Grupo, reconstruye `GroupMember` desde las asignaciones de Roles agrupados.
+Quitar un Rol de un Grupo lo convierte en global sin borrar `UserRoleAssignment` ni `RolePermission`; elimina solo la herencia del Grupo. Editar Permisos del Grupo tampoco modifica `RolePermission`. Vincular Roles globales a un Grupo debe rechazarse si produciría más de un Rol del mismo Grupo para algún Usuario. Después de cambiar el catálogo de Roles de un Grupo, reconstruye `GroupMember` desde las asignaciones de Roles agrupados.
 
 ## 4. Configuración
 
@@ -305,6 +312,7 @@ Cadena:
 → 20260821_0006_period_snapshot_values
 → 20260821_0007_period_audit_metadata
 → 20260821_0008_normalize_period_timestamps
+→ 20260824_0009_group_permission_inheritance
 ```
 
 Toda creación o modificación relevante de Usuario, Área, Rol y Grupo se registra
@@ -316,7 +324,7 @@ La fila identifica actor, timestamp, tipo de evento, campos cambiados y valores
 Las listas GUI excluyen inactivos. Los formularios consultan recuperación por
 cédula o clave/nombre y reactivan el ID existente con confirmación del usuario.
 
-`0001` crea la instalación limpia. `0002` impide múltiples Grupos por Rol y dos Roles del mismo Grupo por Usuario. `0003` garantiza un Cargo por Usuario. `0004` permite Roles sin Grupo manteniendo la protección para Roles agrupados.
+`0001` crea la instalación limpia. `0002` impide múltiples Grupos por Rol y dos Roles del mismo Grupo por Usuario. `0003` garantiza un Cargo por Usuario. `0004` permite Roles sin Grupo manteniendo la protección para Roles agrupados. `0009` agrega `group_permissions` vacía, sin cambiar accesos existentes ni `role_permissions`.
 
 ## 16. Correo
 
@@ -360,7 +368,7 @@ Gates:
 ```text
 cd backend
 alembic heads
-# 20260821_0004
+# 20260824_0009
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 
 cd ../frontend

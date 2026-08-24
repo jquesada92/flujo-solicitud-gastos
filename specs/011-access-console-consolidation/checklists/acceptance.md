@@ -7,7 +7,12 @@
 - [x] un Grupo puede existir sin Roles.
 - [x] un Rol puede ser global o pertenecer a máximo un Grupo.
 - [x] miembros de Grupo son solo lectura y derivan únicamente de Roles agrupados.
-- [x] permisos se configuran solo en Roles.
+- [x] `GroupMember` aislado no concede Permisos.
+- [x] Permisos heredables se configuran en Grupos y Permisos propios en Roles; nunca directamente en Usuarios.
+- [x] un Rol agrupado recibe la unión aditiva de Permisos propios y del Grupo, sin `DENY`.
+- [x] la ficha del Rol identifica la herencia aunque el permiso propio esté desmarcado.
+- [x] editar o desvincular un Grupo conserva los Permisos propios del Rol.
+- [x] `config:manage` permanece system-only aunque se seleccione en un Grupo o Rol ordinario.
 - [x] nombre de Rol guardado se refleja sin GET adicional obligatorio.
 - [x] Administrador del sistema aparece como Rol global técnico protegido.
 - [x] rutas privadas sin sesión vuelven a Login.

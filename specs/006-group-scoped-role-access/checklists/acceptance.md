@@ -9,7 +9,13 @@
 - [x] “Sin rol” elimina membresía de ese Grupo.
 - [x] un Rol global no crea membresía.
 - [x] quitar un Rol de un Grupo lo convierte en global sin borrar asignaciones.
+- [x] quitar un Rol de un Grupo conserva sus Permisos propios y elimina solo la herencia.
 - [x] agrupar Roles se rechaza si produciría dos Roles del mismo Grupo para un Usuario.
+- [x] un Rol agrupado hereda todos los Permisos del Grupo y conserva los propios adicionales.
+- [x] la unión elimina duplicados y no existe `DENY` a nivel de Rol.
+- [x] cambiar Permisos del Grupo no modifica `RolePermission`.
+- [x] `GroupMember` sin Rol agrupado asignado no concede Permisos.
+- [x] `config:manage` heredado o propio sigue sin ser efectivo para un Usuario ordinario.
 - [x] permisos directos están rechazados.
 - [x] Cargo→Rol está rechazado.
 - [x] Cargo no cambia permisos efectivos.

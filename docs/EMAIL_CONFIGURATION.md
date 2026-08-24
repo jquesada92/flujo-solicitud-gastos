@@ -46,7 +46,7 @@ El Cargo se obtiene de `UserPosition → Position`; los permisos se calculan con
 Si cambia realmente `position_ids` de un usuario activo:
 
 1. se aplica el nuevo Cargo (0..1);
-2. se calculan los permisos actuales desde Grupos/Roles;
+2. se calculan los permisos actuales desde Permisos propios de Roles y herencia aditiva de Grupos;
 3. se envía “Actualización de cargo y permisos”.
 
 Guardar el mismo Cargo no debe duplicar el correo.

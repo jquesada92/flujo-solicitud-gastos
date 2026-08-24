@@ -39,6 +39,7 @@ Schema:   administracion
 → 20260821_0006_period_snapshot_values
 → 20260821_0007_period_audit_metadata
 → 20260821_0008_normalize_period_timestamps
+→ 20260824_0009_group_permission_inheritance
 ```
 
 ## Render

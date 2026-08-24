@@ -15,7 +15,8 @@ Usuario
 ├─ 0..N Roles globales
 └─ Roles agrupados
      └─ máximo 1 Rol por Grupo
-          └─ cada Rol contiene Permisos
+          ├─ Permisos propios del Rol
+          └─ Permisos heredados del Grupo
 ```
 
 Cardinalidades:
@@ -28,7 +29,7 @@ Usuario 0..N Roles globales
 Usuario 0..1 Cargo
 ```
 
-Un Rol sin Grupo es global. La membresía del Grupo es una proyección únicamente de Roles agrupados. Cargo no participa en autorización.
+Un Rol sin Grupo es global. La membresía del Grupo es una proyección únicamente de Roles agrupados y `GroupMember` aislado no autoriza. Cargo tampoco participa en autorización.
 
 En Configuración > Accesos, la lista de Usuarios activos presenta como máximo 10 coincidencias. La búsqueda acepta cédula, nombres, apellidos, correo, Rol o Grupo asignado y no distingue mayúsculas ni acentos.
 
@@ -45,7 +46,7 @@ config:manage
 
 `config:manage` está protegido para `system_accounts`; `config:read` es lectura ordinaria. `requests:close` no es una capacidad operativa vigente.
 
-Los permisos efectivos ordinarios pueden venir de Roles globales o de Roles agrupados cuyo Grupo esté activo. `config:manage` continúa reservado a la política técnica protegida.
+Los permisos efectivos ordinarios pueden venir de Permisos propios de Roles globales o, en un Rol agrupado dentro de un Grupo activo, de la unión `RolePermission ∪ GroupPermission`. Es herencia aditiva sin `DENY`; los Permisos propios se conservan al editar o desvincular el Grupo. `config:manage` continúa reservado a la política técnica protegida.
 
 ## UX principal
 
@@ -60,8 +61,8 @@ Accesos:
 
 ```text
 Usuario → selector de Rol por Grupo + Roles globales → Guardar cambios
-Grupo   → Roles opcionales; miembros derivados de Roles agrupados
-Rol     → Permisos; puede ser global o pertenecer a un Grupo
+Grupo   → Permisos heredables + Roles opcionales; miembros derivados
+Rol     → Permisos propios + herencia visible; global o agrupado
 ```
 
 El Rol global técnico `Administrador del sistema` no pertenece a ningún Grupo. El bootstrap lo asigna a la cuenta técnica como representación, pero la autorización privilegiada sigue dependiendo de `system_accounts`.
@@ -142,6 +143,7 @@ Alembic:
 → 0006 period_snapshot_values
 → 0007 period_audit_metadata
 → 0008 normalize_period_timestamps
+→ 0009 group_permission_inheritance
 ```
 
 `0004` permite Roles globales manteniendo la protección de máximo un Rol por Usuario/Grupo.
@@ -153,6 +155,7 @@ el Grupo asociado.
 anterior/nuevo. Las operaciones autenticadas usan al usuario de la sesión y los
 procesos internos quedan marcados como `SYSTEM:*`.
 `0008` normaliza toda vigencia y evento a timestamps con zona horaria UTC.
+`0009` agrega `group_permissions` vacía y no altera `role_permissions` ni accesos preexistentes.
 
 ## Recuperación de entidades inactivas
 

@@ -14,7 +14,7 @@ from app.models.activity_periods import (
     UserActivityPeriod,
 )
 from app.models.entities import ExpenseArea, User, UserRole
-from app.models.iam import GroupRole, Role, UserGroup
+from app.models.iam import GroupPermission, GroupRole, Permission, Role, RolePermission, UserGroup
 
 
 class ActivityPeriodTests(unittest.TestCase):
@@ -123,6 +123,72 @@ class ActivityPeriodTests(unittest.TestCase):
             self.assertEqual(periods[1].values['group']['code'], 'board')
             self.assertEqual(periods[1].change_type, 'RELATION_UPDATE')
             self.assertIn('group', periods[1].changed_fields)
+
+            assignment = db.scalar(select(GroupRole).where(GroupRole.role_id == role.id))
+            db.delete(assignment)
+            db.commit()
+            periods = list(db.scalars(
+                select(RoleActivityPeriod)
+                .where(RoleActivityPeriod.role_id == role.id)
+                .order_by(RoleActivityPeriod.id)
+            ))
+            self.assertEqual(len(periods), 3)
+            self.assertIsNone(periods[-1].values['group'])
+            self.assertIn('group', periods[-1].changed_fields)
+
+    def test_role_and_group_permission_changes_are_versioned(self):
+        with self.Session() as db:
+            permission = Permission(code='requests:create', name='Create requests', active=True)
+            role = Role(code='requester', name='Requester', active=True)
+            group = UserGroup(code='operations', name='Operations', active=True)
+            db.add_all([permission, role, group])
+            db.commit()
+
+            db.add_all([
+                RolePermission(role_id=role.id, permission_id=permission.id),
+                GroupPermission(group_id=group.id, permission_id=permission.id),
+            ])
+            db.commit()
+
+            role_periods = list(db.scalars(
+                select(RoleActivityPeriod)
+                .where(RoleActivityPeriod.role_id == role.id)
+                .order_by(RoleActivityPeriod.id)
+            ))
+            group_periods = list(db.scalars(
+                select(GroupActivityPeriod)
+                .where(GroupActivityPeriod.group_id == group.id)
+                .order_by(GroupActivityPeriod.id)
+            ))
+            self.assertEqual(len(role_periods), 2)
+            self.assertEqual(len(group_periods), 2)
+            self.assertEqual(role_periods[-1].values['permission_codes'], ['requests:create'])
+            self.assertEqual(group_periods[-1].values['permission_codes'], ['requests:create'])
+            self.assertIn('permission_codes', role_periods[-1].changed_fields)
+            self.assertIn('permission_codes', group_periods[-1].changed_fields)
+
+    def test_group_metadata_and_permission_change_share_one_final_snapshot(self):
+        with self.Session() as db:
+            permission = Permission(code='areas:manage', name='Manage areas', active=True)
+            group = UserGroup(code='directors', name='Directors', active=True)
+            db.add_all([permission, group])
+            db.commit()
+
+            group.description = 'Approves and supervises requests'
+            db.add(GroupPermission(group_id=group.id, permission_id=permission.id))
+            db.commit()
+
+            periods = list(db.scalars(
+                select(GroupActivityPeriod)
+                .where(GroupActivityPeriod.group_id == group.id)
+                .order_by(GroupActivityPeriod.id)
+            ))
+            self.assertEqual(len(periods), 2)
+            self.assertEqual(periods[-1].change_type, 'UPDATE')
+            self.assertEqual(periods[-1].values['description'], 'Approves and supervises requests')
+            self.assertEqual(periods[-1].values['permission_codes'], ['areas:manage'])
+            self.assertIn('description', periods[-1].changed_fields)
+            self.assertIn('permission_codes', periods[-1].changed_fields)
 
     def test_revision_records_actor_timestamp_and_before_after_changes(self):
         with self.Session() as db:

@@ -29,12 +29,16 @@ class IamAccessSaveAndHomeOverviewTests(unittest.TestCase):
         self.assertNotIn('<h3>Cargos</h3>', source)
         self.assertNotIn('["positions", "Cargos"]', source)
 
-    def test_group_role_catalog_is_saved_atomically_and_members_are_derived(self):
+    def test_group_roles_and_permissions_are_saved_atomically_and_members_are_derived(self):
         source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
         api = (REPO_ROOT / 'backend' / 'app' / 'api' / 'iam_group_assignments.py').read_text(encoding='utf-8')
-        self.assertIn('body: JSON.stringify({ role_ids: draftRoleIds, member_ids: draftMemberIds })', source)
-        self.assertIn("@router.patch('/groups/{group_id}')", api)
-        self.assertIn('db.execute(delete(GroupRole)', api)
+        self.assertIn('permission_codes: draftPermissionCodes,', source)
+        self.assertIn('role_ids: draftRoleIds,', source)
+        self.assertIn('member_ids: draftMemberIds,', source)
+        self.assertIn("@router.patch('/groups/{group_id}', response_model=GroupOut)", api)
+        self.assertIn('GroupPermission(group_id=group.id, permission_id=permission.id)', api)
+        self.assertIn('select(GroupRole).where(GroupRole.group_id == group.id)', api)
+        self.assertIn('db.delete(assignment)', api)
         self.assertIn("db.execute(delete(GroupMember).where(GroupMember.group_id == group.id))", api)
         self.assertIn('the freshly derived membership is authoritative', api)
         self.assertIn('Solo lectura. La membresía se obtiene al asignar un rol de este grupo', source)
@@ -46,6 +50,7 @@ class IamAccessSaveAndHomeOverviewTests(unittest.TestCase):
         policy = (REPO_ROOT / 'backend' / 'app' / 'api' / 'iam_access_policy.py').read_text(encoding='utf-8')
         self.assertIn('.join(UserRoleAssignment, UserRoleAssignment.role_id == Role.id)', service)
         self.assertIn('.join(GroupRole, GroupRole.role_id == Role.id)', service)
+        self.assertIn('.join(GroupPermission, GroupPermission.group_id == UserGroup.id)', service)
         self.assertIn('~exists(select(GroupRole.id).where(GroupRole.role_id == Role.id))', service)
         self.assertIn("sources[code].add(f'Rol global {role_name}')", service)
         self.assertNotIn('UserPermission', service)

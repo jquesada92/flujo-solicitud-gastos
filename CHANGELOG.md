@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.16.0 — 2026-08-24
+
+- Permisos heredables configurables a nivel de Grupo;
+- resolución aditiva `RolePermission ∪ GroupPermission` para Roles agrupados, sin `DENY`;
+- conservación de Permisos propios al editar el Grupo o convertir el Rol en global;
+- `GroupMember` ratificado como proyección sin autoridad de acceso;
+- `config:manage` conservado como capacidad exclusiva de `system_accounts`;
+- nueva revisión Alembic `20260824_0009_group_permission_inheritance`, sin backfill de grants;
+- consola de Accesos actualizada para distinguir Permisos heredables y propios.
+
 ## 2.15.0 — 2026-08-21
 
 - listas GUI activas para Usuario, Área, Rol y Grupo;
@@ -64,7 +74,7 @@
 - un Rol puede pertenecer como máximo a un Grupo;
 - un Usuario tiene máximo un Rol por Grupo;
 - membresía de Grupo derivada;
-- permisos solo en Roles;
+- permisos no directos a Usuario (modelo posteriormente ampliado con grants heredables de Grupo en 2.16.0);
 - edición de acceso staged con Guardar cambios;
 - actualización inmediata del nombre del Rol después de guardar.
 

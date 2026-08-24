@@ -19,6 +19,16 @@ function leaveAccessConsoleOnTopbarNavigation(event) {
   const button = target?.closest(".topbar button");
   if (!shouldLeaveAccessConsole(button)) return;
 
+  const iamRoot = document.getElementById("iam-admin-root");
+  const unsavedMarkers = iamRoot?.querySelectorAll('[data-unsaved="true"]') || [];
+  const hasUnsavedChanges = unsavedMarkers.length > 0;
+  if (hasUnsavedChanges && !window.confirm("Hay cambios sin guardar. ¿Deseas descartarlos y continuar?")) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
+  unsavedMarkers.forEach((marker) => { marker.dataset.unsaved = "false"; });
+
   // Clear the hash in capture phase so the IAM overlay is removed even when
   // the underlying React tab is already the requested destination (for
   // example, Accesos was opened while Inicio was the active tab).

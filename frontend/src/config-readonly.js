@@ -258,17 +258,12 @@ async function openAccessViewer() {
     const [permissions, roles, groups, users] = await Promise.all([
       readJson('/api/iam/permissions'),
       readJson('/api/iam/roles'),
-      readJson('/api/iam/groups'),
+      readJson('/api/iam/groups?include_inactive=true'),
       readJson('/api/iam/users'),
     ]);
     const roleById = new Map(roles.map((item) => [item.id, item]));
     const userById = new Map(users.map((item) => [item.id, item]));
     const permissionByCode = new Map(permissions.map((item) => [item.code, item]));
-    const groupNameByRoleId = new Map();
-    groups.forEach((group) => {
-      (group.role_ids || []).forEach((roleId) => groupNameByRoleId.set(roleId, group.name));
-    });
-
     const tabs = [
       ['users', 'Usuarios'],
       ['groups', 'Grupos'],
@@ -296,20 +291,41 @@ async function openAccessViewer() {
         groups.forEach((group) => {
           const memberNames = (group.member_ids || []).map((id) => userById.get(id)?.name).filter(Boolean);
           const roleNames = (group.role_ids || []).map((id) => roleById.get(id)?.name).filter(Boolean);
+          const groupPermissions = (group.permission_codes || []).map((code) => permissionByCode.get(code)?.name || code);
           list.appendChild(accessRow(group.name, [
             group.description || 'Sin descripción',
             `Miembros: ${memberNames.join(', ') || 'Ninguno'}`,
             `Roles: ${roleNames.join(', ') || 'Ninguno'}`,
+            `Permisos base: ${groupPermissions.join(', ') || 'Ninguno'}`,
           ], group.active ? 'ACTIVO' : 'INACTIVO'));
         });
       } else if (active === 'roles') {
         roles.forEach((role) => {
-          const labels = (role.permission_codes || []).map((code) => permissionByCode.get(code)?.name || code);
-          const groupName = groupNameByRoleId.get(role.id);
-          const scope = groupName ? `Grupo: ${groupName}` : 'Rol global';
+          const directCodes = role.permission_codes || [];
+          const directLabels = directCodes.map((code) => permissionByCode.get(code)?.name || code);
+          const group = groups.find((item) => (item.role_ids || []).includes(role.id)) || null;
+          const inheritedCodes = group?.active ? group.permission_codes || [] : [];
+          const inheritedLabels = inheritedCodes.map((code) => permissionByCode.get(code)?.name || code);
+          const reservedCodes = new Set(['config:manage']);
+          const roleCanGrantAccess = !group || group.active;
+          const contributedLabels = (roleCanGrantAccess ? [...new Set([...directCodes, ...inheritedCodes])] : [])
+            .filter((code) => !reservedCodes.has(code))
+            .sort()
+            .map((code) => permissionByCode.get(code)?.name || code);
+          const configuredReservedLabels = [...new Set([...directCodes, ...inheritedCodes])]
+            .filter((code) => reservedCodes.has(code))
+            .map((code) => permissionByCode.get(code)?.name || code);
+          const scope = group?.active ? `Grupo: ${group.name}` : group ? `Grupo inactivo: ${group.name}` : 'Rol global';
           list.appendChild(accessRow(
             role.name,
-            [role.description || 'Sin descripción', scope, `Permisos: ${labels.join(', ') || 'Ninguno'}`],
+            [
+              role.description || 'Sin descripción',
+              scope,
+              `Permisos propios: ${directLabels.join(', ') || 'Ninguno'}`,
+              `Permisos heredados: ${inheritedLabels.join(', ') || 'Ninguno'}`,
+              `Permisos aportados: ${contributedLabels.join(', ') || 'Ninguno'}`,
+              ...(configuredReservedLabels.length ? [`Reservados sin efecto ordinario: ${configuredReservedLabels.join(', ')}`] : []),
+            ],
             role.system_managed ? 'SISTEMA' : role.active ? 'ACTIVO' : 'INACTIVO',
           ));
         });

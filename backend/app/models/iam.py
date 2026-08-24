@@ -49,6 +49,15 @@ class UserGroup(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class GroupPermission(Base):
+    __tablename__ = 'group_permissions'
+    __table_args__ = (UniqueConstraint('group_id', 'permission_id', name='uq_group_permission'),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey('user_groups.id', ondelete='CASCADE'), nullable=False, index=True)
+    permission_id: Mapped[int] = mapped_column(ForeignKey('permissions.id', ondelete='CASCADE'), nullable=False, index=True)
+
+
 class GroupMember(Base):
     __tablename__ = 'group_members'
     __table_args__ = (UniqueConstraint('group_id', 'user_id', name='uq_group_member'),)

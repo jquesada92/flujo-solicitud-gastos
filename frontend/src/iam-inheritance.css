@@ -1,0 +1,19 @@
+.iam-check .iam-inherited {
+  color: #175cd3;
+  font-weight: 700;
+}
+
+.iam-effective-summary {
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid #cfe1ff;
+  border-radius: 10px;
+  background: #f5f9ff;
+}
+
+.iam-effective-summary small {
+  display: block;
+  color: #596579;
+  line-height: 1.4;
+}

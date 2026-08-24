@@ -38,9 +38,9 @@ Roles globales
 [ ] Otro rol global
 ```
 
-Un Usuario puede seleccionar máximo un Rol de cada Grupo y cero o más Roles globales. Un Rol global no crea membresía de Grupo.
+Un Usuario puede seleccionar máximo un Rol de cada Grupo y cero o más Roles globales. Un Rol global no crea membresía de Grupo. Un Rol agrupado recibe sus Permisos propios más los heredables del Grupo mientras Rol y Grupo estén activos; un Grupo inactivo suspende ambas contribuciones.
 
-No se muestran controles de permisos individuales. La membresía del Grupo no se marca separadamente.
+No se muestran controles de permisos directos a Usuario. La membresía del Grupo no se marca separadamente y una fila `GroupMember` aislada no autoriza.
 
 Todos los cambios quedan staged y solo se persisten al pulsar **Guardar cambios**.
 
@@ -48,15 +48,15 @@ La cuenta técnica muestra su Rol global protegido `Administrador del sistema`, 
 
 ### Grupos
 
-Un Grupo puede existir con cero Roles. Cada Rol puede pertenecer a cero o un Grupo, nunca a más de uno.
+Un Grupo puede existir con cero Roles y cero Permisos. Sus Permisos heredables se editan junto con el catálogo de Roles y se aplican a cada Rol activo vinculado. Cada Rol puede pertenecer a cero o un Grupo, nunca a más de uno.
 
-Quitar un Rol del Grupo lo convierte en global y conserva las asignaciones de Usuario. Vincular Roles globales a un Grupo se rechaza si algún Usuario terminaría con dos Roles de ese mismo Grupo.
+Quitar un Rol del Grupo lo convierte en global y conserva las asignaciones de Usuario y `RolePermission`; pierde solo la herencia. Cambiar Permisos del Grupo tampoco modifica los Permisos propios de sus Roles. Vincular Roles globales a un Grupo se rechaza si algún Usuario terminaría con dos Roles de ese mismo Grupo.
 
 La lista de miembros es informativa: se deriva únicamente de Usuarios que tienen un Rol agrupado en ese Grupo.
 
 ### Roles
 
-Un Rol administra sus Permisos y puede ser:
+Un Rol administra sus Permisos propios y puede ser:
 
 ```text
 Global      → sin Grupo
@@ -65,9 +65,11 @@ Agrupado    → pertenece a un único Grupo
 
 Al guardar, la UI usa la respuesta actualizada del backend para mantener nombre/estado sincronizados sin una recarga GET obligatoria.
 
+Si el Rol está agrupado, también muestra los Permisos heredados. La semántica es aditiva: `RolePermission ∪ GroupPermission`; la ausencia de un grant propio hereda el del Grupo y no existe `DENY`.
+
 ### Permisos
 
-Catálogo de capacidades implementadas. Se asignan a Roles, no a Usuarios.
+Catálogo de capacidades implementadas. Se asignan como grants propios a Roles o heredables a Grupos, nunca directamente a Usuarios.
 
 ## Cargo
 
@@ -103,13 +105,17 @@ GET            /api/iam/me/permissions
 
 - seleccionar un Rol agrupado o global no hace request de mutación;
 - Guardar cambios hace una persistencia del acceso del Usuario;
-- no hay permisos individuales;
+- no hay permisos directos a Usuario;
+- Permisos de Grupo y propios de Rol se unen de forma aditiva, sin `DENY`;
+- editar/desvincular conserva los Permisos propios del Rol;
 - un Grupo puede existir sin Roles;
 - un Rol puede existir sin Grupo y entonces es global;
 - un Rol pertenece como máximo a un Grupo;
 - un Usuario tiene máximo un Rol por Grupo;
 - no hay Cargo→Rol;
 - miembros de Grupo son derivados solo de Roles agrupados;
+- `GroupMember` aislado no concede acceso;
+- `config:manage` sigue siendo efectivo solo por la política protegida de `system_accounts`;
 - sin sesión se vuelve a Login;
 - `config:read` no puede mutar;
 - un nombre de Rol actualizado se refleja inmediatamente.

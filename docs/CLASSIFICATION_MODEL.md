@@ -26,7 +26,7 @@ Las mutaciones de Área/Categoría requieren:
 areas:manage
 ```
 
-Para un usuario ordinario, ese permiso llega mediante el Rol que ocupa dentro de un Grupo. El Administrador del sistema lo recibe por su política técnica de producción.
+Para un usuario ordinario, ese permiso puede ser propio de un Rol global activo o provenir de la unión de Permisos propios y heredados de un Rol agrupado activo dentro de un Grupo activo. Un Grupo inactivo suspende ambas contribuciones del Rol agrupado. El Administrador del sistema lo recibe por su política técnica de producción.
 
 `config:read` permite lectura de Configuración donde aplique; no autoriza mutaciones del catálogo.
 

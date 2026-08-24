@@ -16,6 +16,7 @@ from app.core.security import hash_password
 from app.models.entities import User, UserRole
 from app.models.iam import (
     GroupMember,
+    GroupPermission,
     GroupRole,
     Permission,
     Position,
@@ -121,9 +122,11 @@ class PositionRoleIsolationTests(unittest.TestCase):
             group = UserGroup(code='board', name='Junta Directiva', active=True)
             db.add(group)
             db.flush()
+            permission = db.query(Permission).filter_by(code='requests:approve').one()
             db.add_all([
                 GroupMember(group_id=group.id, user_id=user.id),
                 GroupRole(group_id=group.id, role_id=role.id),
+                GroupPermission(group_id=group.id, permission_id=permission.id),
             ])
             db.commit()
 

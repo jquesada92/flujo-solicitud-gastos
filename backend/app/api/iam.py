@@ -10,6 +10,7 @@ from app.core.security import current_user, require_permission
 from app.models.entities import User
 from app.models.iam import (
     GroupMember,
+    GroupPermission,
     GroupRole,
     Permission,
     Position,
@@ -23,7 +24,6 @@ from app.models.iam import (
 from app.schemas.iam import (
     EffectiveAccessOut,
     GroupOut,
-    GroupUpdate,
     GroupWrite,
     PermissionOut,
     PositionOut,
@@ -114,6 +114,12 @@ def _group_out(db: Session, group: UserGroup) -> GroupOut:
         name=group.name,
         description=group.description,
         active=group.active,
+        permission_codes=list(db.scalars(
+            select(Permission.code)
+            .join(GroupPermission, GroupPermission.permission_id == Permission.id)
+            .where(GroupPermission.group_id == group.id)
+            .order_by(Permission.code)
+        ).all()),
         role_ids=list(db.scalars(
             select(GroupRole.role_id).where(GroupRole.group_id == group.id).order_by(GroupRole.role_id)
         ).all()),
@@ -126,8 +132,37 @@ def _group_out(db: Session, group: UserGroup) -> GroupOut:
 def _replace_role_permissions(db: Session, role: Role, permission_codes: list[str]) -> None:
     unique_codes = list(dict.fromkeys(permission_codes))
     permissions = [_permission(db, code) for code in unique_codes]
-    db.execute(delete(RolePermission).where(RolePermission.role_id == role.id))
-    db.add_all(RolePermission(role_id=role.id, permission_id=item.id) for item in permissions)
+    desired_ids = {permission.id for permission in permissions}
+    current = list(db.scalars(
+        select(RolePermission).where(RolePermission.role_id == role.id)
+    ).all())
+    current_ids = {assignment.permission_id for assignment in current}
+    for assignment in current:
+        if assignment.permission_id not in desired_ids:
+            db.delete(assignment)
+    db.add_all(
+        RolePermission(role_id=role.id, permission_id=permission.id)
+        for permission in permissions
+        if permission.id not in current_ids
+    )
+
+
+def _replace_group_permissions(db: Session, group: UserGroup, permission_codes: list[str]) -> None:
+    unique_codes = list(dict.fromkeys(permission_codes))
+    permissions = [_permission(db, code) for code in unique_codes]
+    desired_ids = {permission.id for permission in permissions}
+    current = list(db.scalars(
+        select(GroupPermission).where(GroupPermission.group_id == group.id)
+    ).all())
+    current_ids = {assignment.permission_id for assignment in current}
+    for assignment in current:
+        if assignment.permission_id not in desired_ids:
+            db.delete(assignment)
+    db.add_all(
+        GroupPermission(group_id=group.id, permission_id=permission.id)
+        for permission in permissions
+        if permission.id not in current_ids
+    )
 
 
 @router.get('/me/permissions', response_model=EffectiveAccessOut)
@@ -240,24 +275,8 @@ def create_group(payload: GroupWrite, db: Session = Depends(get_db)):
         active=payload.active,
     )
     db.add(group)
-    db.commit()
-    db.refresh(group)
-    return _group_out(db, group)
-
-
-@router.patch('/groups/{group_id}', response_model=GroupOut, dependencies=[Depends(require_permission('config:manage'))])
-def update_group(group_id: int, payload: GroupUpdate, db: Session = Depends(get_db)):
-    group = _group(db, group_id)
-    changes = payload.model_dump(exclude_unset=True)
-    if 'name' in changes:
-        duplicate = db.scalar(select(UserGroup.id).where(func.lower(UserGroup.name) == changes['name'].lower(), UserGroup.id != group.id))
-        if duplicate:
-            raise HTTPException(status_code=409, detail='Ya existe un grupo con ese nombre')
-        group.name = changes['name'].strip()
-    if 'description' in changes:
-        group.description = changes['description'].strip() if changes['description'] else None
-    if 'active' in changes:
-        group.active = changes['active']
+    db.flush()
+    _replace_group_permissions(db, group, payload.permission_codes)
     db.commit()
     db.refresh(group)
     return _group_out(db, group)

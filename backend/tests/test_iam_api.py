@@ -309,6 +309,125 @@ class IamApiTests(unittest.TestCase):
         sources = effective.json()['sources']['requests:approve']
         self.assertIn('Grupo Comité de aprobación → Rol Aprobador', sources)
 
+    def test_group_permissions_are_inherited_without_replacing_role_permissions(self):
+        group_id, role_id = self._create_group_role(
+            'Junta Directiva',
+            'Presidente',
+            ['requests:create', 'requests:approve'],
+        )
+        configured = self.client.patch(
+            f'/api/iam/groups/{group_id}',
+            headers=self.auth(self.admin_token),
+            json={
+                'permission_codes': ['areas:manage', 'requests:approve', 'config:manage'],
+            },
+        )
+        self.assertEqual(configured.status_code, 200, configured.text)
+        self.assertEqual(
+            configured.json()['permission_codes'],
+            ['areas:manage', 'config:manage', 'requests:approve'],
+        )
+
+        self._assign_roles(self.normal_user_id, [role_id])
+        effective = self.client.get(
+            f'/api/iam/users/{self.normal_user_id}/effective-permissions',
+            headers=self.auth(self.admin_token),
+        )
+        self.assertEqual(
+            set(effective.json()['permission_codes']),
+            {'requests:read', 'requests:create', 'requests:approve', 'areas:manage'},
+        )
+        self.assertNotIn('config:manage', effective.json()['permission_codes'])
+        self.assertIn(
+            'Grupo Junta Directiva (heredado por Rol Presidente)',
+            effective.json()['sources']['areas:manage'],
+        )
+        self.assertEqual(
+            set(effective.json()['sources']['requests:approve']),
+            {
+                'Grupo Junta Directiva → Rol Presidente',
+                'Grupo Junta Directiva (heredado por Rol Presidente)',
+            },
+        )
+
+        roles = self.client.get('/api/iam/roles', headers=self.auth(self.admin_token)).json()
+        role = next(item for item in roles if item['id'] == role_id)
+        self.assertEqual(set(role['permission_codes']), {'requests:create', 'requests:approve'})
+        with self.Session() as db:
+            inherited_area_managers = users_with_permission(db, 'areas:manage')
+        self.assertIn(self.normal_user_id, {user.id for user in inherited_area_managers})
+
+        inactivated = self.client.patch(
+            f'/api/iam/groups/{group_id}',
+            headers=self.auth(self.admin_token),
+            json={'active': False},
+        )
+        self.assertEqual(inactivated.status_code, 200, inactivated.text)
+        inactive_effective = self.client.get(
+            f'/api/iam/users/{self.normal_user_id}/effective-permissions',
+            headers=self.auth(self.admin_token),
+        ).json()
+        self.assertEqual(set(inactive_effective['permission_codes']), {'requests:read'})
+        with self.Session() as db:
+            inactive_area_managers = users_with_permission(db, 'areas:manage')
+        self.assertNotIn(self.normal_user_id, {user.id for user in inactive_area_managers})
+
+        reactivated = self.client.patch(
+            f'/api/iam/groups/{group_id}',
+            headers=self.auth(self.admin_token),
+            json={'active': True},
+        )
+        self.assertEqual(reactivated.status_code, 200, reactivated.text)
+
+        removed = self.client.patch(
+            f'/api/iam/groups/{group_id}',
+            headers=self.auth(self.admin_token),
+            json={'permission_codes': []},
+        )
+        self.assertEqual(removed.status_code, 200, removed.text)
+        self.assertEqual(removed.json()['permission_codes'], [])
+        effective_after = self.client.get(
+            f'/api/iam/users/{self.normal_user_id}/effective-permissions',
+            headers=self.auth(self.admin_token),
+        ).json()
+        self.assertEqual(
+            set(effective_after['permission_codes']),
+            {'requests:read', 'requests:create', 'requests:approve'},
+        )
+
+    def test_group_permission_patch_rejects_unknown_code_atomically(self):
+        created = self.client.post(
+            '/api/iam/groups',
+            headers=self.auth(self.admin_token),
+            json={
+                'name': 'Operaciones sensibles',
+                'description': 'Original',
+                'permission_codes': ['areas:manage'],
+                'active': True,
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        group_id = created.json()['id']
+        self.assertEqual(created.json()['permission_codes'], ['areas:manage'])
+
+        rejected = self.client.patch(
+            f'/api/iam/groups/{group_id}',
+            headers=self.auth(self.admin_token),
+            json={
+                'name': 'Nombre que debe revertirse',
+                'permission_codes': ['does:not-exist'],
+            },
+        )
+        self.assertEqual(rejected.status_code, 422, rejected.text)
+
+        groups = self.client.get(
+            '/api/iam/groups',
+            headers=self.auth(self.admin_token),
+        ).json()
+        group = next(item for item in groups if item['id'] == group_id)
+        self.assertEqual(group['name'], 'Operaciones sensibles')
+        self.assertEqual(group['permission_codes'], ['areas:manage'])
+
     def test_user_cannot_have_two_roles_from_same_group(self):
         group_id, first_role_id = self._create_group_role(
             'Solicitudes',
