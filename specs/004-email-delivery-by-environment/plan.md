@@ -6,3 +6,8 @@
 - Probar templates y errores sin enviar secretos.
 - Mantener `scripts/test_email.py` como diagnóstico manual.
 - Actualizar ejemplos de `.env` cuando cambie una variable requerida.
+- Rechazar `EMAIL_MODE=console` y URLs públicas no HTTPS cuando `ENVIRONMENT=production`.
+- Mantener un template de restablecimiento separado de la invitación, con enlace
+  tokenizado, vigencia visible y sin contraseñas.
+- Probar que un fallo de entrega revierte la nueva emisión sin invalidar el
+  enlace anterior.

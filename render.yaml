@@ -42,18 +42,10 @@ services:
         value: "6"
       - key: USER_SENSITIVE_RATE_LIMIT
         value: "10"
-      - key: DEFAULT_PAGE_SIZE
-        value: "25"
-      - key: MAX_PAGE_SIZE
-        value: "100"
-      - key: SEARCH_MIN_CHARS
-        value: "2"
-      - key: QUERY_TIMEOUT_MS
-        value: "5000"
       - key: APP_TIME_ZONE
         value: "America/Panama"
       - key: EMAIL_MODE
-        sync: false
+        value: brevo
       - key: EMAIL_FROM
         sync: false
       - key: BREVO_API_KEY

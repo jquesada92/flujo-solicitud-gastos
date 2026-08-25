@@ -27,6 +27,7 @@ from app.models.iam import (
     SystemAccount,
     UserGroup,
     UserPermission,
+    UserRoleAssignment,
 )
 from app.services.iam_service import users_with_permission
 
@@ -482,6 +483,152 @@ class IamApiTests(unittest.TestCase):
             json={'name': 'Super Admin'},
         )
         self.assertEqual(response.status_code, 409)
+
+    def test_role_user_limit_counts_active_assignments_and_rejects_overflow(self):
+        created = self.client.post(
+            '/api/iam/roles',
+            headers=self.auth(self.admin_token),
+            json={'name': 'Rol limitado', 'active': True, 'max_users': 1},
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        role_id = created.json()['id']
+        self.assertEqual(created.json()['max_users'], 1)
+        self.assertEqual(created.json()['assigned_user_count'], 0)
+
+        self._assign_roles(self.normal_user_id, [role_id])
+        with self.Session() as db:
+            second = self._new_user(db, 'second@example.com')
+            db.commit()
+            second_id = second.id
+
+        rejected = self.client.patch(
+            f'/api/iam/users/{second_id}',
+            headers=self.auth(self.admin_token),
+            json={'role_ids': [role_id]},
+        )
+        self.assertEqual(rejected.status_code, 409, rejected.text)
+        self.assertIn('alcanzó su límite', rejected.json()['detail'])
+        with self.Session() as db:
+            self.assertIsNone(db.scalar(select(UserRoleAssignment.id).where(
+                UserRoleAssignment.user_id == second_id,
+                UserRoleAssignment.role_id == role_id,
+            )))
+
+        listed = self.client.get('/api/iam/roles', headers=self.auth(self.admin_token)).json()
+        role = next(item for item in listed if item['id'] == role_id)
+        self.assertEqual(role['assigned_user_count'], 1)
+
+    def test_inactive_assignment_does_not_consume_limit_but_reactivation_does(self):
+        role = self.client.post(
+            '/api/iam/roles',
+            headers=self.auth(self.admin_token),
+            json={'name': 'Cupo por activos', 'active': True, 'max_users': 1},
+        )
+        self.assertEqual(role.status_code, 201, role.text)
+        role_id = role.json()['id']
+        self._assign_roles(self.normal_user_id, [role_id])
+
+        with self.Session() as db:
+            inactive = self._new_user(db, 'inactive@example.com')
+            inactive.active = False
+            db.commit()
+            inactive_id = inactive.id
+
+        assigned = self.client.patch(
+            f'/api/iam/users/{inactive_id}',
+            headers=self.auth(self.admin_token),
+            json={'role_ids': [role_id]},
+        )
+        self.assertEqual(assigned.status_code, 200, assigned.text)
+        self.assertFalse(assigned.json()['active'])
+
+        reactivated = self.client.patch(
+            f'/api/iam/users/{inactive_id}',
+            headers=self.auth(self.admin_token),
+            json={'active': True},
+        )
+        self.assertEqual(reactivated.status_code, 409, reactivated.text)
+        with self.Session() as db:
+            self.assertFalse(db.get(User, inactive_id).active)
+
+    def test_role_limit_cannot_be_lower_than_current_occupancy(self):
+        role = self.client.post(
+            '/api/iam/roles',
+            headers=self.auth(self.admin_token),
+            json={'name': 'Cupo editable', 'active': True, 'max_users': 2},
+        )
+        self.assertEqual(role.status_code, 201, role.text)
+        role_id = role.json()['id']
+        self._assign_roles(self.normal_user_id, [role_id])
+        with self.Session() as db:
+            second = self._new_user(db, 'occupied@example.com')
+            db.commit()
+            second_id = second.id
+        self._assign_roles(second_id, [role_id])
+
+        rejected = self.client.patch(
+            f'/api/iam/roles/{role_id}',
+            headers=self.auth(self.admin_token),
+            json={'max_users': 1},
+        )
+        self.assertEqual(rejected.status_code, 409, rejected.text)
+        current = next(
+            item for item in self.client.get('/api/iam/roles', headers=self.auth(self.admin_token)).json()
+            if item['id'] == role_id
+        )
+        self.assertEqual(current['max_users'], 2)
+        self.assertEqual(current['assigned_user_count'], 2)
+
+        invalid = self.client.post(
+            '/api/iam/roles',
+            headers=self.auth(self.admin_token),
+            json={'name': 'Cupo inválido', 'max_users': 0},
+        )
+        self.assertEqual(invalid.status_code, 422, invalid.text)
+
+    def test_legacy_direct_role_assignment_respects_user_limit(self):
+        role = self.client.post(
+            '/api/iam/roles',
+            headers=self.auth(self.admin_token),
+            json={'name': 'Cupo directo', 'active': True, 'max_users': 1},
+        )
+        role_id = role.json()['id']
+        self._assign_roles(self.normal_user_id, [role_id])
+        with self.Session() as db:
+            second = self._new_user(db, 'direct@example.com')
+            db.commit()
+            second_id = second.id
+
+        rejected = self.client.put(
+            f'/api/iam/users/{second_id}/roles/{role_id}',
+            headers=self.auth(self.admin_token),
+        )
+        self.assertEqual(rejected.status_code, 409, rejected.text)
+
+    def test_legacy_user_reactivation_respects_role_limit(self):
+        role = self.client.post(
+            '/api/iam/roles',
+            headers=self.auth(self.admin_token),
+            json={'name': 'Cupo reactivación compatible', 'active': True, 'max_users': 1},
+        )
+        role_id = role.json()['id']
+        self._assign_roles(self.normal_user_id, [role_id])
+        with self.Session() as db:
+            inactive = self._new_user(db, 'legacy-reactivation@example.com')
+            inactive.active = False
+            db.flush()
+            db.add(UserRoleAssignment(user_id=inactive.id, role_id=role_id))
+            db.commit()
+            inactive_id = inactive.id
+
+        rejected = self.client.patch(
+            f'/api/users/{inactive_id}',
+            headers=self.auth(self.admin_token),
+            json={'active': True},
+        )
+        self.assertEqual(rejected.status_code, 409, rejected.text)
+        with self.Session() as db:
+            self.assertFalse(db.get(User, inactive_id).active)
 
 
 if __name__ == '__main__':

@@ -1090,6 +1090,34 @@ td {
   margin-top: 24px;
 }
 
+.reset-password-card {
+  min-width: 0;
+}
+
+.reset-password-card .notice {
+  margin: 18px 0;
+  overflow-wrap: anywhere;
+}
+
+.reset-login-link {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: #283245;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.reset-login-link:focus-visible {
+  outline: 3px solid rgba(91, 105, 129, .35);
+  outline-offset: 2px;
+}
+
 .approval-card h1 {
   margin: 7px 0 4px;
   font-size: 32px;

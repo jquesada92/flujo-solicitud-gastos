@@ -101,6 +101,15 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=10, max_length=128)
 
 
+class PasswordResetRequest(BaseModel):
+    token: str = Field(max_length=4096)
+    new_password: str = Field(min_length=10, max_length=128)
+
+
+class PasswordResetResponse(BaseModel):
+    message: str
+
+
 class UserChangeEventOut(BaseModel):
     event_sequence: int
     event_id: str

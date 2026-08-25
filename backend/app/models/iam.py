@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -19,6 +19,9 @@ class Permission(Base):
 
 class Role(Base):
     __tablename__ = 'roles'
+    __table_args__ = (
+        CheckConstraint('max_users IS NULL OR max_users >= 1', name='ck_roles_max_users_positive'),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
@@ -26,6 +29,7 @@ class Role(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     system_managed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    max_users: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

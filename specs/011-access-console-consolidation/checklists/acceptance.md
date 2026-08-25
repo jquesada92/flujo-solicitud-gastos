@@ -2,8 +2,14 @@
 
 - [x] seleccionar acceso de Usuario no produce PATCH inmediato.
 - [x] Guardar cambios persiste el acceso staged.
-- [x] máximo un Rol por Grupo.
-- [x] un Usuario puede seleccionar varios Roles globales ordinarios.
+- [x] cada tarjeta de Usuario muestra debajo del correo todos sus Roles asignados y omite la línea cuando no tiene ninguno.
+- [x] la ficha de un Usuario activo no técnico permite enviar un enlace de restablecimiento.
+- [x] la acción pide confirmación, evita doble envío y no espera **Guardar cambios**.
+- [x] cuentas técnicas e inactivas no ofrecen la acción.
+- [x] éxito y error se informan sin mostrar el token ni alterar el borrador de Roles.
+- [ ] la ficha muestra un selector independiente y máximo un Rol por cada Grupo.
+- [ ] un Usuario puede seleccionar varios Roles globales ordinarios.
+- [ ] guardar desde la ficha preserva todos los `role_ids` asignados que no fueron modificados.
 - [x] un Grupo puede existir sin Roles.
 - [x] un Rol puede ser global o pertenecer a máximo un Grupo.
 - [x] miembros de Grupo son solo lectura y derivan únicamente de Roles agrupados.
@@ -14,9 +20,13 @@
 - [x] editar o desvincular un Grupo conserva los Permisos propios del Rol.
 - [x] `config:manage` permanece system-only aunque se seleccione en un Grupo o Rol ordinario.
 - [x] nombre de Rol guardado se refleja sin GET adicional obligatorio.
+- [x] el Rol permite límite opcional de Usuarios activos y muestra su ocupación.
+- [x] Roles llenos rechazan asignación/reactivación y el máximo no baja de la ocupación.
 - [x] Administrador del sistema aparece como Rol global técnico protegido.
 - [x] rutas privadas sin sesión vuelven a Login.
 - [x] 401 invalida sesión local.
 - [x] no existe polling cada segundo/sub-segundo.
 - [x] GET idénticos concurrentes se deduplican.
 - [x] botón Recargar puede obtener datos frescos.
+- [x] a 1180, 1024, 640, 440, 390 y 320 px no hay overflow horizontal accidental.
+- [x] estados, nombres largos y acciones permanecen visibles o hacen wrap dentro de su contenedor.

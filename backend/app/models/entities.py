@@ -60,6 +60,7 @@ class User(Base):
     can_configure: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     session_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    password_reset_version: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
     last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
@@ -78,7 +79,11 @@ class UserChangeEvent(Base):
         Index('ix_user_change_events_user_time', 'user_id', 'occurred_at'),
     )
 
-    event_sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_sequence: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, 'sqlite'),
+        primary_key=True,
+        autoincrement=True,
+    )
     event_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     event_type: Mapped[str] = mapped_column(String(40), nullable=False)

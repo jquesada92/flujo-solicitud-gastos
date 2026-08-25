@@ -19,6 +19,37 @@ $composeBase = @(
     '--env-file', $previewEnv
 ) + $composeFiles
 
+function Get-DotEnvValue {
+    param(
+        [string]$Path,
+        [string]$Name
+    )
+
+    $content = Get-Content -LiteralPath $Path -Raw
+    $match = [regex]::Match($content, "(?m)^$([regex]::Escape($Name))=(.*)$")
+    if (-not $match.Success) {
+        return $null
+    }
+    return $match.Groups[1].Value.Trim()
+}
+
+function Set-DotEnvValue {
+    param(
+        [string]$Path,
+        [string]$Name,
+        [string]$Value
+    )
+
+    $content = Get-Content -LiteralPath $Path -Raw
+    $pattern = "(?m)^$([regex]::Escape($Name))=.*$"
+    if ($content -match $pattern) {
+        $content = [regex]::Replace($content, $pattern, "$Name=$Value")
+    } else {
+        $content = $content.TrimEnd() + "`r`n$Name=$Value`r`n"
+    }
+    Set-Content -LiteralPath $Path -Value $content -Encoding utf8
+}
+
 if (-not (Test-Path -LiteralPath $previewEnv)) {
     Copy-Item -LiteralPath $previewExample -Destination $previewEnv
     Write-Host 'Se creó .env.preview desde la plantilla.'
@@ -27,6 +58,18 @@ if (-not (Test-Path -LiteralPath $previewEnv)) {
 if (-not (Test-Path -LiteralPath $backendPreviewEnv)) {
     Copy-Item -LiteralPath $backendPreviewExample -Destination $backendPreviewEnv
     Write-Host 'Se creó backend/.env.preview desde la plantilla.'
+}
+
+$previewAdminEmail = Get-DotEnvValue -Path $backendPreviewEnv -Name 'ADMIN_EMAIL'
+$previewAdminPassword = Get-DotEnvValue -Path $backendPreviewEnv -Name 'ADMIN_PASSWORD'
+if (
+    [string]::IsNullOrWhiteSpace($previewAdminEmail) -or
+    $previewAdminEmail.StartsWith('REPLACE_') -or
+    [string]::IsNullOrWhiteSpace($previewAdminPassword) -or
+    $previewAdminPassword.StartsWith('REPLACE_') -or
+    $previewAdminPassword.Length -lt 16
+) {
+    throw 'Configura ADMIN_EMAIL y un ADMIN_PASSWORD aleatorio de al menos 16 caracteres en backend/.env.preview antes de publicar el túnel.'
 }
 
 # Ensure preview always uses the backend-specific preview file, including when
@@ -64,6 +107,9 @@ if ($envContent -match '(?m)^PUBLIC_URL=.*$') {
 }
 Set-Content -LiteralPath $backendPreviewEnv -Value $envContent -Encoding utf8
 
+Set-DotEnvValue -Path $previewEnv -Name 'LOCAL_PUBLIC_URL' -Value $tunnelUrl
+Set-DotEnvValue -Path $previewEnv -Name 'LOCAL_CORS_ALLOWED_ORIGINS' -Value $tunnelUrl
+Set-DotEnvValue -Path $previewEnv -Name 'LOCAL_EMAIL_MODE' -Value 'console'
 & docker @composeBase up -d --force-recreate backend
 if ($LASTEXITCODE -ne 0) {
     throw 'La URL se guardó, pero el backend no pudo recrearse.'

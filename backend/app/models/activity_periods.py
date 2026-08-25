@@ -195,6 +195,7 @@ def _snapshot_by_id(connection: Connection, entity_type, entity_id: int) -> dict
             'name': row['name'],
             'description': row['description'],
             'system_managed': row['system_managed'],
+            'max_users': row['max_users'],
             'group': dict(group) if group else None,
             'permission_codes': permission_codes,
             'active': row['active'],

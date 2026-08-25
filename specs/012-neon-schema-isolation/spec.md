@@ -1,11 +1,11 @@
 # Spec 012 — Neon y aislamiento de schema
 
 **Estado:** Implementada  
-**Constitución:** 2.13.0
+**Constitución:** 2.18.0
 
 ## Objetivo
 
-Ejecutar toda la aplicación en PostgreSQL/Neon dentro de un schema explícito y compatible con el endpoint pooled.
+Ejecutar la aplicación en PostgreSQL/Neon dentro de un schema explícito. El runtime es compatible con endpoint pooled; migraciones y `pg_dump` usan conexión directa.
 
 ## Contrato
 
@@ -21,12 +21,13 @@ Schema:   administracion
 3. Alembic usa schema explícito y `version_table_schema`.
 4. Alembic crea el schema si falta.
 5. No se envía `options=-csearch_path=...` al iniciar conexiones pooled.
-6. SQLite de unit tests opera sin schema.
-7. La baseline 0001 requiere un schema de aplicación limpio en instalación nueva.
-8. Una revisión desplegada no se reescribe; se añade otra revisión.
-9. Los tipos ENUM del ORM heredan el schema de metadata.
-10. SQL crudo usa nombres de tabla calificados y no depende de `search_path`.
-11. La aceptación incluye una escritura PostgreSQL real de contador, solicitud y aprobación.
+6. Mientras `start.sh` ejecute Alembic con la misma `DATABASE_URL` del runtime, el servicio usa una URL directa; una URL pooled de runtime requiere una conexión de migración separada implementada y probada.
+7. SQLite de unit tests opera sin schema.
+8. La baseline 0001 requiere un schema de aplicación limpio en instalación nueva.
+9. Una revisión desplegada no se reescribe; se añade otra revisión.
+10. Los tipos ENUM del ORM heredan el schema de metadata.
+11. SQL crudo usa nombres de tabla calificados y no depende de `search_path`.
+12. La aceptación incluye una escritura PostgreSQL real de contador, solicitud y aprobación.
 
 ## Cadena vigente
 
@@ -40,7 +41,12 @@ Schema:   administracion
 → 20260821_0007_period_audit_metadata
 → 20260821_0008_normalize_period_timestamps
 → 20260824_0009_group_permission_inheritance
+→ 20260824_0010_password_reset_links
+→ 20260825_0011_role_user_limit
 ```
+
+`0010` agrega `users.password_reset_version` con valor inicial cero y mantiene
+la evolución física como una revisión nueva sobre `0009`.
 
 ## Render
 

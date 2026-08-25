@@ -1,8 +1,8 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.16.0
-**Vigente desde:** 2026-08-24
+**Versión:** 2.18.0
+**Vigente desde:** 2026-08-25
 
 ## 1. Propósito
 
@@ -29,7 +29,7 @@ Un cambio funcional, de seguridad, persistencia, UX o arquitectura no está term
 
 - **Usuario**: cuenta autenticable del producto.
 - **Grupo**: ámbito organizacional opcional que puede contener cero o más Roles y aportar Permisos heredables a esos Roles.
-- **Rol**: conjunto reutilizable de Permisos propios. Puede ser global o pertenecer como máximo a un Grupo; si está agrupado suma los Permisos de su Grupo.
+- **Rol**: conjunto reutilizable de Permisos propios. Puede ser global o pertenecer como máximo a un Grupo; si está agrupado suma los Permisos de su Grupo. Puede limitar opcionalmente cuántos Usuarios activos lo tienen asignado.
 - **Rol global**: Rol sin Grupo. No crea membresía de Grupo.
 - **Permiso**: capacidad IAM atómica implementada por el producto.
 - **Cargo / Posición**: dato organizacional descriptivo. No concede acceso.
@@ -76,6 +76,11 @@ Reglas obligatorias:
 14. Para un Rol agrupado, los Permisos aplicables son la unión aditiva de sus Permisos propios y los de su Grupo. La ausencia de un Permiso propio significa “heredar si el Grupo lo aporta”; no existe `DENY` ni precedencia negativa a nivel de Rol.
 15. Editar los Permisos de un Grupo o mover un Rol entre Grupo y scope global no borra ni reemplaza sus filas `RolePermission`. Al desvincularlo solo deja de heredar del Grupo y conserva sus Permisos propios y sus asignaciones de Usuario.
 16. `GroupMember` es una proyección organizacional. Una fila de membresía sin `UserRoleAssignment` a un Rol activo de ese Grupo no concede ningún Permiso.
+17. Un Rol puede definir `max_users` como entero positivo; `NULL` significa sin límite.
+18. El cupo cuenta únicamente Usuarios activos con `UserRoleAssignment` al Rol. Un Usuario inactivo conserva la asignación, pero no consume cupo.
+19. Asignar el Rol o reactivar un Usuario que lo conserva se rechaza si alcanzaría un cupo ya lleno.
+20. No se permite reducir `max_users` por debajo de la cantidad actual de Usuarios activos asignados.
+21. La verificación de cupo es responsabilidad transaccional de FastAPI y debe serializar asignaciones concurrentes sobre el Rol; deshabilitar una opción llena en la UI es solo asistencia de UX.
 
 Permisos vigentes:
 
@@ -113,13 +118,18 @@ Para cada Rol agrupado, la operación es `RolePermission ∪ GroupPermission`: l
 Usuarios → Acceso por grupo → máximo un Rol por Grupo
          → Roles globales   → cero o más
 Grupos   → Permisos heredables + Roles opcionales + miembros derivados (solo lectura)
-Roles    → Permisos propios + herencia visible del Grupo
+Roles    → Permisos propios + herencia visible del Grupo + cupo opcional de Usuarios activos
 Permisos → catálogo de capacidades
 ```
 
 No se muestran permisos individuales. Cargo no forma parte de la matriz de autorización de Accesos.
 
 Toda edición de acceso se prepara localmente y se persiste únicamente mediante un botón explícito **Guardar cambios**. Marcar, desmarcar o seleccionar opciones no debe producir mutaciones por sí solo. Si se abandona una edición con cambios pendientes, la UI debe pedir confirmación.
+
+El envío de un enlace para restablecer contraseña es una acción de seguridad
+inmediata e independiente de las ediciones staged de IAM. Requiere confirmación
+explícita, `config:manage` efectivo y un Usuario destino activo que no pertenezca
+a `system_accounts`; no espera ni queda incluido en **Guardar cambios**.
 
 La edición de un Rol puede actualizar el estado local con la respuesta del `PATCH`; no requiere un GET adicional para reflejar su nombre o estado.
 
@@ -278,7 +288,7 @@ areas:manage
 config:manage
 ```
 
-No participa en aprobación ni votación. Conserva excepciones administrativas por recurso donde el backend las define. El Rol global técnico no puede asignarse, quitarse ni modificarse desde la consola ordinaria.
+En producción no participa en aprobación ni votación. En ambientes no productivos la política técnica puede incluir todos los Permisos activos para pruebas end-to-end; esa ampliación de laboratorio no redefine el acceso productivo. Conserva excepciones administrativas por recurso donde el backend las define. El Rol global técnico no puede asignarse, quitarse ni modificarse desde la consola ordinaria.
 
 ## 16. Persistencia y Neon
 
@@ -291,7 +301,7 @@ ph_torre_delta
 
 `DATABASE_SCHEMA=administracion` es obligatorio. `public` no se usa como schema de aplicación.
 
-Compatibilidad Neon pooled:
+Compatibilidad Neon pooled del runtime:
 
 - SQLAlchemy usa `MetaData(schema=DATABASE_SCHEMA)`;
 - Alembic usa schema explícito y `version_table_schema`;
@@ -299,6 +309,8 @@ Compatibilidad Neon pooled:
 - las migraciones crean el schema si falta.
 - los tipos Enum ORM heredan el schema de metadata;
 - SQL crudo usa nombres de tabla calificados derivados de metadata.
+
+Alembic y `pg_dump` usan una conexión directa de Neon. Mientras runtime y migraciones compartan una sola `DATABASE_URL` y `start.sh` migre antes de iniciar, el servicio completo debe usar la URL directa; adoptar pooled en runtime requiere implementar y probar una conexión de migración separada.
 
 Cadena Alembic vigente:
 
@@ -312,27 +324,42 @@ Cadena Alembic vigente:
 → 20260821_0007_period_audit_metadata
 → 20260821_0008_normalize_period_timestamps
 → 20260824_0009_group_permission_inheritance
+→ 20260824_0010_password_reset_links
+→ 20260825_0011_role_user_limit
 ```
 
 `20260824_0009_group_permission_inheritance` agrega `group_permissions` vacía para no alterar accesos existentes durante la migración. La tabla relaciona Grupo y Permiso de forma única; no introduce denegaciones ni modifica `role_permissions`.
+
+`20260824_0010_password_reset_links` agrega
+`users.password_reset_version` con valor inicial cero. Cada emisión o consumo
+válido lo incrementa para invalidar tokens anteriores sin almacenar el token; la
+emisión por sí sola no modifica la contraseña, `must_change_password` ni
+`session_version`.
+
+`20260825_0011_role_user_limit` agrega `roles.max_users` nullable con un check
+positivo y normaliza las instantáneas temporales de Rol. No asigna límites a
+Roles existentes: todos migran como ilimitados.
 
 Usuarios, Áreas, Roles y Grupos mantienen historial temporal versionado. Cada
 alta crea una fila cuyo `active_from` coincide con `created_at`; toda modificación
 relevante cierra la versión vigente y abre otra con una instantánea JSON. Siempre
 existe como máximo una versión abierta, también cuando `active=false`; el valor
 JSON permite distinguir períodos activos e inactivos. Usuario conserva cédula,
-contacto, nombre y Roles; Rol conserva el Grupo asociado. Las restricciones
+contacto, nombre y Roles; Rol conserva el Grupo asociado y su `max_users`. Las restricciones
 físicas impiden fechas invertidas y más de una versión abierta por entidad.
 Cada versión identifica además quién realizó el cambio, cuándo ocurrió, el tipo
 de evento, los campos modificados y el valor anterior/nuevo. Las acciones
 autenticadas registran ID, correo y cédula del actor; procesos sin sesión usan
 un identificador `SYSTEM:*`. La auditoría nunca almacena contraseñas o secretos.
 
-Las pantallas operativas y de configuración no muestran entidades inactivas.
-Intentar crear nuevamente un Usuario por cédula, o un Área/Rol/Grupo por su
-clave o nombre normalizado, debe ofrecer recuperar la entidad inactiva: el
-backend devuelve su ID y datos, la UI completa el formulario con confirmación y
-la reactivación conserva la identidad y el historial en vez de insertar un duplicado.
+Los listados activos de Usuario, Área, Rol y Grupo no mezclan entidades
+inactivas. Las rutas de recuperación y las vistas administrativas de inspección
+pueden consultarlas de forma explícita; el catálogo de Permisos puede conservar
+registros inactivos para trazabilidad. Intentar crear nuevamente un Usuario por
+cédula, o un Área/Rol/Grupo por su clave o nombre normalizado, debe ofrecer
+recuperar la entidad inactiva: el backend devuelve su ID y datos, la UI completa
+el formulario con confirmación y la reactivación conserva la identidad y el
+historial en vez de insertar un duplicado.
 
 La baseline `0001` permanece congelada después de desplegarse; los cambios físicos posteriores se agregan como nuevas revisiones.
 
@@ -345,6 +372,39 @@ La baseline `0001` permanece congelada después de desplegarse; los cambios fís
 - respuestas API sensibles con `Cache-Control: no-store`;
 - rate limiting por usuario autenticado;
 - secretos solo en variables de entorno/plataformas, nunca frontend o repositorio.
+
+El restablecimiento administrativo de contraseña usa un enlace tokenizado de
+propósito exclusivo, con vigencia configurable mediante
+`PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` y valor predeterminado de 30 minutos. Cada
+token sirve una sola vez y emitir uno nuevo invalida cualquier enlace anterior
+del mismo Usuario. Cambiar su correo o su estado `active` también invalida todos
+los enlaces emitidos. La emisión incrementa `password_reset_version`, pero no
+cambia la contraseña vigente, no modifica `must_change_password` y no revoca
+sesiones. El mensaje incluye el enlace y nunca una contraseña temporal o nueva.
+
+El token viaja en el fragmento
+`/reset-password#token=...`: el navegador no envía ese fragmento en la petición
+HTTP ni a logs HTTP/CDN. La SPA lo captura en memoria y lo retira de la URL al
+cargar, sin persistirlo como sesión ni en almacenamiento del navegador.
+
+Correo y base de datos no forman una transacción atómica. Si el proveedor
+reporta el fallo antes del commit, la base hace rollback y conserva el enlace
+anterior. Si el proveedor acepta el mensaje y después falla el commit, puede
+llegar un enlace inútil, pero no cambia la contraseña, las sesiones ni el acceso;
+el Administrador debe reintentar. Una entrega exactamente-una-vez requeriría un
+outbox transaccional.
+
+Consumir un enlace válido no requiere una sesión previa: reemplaza la contraseña
+con un hash Argon2, establece `must_change_password=false`, incrementa
+`session_version` y `password_reset_version`, invalida todos los enlaces de
+restablecimiento y revoca las sesiones anteriores. El flujo termina en el Login
+y nunca inicia sesión automáticamente. Después del commit se intenta enviar una
+notificación best-effort de contraseña cambiada, sin token ni contraseña; su
+fallo no revierte el cambio ya confirmado. La emisión usa la cuota sensible por
+usuario autenticado. El consumo limita 5 intentos por 15 minutos por IP y por
+proceso, con limpieza TTL; no constituye una cuota global entre réplicas y
+depende de una dirección cliente confiable. La auditoría registra la acción y
+sus actores sin persistir ni exponer el token, la contraseña o su hash.
 
 ## 18. Definition of Done
 
@@ -365,20 +425,28 @@ CHANGELOG.md
 Validaciones mínimas:
 
 ```text
-cd backend
-alembic heads
-# esperado: 20260824_0009
-\.venv\Scripts\python.exe -m unittest discover -s tests -v
-
-cd ..
 docker compose up -d --build
-docker compose exec -T backend python -m app.demo_monitoring
+docker compose exec -T backend alembic heads
+# esperado: 20260825_0011
 
-cd frontend
+cd backend
+.\.venv\Scripts\python.exe -m scripts.run_tests
+
+cd ..\frontend
 npm ci
 npm run build
 ```
 
-Para cambios IAM, la aceptación debe cubrir además la unión aditiva Rol ∪ Grupo, ausencia de `DENY`, conservación de `RolePermission` al editar o desvincular, ausencia de autoridad por `GroupMember` aislado y exclusión de `config:manage` para usuarios ordinarios.
+Los sembradores `app.demo_monitoring`/`app.live_demo` no son gates universales: mutan datos y solo pueden ejecutarse cuando la validación funcional lo requiera, dentro del PostgreSQL local aislado de Compose.
+
+Para cambios IAM, la aceptación debe cubrir además la unión aditiva Rol ∪ Grupo, ausencia de `DENY`, conservación de `RolePermission` al editar o desvincular, ausencia de autoridad por `GroupMember` aislado, exclusión de `config:manage` para usuarios ordinarios y, cuando aplique, cupo del Rol ante asignación, reactivación y concurrencia.
+
+Para restablecimiento de contraseña, la aceptación debe cubrir autorización y
+destinos protegidos, expiración y uso único, invalidación del enlace anterior,
+rollback ante fallo de correo, ausencia de credenciales en el mensaje y la
+auditoría, fragmento retirado por la SPA, invalidación por correo/estado, Argon2,
+revocación de sesiones al consumir, notificación post-commit y ausencia de
+auto-login. La prueba de entrega debe distinguir rollback antes del commit del
+caso aceptado por el proveedor cuyo commit posterior falla.
 
 GitHub Actions puede ser un gate adicional cuando exista cuota disponible; su indisponibilidad no convierte un run sin steps en evidencia de fallo del código.

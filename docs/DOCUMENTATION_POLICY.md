@@ -4,6 +4,8 @@
 
 Mantener documentación suficiente para comprender, operar y reconstruir el producto sin depender de conversaciones externas.
 
+`AGENTS.md` gobierna cómo una IA o agente automatizado puede trabajar de forma segura en el repositorio. Es una política operativa: no redefine el producto ni altera la jerarquía funcional que sigue.
+
 ## Jerarquía
 
 1. Constitución.
@@ -39,6 +41,21 @@ Una estructura física de compatibilidad puede documentarse únicamente si todav
 - performance o política de red;
 - terminología visible.
 
+## Matriz mínima de impacto
+
+| Tipo de cambio | Fuentes que deben revisarse | Evidencia mínima |
+| --- | --- | --- |
+| IAM, permisos o cardinalidades | Constitución, Spec/checklist/plan, Prompt, README, contrato, `IAM_MODEL.md`, `CONFIGURATION_ACCESS.md`, riesgos | suite backend, contrato documental y PostgreSQL local si cambia persistencia |
+| Seguridad, sesión o contraseña | Constitución, Spec, Prompt, contrato, arquitectura, correo, validación local y riesgos | casos adversos, auditoría sin secretos y flujo local completo |
+| Migración o schema | Constitución/cadena Alembic, README, Prompt, Neon, arquitectura y Spec | un solo head, `current=head` en PostgreSQL local y prueba de migración |
+| UX o responsive | Spec/checklist, Prompt, contrato, runtime frontend y guía de Accesos | build y navegador en los anchos exigidos |
+| Operación, CI o despliegue | `AGENTS.md`, README, runbook local/productivo, ejemplos `*.example` y workflows | comando ejecutado en el entorno autorizado, sin mutar producción |
+
+“Revisar” significa confirmar explícitamente si el documento cambia; no exige
+editar archivos que ya estén correctos. Si dos filas aplican, se acumulan sus
+fuentes y evidencias. Una IA no puede omitir una fuente porque el código o una
+prueba existente contradiga el contrato.
+
 ## Checklist documental por PR
 
 1. ¿Cambió una regla constitucional? Actualizar versión de Constitución.
@@ -48,10 +65,23 @@ Una estructura física de compatibilidad puede documentarse únicamente si todav
 5. ¿Cambió terminología? Buscar y corregir todo el repositorio documental.
 6. ¿Se sustituyó una idea? Eliminarla de la documentación normativa.
 7. Registrar una síntesis en CHANGELOG/HISTORY si aporta trazabilidad.
+8. ¿Cambió un comando, script o variable? Probarlo en el entorno local soportado y actualizar sus ejemplos.
+9. ¿Apareció una divergencia entre contrato y código? Registrarla en `KNOWN_RISKS.md`; nunca modificar el contrato para hacer pasar una implementación defectuosa.
+10. ¿Intervino una IA? Verificar que cumplió `AGENTS.md` y que no leyó, imprimió ni agregó secretos, respaldos o dumps.
+11. ¿Se agregó un invariante destinado a evitar regresiones? Añadir o actualizar
+    `test_documentation_contract.py` para comprobar la fuente canónica y detectar
+    referencias operativas obsoletas.
 
-## Validación automática/manual recomendada
+## Validación automática/manual obligatoria
 
-Además de tests/build, revisar texto buscando:
+Ejecutar el contrato documental además de los tests/build aplicables:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m unittest tests.test_documentation_contract -v
+```
+
+También revisar texto buscando:
 
 - nombres de ramas ya mergeadas usados como instrucciones;
 - heads Alembic obsoletos;
@@ -59,6 +89,8 @@ Además de tests/build, revisar texto buscando:
 - rutas o componentes inexistentes;
 - cardinalidades diferentes a los modelos/migraciones;
 - menciones a formas de acceso rechazadas por `iam_access_policy.py`.
+- resultados esperados de `alembic heads/current` que apunten a una revisión
+  anterior aunque el documento también mencione el head nuevo en otra sección.
 
 ## Fuentes de verdad técnica
 
@@ -66,9 +98,15 @@ Para verificar documentación IAM:
 
 ```text
 backend/app/services/iam_service.py
+backend/app/api/iam.py
 backend/app/api/iam_users.py
+backend/app/api/iam_group_assignments.py
 backend/app/api/iam_access_policy.py
 backend/app/core/security.py
+backend/app/models/iam.py
+backend/alembic/versions/20260824_0009_group_permission_inheritance.py
+backend/alembic/versions/20260824_0010_password_reset_links.py
+backend/alembic/versions/20260825_0011_role_user_limit.py
 ```
 
 Para persistencia:
@@ -85,8 +123,30 @@ Para UX actual:
 
 ```text
 frontend/src/iam-admin.jsx
+frontend/src/iam-responsive.css
 frontend/src/home-dashboard.jsx
 frontend/src/user-tracking.jsx
 frontend/src/auth-route-guard.js
 frontend/src/request-governor.js
 ```
+
+Para gates y operación segura:
+
+```text
+AGENTS.md
+backend/scripts/run_tests.py
+backend/tests/test_documentation_contract.py
+.github/workflows/reusable-ci.yml
+.github/workflows/deploy-production.yml
+docs/VALIDACION_LOCAL.md
+docs/VALIDACION_PRODUCCION.md
+```
+
+## Regla de evidencia
+
+Un comando que no se ejecutó no se reporta como exitoso. Un health check confirma disponibilidad, no que el proveedor haya publicado el commit esperado. Las pruebas unitarias con SQLite no sustituyen la validación funcional con PostgreSQL local, y ninguna prueba contra producción puede crear o modificar datos.
+
+Las pruebas estáticas no deben convertir una divergencia conocida en requisito.
+En particular, mientras `UsersPanel` conserve solo `role_ids[0]`, el contrato
+sigue siendo máximo un Rol por Grupo más varios Roles globales; cualquier cambio
+en esa ficha debe preservar todas las asignaciones que la UI aún no representa.

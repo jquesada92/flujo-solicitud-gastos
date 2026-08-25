@@ -35,6 +35,135 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn('placeholder="Cédula, nombre, apellido, rol o grupo"', source)
         self.assertIn('Mostrando {visibleUsers.length} usuario(s), máximo 10.', source)
 
+    def test_user_cards_show_every_assigned_role_below_the_email(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-responsive.css').read_text(encoding='utf-8')
+        card_list = source.split('<div className="iam-list iam-user-list">', 1)[1].split(
+            '{!visibleUsers.length', 1
+        )[0]
+        user_main_css = css.split('.iam-user-list .iam-list-main {', 1)[1].split('}', 1)[0]
+        user_roles_css = css.split('.iam-user-list .iam-user-roles {', 1)[1].split('}', 1)[0]
+
+        self.assertIn('.filter((role) => (user.role_ids || []).includes(role.id))', card_list)
+        self.assertIn('.map((role) => `${role.name}${role.active ? "" : " (inactivo)"}`)', card_list)
+        self.assertIn('<small>{user.email}</small>', card_list)
+        self.assertIn('assignedRoleNames.length > 0 && <small className="iam-user-roles">', card_list)
+        self.assertIn('assignedRoleNames.length === 1 ? "Rol" : "Roles"', card_list)
+        self.assertIn('assignedRoleNames.join(" · ")', card_list)
+        self.assertLess(card_list.index('<small>{user.email}</small>'), card_list.index('className="iam-user-roles"'))
+        self.assertNotIn('user.role_ids[0]', card_list)
+        self.assertIn('iamApi("/api/iam/roles?include_inactive=true")', source)
+        self.assertNotIn('current.roles.filter((item) => item.id !== savedRole.id)', source)
+        self.assertIn('.iam-user-list .iam-list-main {', css)
+        self.assertIn('text-align: left;', user_main_css)
+        self.assertIn('.iam-user-list .iam-user-roles {', css)
+        self.assertIn('overflow-wrap: anywhere;', user_roles_css)
+        self.assertIn('text-overflow: clip;', user_roles_css)
+        self.assertIn('white-space: normal;', user_roles_css)
+
+    def test_role_editor_exposes_and_explains_active_user_capacity(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-responsive.css').read_text(encoding='utf-8')
+
+        self.assertIn('limit_users: false, max_users: ""', source)
+        self.assertIn('max_users: form.limit_users ? Number(form.max_users) : null', source)
+        self.assertIn('roleBeingEdited?.assigned_user_count || 0', source)
+        self.assertIn('Limitar cantidad de usuarios activos', source)
+        self.assertIn('Máximo de usuarios activos', source)
+        self.assertIn('Los usuarios inactivos conservan el rol, pero no consumen cupo.', source)
+        self.assertIn('role.assigned_user_count >= role.max_users', source)
+        self.assertIn('" (sin cupo)"', source)
+        self.assertIn('className="iam-role-capacity"', source)
+        self.assertIn('.iam-role-limit {', css)
+        self.assertIn('.iam-role-list-card .iam-list-main .iam-role-capacity {', css)
+
+    def test_iam_password_reset_is_immediate_accessible_and_preserves_role_drafts(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-responsive.css').read_text(encoding='utf-8')
+        handler = source.split('const regeneratePassword = async (user) => {', 1)[1].split(
+            'const protectedGlobalRoles', 1
+        )[0]
+        security = source.split('<div className="iam-section iam-security-section">', 1)[1].split(
+            '<div className="iam-section"><h3>Rol</h3>', 1
+        )[0]
+
+        self.assertIn('passwordRequestUserId !== null', handler)
+        self.assertIn('user.is_system_account', handler)
+        self.assertIn('`/api/users/${user.id}/regenerate-password`', handler)
+        self.assertIn('method: "POST"', handler)
+        self.assertIn('enlace de un solo uso', handler)
+        self.assertIn('actual seguir', handler)
+        self.assertNotIn('reload()', handler)
+        self.assertIn('<h3>Seguridad</h3>', security)
+        self.assertIn('no guarda ni descarta cambios del rol', security)
+        self.assertIn('disabled={!selected.active || passwordRequestUserId !== null}', security)
+        self.assertIn('aria-busy={passwordRequestUserId === selected.id}', security)
+        self.assertIn('role={passwordNotice.type === "error" ? "alert" : "status"}', security)
+        self.assertIn('aria-live={passwordNotice.type === "error" ? "assertive" : "polite"}', security)
+        self.assertIn('.iam-security-action {', css)
+        self.assertIn('white-space: normal;', css.split('.iam-security-action {', 1)[1].split('}', 1)[0])
+        self.assertIn('width: 100%;', css.split('@media (max-width: 640px)', 1)[1])
+
+    def test_public_password_reset_route_consumes_token_without_login_or_analytics(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'main.jsx').read_text(encoding='utf-8')
+        styles = (REPO_ROOT / 'frontend' / 'src' / 'styles.css').read_text(encoding='utf-8')
+        page = source.split('function ResetPasswordPage() {', 1)[1].split(
+            '\nfunction StatusBadge', 1
+        )[0]
+
+        self.assertIn('new URLSearchParams(window.location.hash.slice(1)).get("token")', source)
+        self.assertIn('const PASSWORD_RESET_TOKEN = isPasswordResetPath()', source)
+        self.assertNotIn('window.location.search', page)
+        self.assertNotIn('window.location.hash', page)
+        self.assertIn('fetch(apiUrl("/api/auth/reset-password")', page)
+        self.assertIn('headers: { "Content-Type": "application/json" }', page)
+        self.assertNotIn('Authorization', page)
+        self.assertIn('JSON.stringify({ token: PASSWORD_RESET_TOKEN, new_password: form.new_password })', page)
+        self.assertIn('minLength="10"', page)
+        self.assertIn('maxLength="128"', page)
+        self.assertIn('form.new_password !== form.confirmation', page)
+        self.assertIn('localStorage.removeItem("access_token")', page)
+        self.assertIn('if (PASSWORD_RESET_TOKEN) window.history.replaceState({}, "", PASSWORD_RESET_PATH);', source)
+        self.assertNotIn('window.history.replaceState', page)
+        self.assertNotIn('localStorage.setItem("access_token"', page)
+        self.assertIn('role="status" aria-live="polite"', page)
+        self.assertIn('role="alert" aria-live="assertive"', page)
+        self.assertIn('href="/">Volver a iniciar sesi', page)
+        self.assertIn('if (!isPasswordResetPath()) injectSpeedInsights();', source)
+        self.assertIn('isPasswordResetPath(pathname)', source)
+        self.assertIn('!isPasswordResetPath() && <Analytics', source)
+        self.assertLess(source.index('const PASSWORD_RESET_TOKEN'), source.index('injectSpeedInsights();'))
+        self.assertLess(source.index('window.history.replaceState'), source.index('injectSpeedInsights();'))
+        self.assertLess(source.index('window.history.replaceState'), source.index('createRoot(document.getElementById("root"))'))
+        self.assertLess(
+            source.index('if (passwordResetRoute) return <ResetPasswordPage />;'),
+            source.index('if (!user) return <Login onLogin={setUser} />;'),
+        )
+        self.assertIn('.reset-password-card {', styles)
+        self.assertIn('.reset-login-link {', styles)
+        self.assertIn('.reset-login-link:focus-visible {', styles)
+
+    def test_audit_labels_cover_password_reset_link_lifecycle(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'main.jsx').read_text(encoding='utf-8')
+        self.assertIn('USER_PASSWORD_RESET_LINK_ISSUED:', source)
+        self.assertIn('USER_PASSWORD_RESET_COMPLETED:', source)
+        self.assertIn('USER_PASSWORD_REGENERATED:', source)
+
+    def test_legacy_password_regeneration_uses_the_same_link_semantics_without_reload(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'main.jsx').read_text(encoding='utf-8')
+        handler = source.split('const regeneratePassword = async (user) => {', 1)[1].split(
+            'const changedApartments', 1
+        )[0]
+
+        self.assertIn('`/api/users/${user.id}/regenerate-password`', handler)
+        self.assertIn('method: "POST"', handler)
+        self.assertIn('enlace de un solo uso', handler)
+        self.assertIn('actual seguir', handler)
+        self.assertNotIn('anterior dejar', handler)
+        self.assertNotIn('temporal', handler)
+        self.assertNotIn('await load()', handler)
+        self.assertIn('aria-busy={saving === `password-${u.id}`}', source)
+
     def test_vite_bridge_separates_configuration_read_from_manage(self):
         vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')
         self.assertIn('isSystemAdmin = user.is_system_account === true', vite)
@@ -169,7 +298,7 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         action_css = (REPO_ROOT / 'frontend' / 'src' / 'action-state.css').read_text(encoding='utf-8')
         index = (REPO_ROOT / 'frontend' / 'index.html').read_text(encoding='utf-8')
         self.assertIn('const roleDirty = useMemo(() => {', source)
-        self.assertIn('const canPersistRole = roleDirty && form.name.trim().length >= 2;', source)
+        self.assertIn('const canPersistRole = roleDirty && form.name.trim().length >= 2 && roleLimitIsValid;', source)
         self.assertIn('iam-persist-action ${canPersistRole ? "pending" : ""}', source)
         self.assertIn('disabled={!canPersistRole}', source)
         self.assertIn('button.primary:disabled', action_css)

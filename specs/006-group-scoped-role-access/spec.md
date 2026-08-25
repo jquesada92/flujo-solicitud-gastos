@@ -64,7 +64,7 @@ La ficha del Usuario tiene:
 
 ```text
 Acceso por grupo
-Grupo A → [Rol A1 | Rol A2 | Sin rol]
+Grupo A → [Rol A1 | Rol A2 | Sin rol adicional]
 
 Roles globales
 [x] Rol global 1

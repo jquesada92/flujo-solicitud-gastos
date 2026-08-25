@@ -48,6 +48,8 @@ class DatabaseSchemaContractTests(unittest.TestCase):
                 '20260821_0007_period_audit_metadata.py',
                 '20260821_0008_normalize_period_timestamps.py',
                 '20260824_0009_group_permission_inheritance.py',
+                '20260824_0010_password_reset_links.py',
+                '20260825_0011_role_user_limit.py',
             ],
         )
 
@@ -82,6 +84,14 @@ class DatabaseSchemaContractTests(unittest.TestCase):
         group_permissions = (VERSIONS_DIR / '20260824_0009_group_permission_inheritance.py').read_text(encoding='utf-8')
         self.assertIn("revision = '20260824_0009'", group_permissions)
         self.assertIn("down_revision = '20260821_0008'", group_permissions)
+        password_reset = (VERSIONS_DIR / '20260824_0010_password_reset_links.py').read_text(encoding='utf-8')
+        self.assertIn("revision = '20260824_0010'", password_reset)
+        self.assertIn("down_revision = '20260824_0009'", password_reset)
+        self.assertIn("'password_reset_version'", password_reset)
+        role_limit = (VERSIONS_DIR / '20260825_0011_role_user_limit.py').read_text(encoding='utf-8')
+        self.assertIn("revision = '20260825_0011'", role_limit)
+        self.assertIn("down_revision = '20260824_0010'", role_limit)
+        self.assertIn("'ck_roles_max_users_positive'", role_limit)
         self.assertIn("down_revision = '20260820_0002'", single_position)
 
         global_roles = (VERSIONS_DIR / '20260821_0004_allow_global_roles.py').read_text(encoding='utf-8')

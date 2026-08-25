@@ -31,7 +31,7 @@ from app.api import (
     users,
 )
 from app.core.config import get_settings
-from app.core.rate_limit import authenticated_subject, consume_user_request, policy_for_request
+from app.core.rate_limit import authenticated_subject, consume_user_request, password_reset_subject, policy_for_request
 from app.core.security import require_permission
 import app.models.activity_periods  # noqa: F401  Ensures temporal-history hooks are registered.
 
@@ -70,15 +70,27 @@ def create_app() -> FastAPI:
             and request.url.path.startswith('/api/')
             and request.url.path not in excluded
         ):
-            subject = authenticated_subject(request.headers.get('authorization'))
+            if request.url.path == '/api/auth/reset-password':
+                subject = password_reset_subject(
+                    request.client.host if request.client else None,
+                    request.headers.get('x-forwarded-for'),
+                )
+            else:
+                subject = authenticated_subject(request.headers.get('authorization'))
             if subject:
                 policy = policy_for_request(request.method, request.url.path)
                 allowed, remaining, retry_after = consume_user_request(subject, policy)
                 if not allowed:
                     return JSONResponse(
                         status_code=429,
-                        content={'detail': f'Máximo {policy.limit} acciones de tipo {policy.name} por minuto'},
-                        headers={'Retry-After': str(retry_after)},
+                        content={'detail': f'Máximo {policy.limit} acciones de tipo {policy.name} en {policy.window_seconds} segundos'},
+                        headers={
+                            'Retry-After': str(retry_after),
+                            'X-RateLimit-Policy': policy.name,
+                            'X-RateLimit-Limit': str(policy.limit),
+                            'X-RateLimit-Remaining': '0',
+                            'X-RateLimit-Window': str(policy.window_seconds),
+                        },
                     )
                 request.state.rate_limit_remaining = remaining
                 request.state.rate_limit_policy = policy
