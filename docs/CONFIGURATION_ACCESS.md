@@ -23,7 +23,7 @@ Permisos
 
 ### Usuarios
 
-La lista muestra solamente Usuarios activos, con un máximo de 10 resultados a la vez. Incluye un buscador sin distinción de mayúsculas ni acentos que encuentra por cédula, nombres, apellidos, correo, Rol asignado o Grupo al que pertenece ese Rol. Cuando no hay coincidencias se informa el estado vacío. Los Usuarios inactivos permanecen fuera de la lista y se recuperan mediante el flujo de reactivación por cédula.
+La lista muestra solamente Usuarios activos, con un máximo de 10 resultados a la vez. Incluye un buscador sin distinción de mayúsculas ni acentos que encuentra por cédula, nombres, apellidos, correo, Rol asignado o Grupo al que pertenece ese Rol. Cada tarjeta enumera debajo del correo todos los Roles asignados; omite esa línea cuando no hay Roles y marca como inactivo cualquier Rol asignado que ya no esté activo. Cuando no hay coincidencias se informa el estado vacío. Los Usuarios inactivos permanecen fuera de la lista y se recuperan mediante el flujo de reactivación por cédula.
 
 La ficha separa dos fuentes de Rol:
 
@@ -31,7 +31,7 @@ La ficha separa dos fuentes de Rol:
 Acceso por grupo
 Grupo: Operación     Rol: Solicitante
 Grupo: Aprobaciones  Rol: Aprobador
-Grupo: Configuración Rol: Sin rol
+Grupo: Configuración Rol: Sin rol adicional (solo acceso base)
 
 Roles globales
 [x] Auditor global
@@ -45,6 +45,25 @@ No se muestran controles de permisos directos a Usuario. La membresía del Grupo
 Todos los cambios quedan staged y solo se persisten al pulsar **Guardar cambios**.
 
 La cuenta técnica muestra su Rol global protegido `Administrador del sistema`, pero no permite editarlo desde esta consola.
+
+#### Restablecer contraseña
+
+La ficha de un Usuario activo que no pertenezca a `system_accounts` muestra
+**Regenerar contraseña**, que envía el enlace de restablecimiento. La acción
+exige `config:manage`, solicita confirmación y se ejecuta de inmediato; no forma
+parte del borrador de Roles ni espera **Guardar cambios**. Mientras se envía, el
+control queda deshabilitado para impedir solicitudes duplicadas.
+
+El éxito confirma el correo destinatario sin revelar el token. El email contiene
+un enlace de un solo uso con vigencia de 30 minutos por defecto y nunca una
+contraseña. Emitir un enlace nuevo invalida los anteriores, pero no cambia la
+contraseña ni las sesiones; si falla el correo, la emisión se revierte.
+
+#### Divergencia conocida de la ficha de Usuario
+
+El contrato normativo continúa siendo **máximo un Rol por Grupo y cero o más Roles globales**. La implementación actual de `iam-admin.jsx` presenta temporalmente un único selector general de Rol y reduce el borrador a `role_ids[0]`. Esta limitación es una divergencia de implementación, no una nueva cardinalidad del producto ni una alternativa válida para reconstrucciones futuras.
+
+Hasta corregirla, no se debe tomar el selector único ni las pruebas estáticas que lo fijan como fuente de verdad. Cualquier cambio en la ficha debe preservar todos los `role_ids` ya asignados, ofrecer un selector independiente por Grupo y permitir selección múltiple de Roles globales; guardar una modificación no puede eliminar Roles que el formulario no haya representado.
 
 ### Grupos
 
@@ -67,6 +86,12 @@ Al guardar, la UI usa la respuesta actualizada del backend para mantener nombre/
 
 Si el Rol está agrupado, también muestra los Permisos heredados. La semántica es aditiva: `RolePermission ∪ GroupPermission`; la ausencia de un grant propio hereda el del Grupo y no existe `DENY`.
 
+El editor permite dejar el Rol sin límite o fijar un máximo entero positivo de
+Usuarios activos. Muestra la ocupación actual y no permite guardar un máximo
+menor. Los Usuarios inactivos conservan el Rol sin consumir cupo; asignar o
+reactivar se rechaza si el cupo está lleno. La UI marca esas opciones como “sin
+cupo”, pero FastAPI vuelve a validar bajo bloqueo transaccional.
+
 ### Permisos
 
 Catálogo de capacidades implementadas. Se asignan como grants propios a Roles o heredables a Grupos, nunca directamente a Usuarios.
@@ -85,6 +110,18 @@ Accesos usa `#access-management` durante la transición del shell. `auth-route-g
 
 La topbar continúa navegando normalmente; salir de Accesos retira el hash antes de continuar.
 
+## Contrato responsive
+
+Accesos debe ser utilizable desde **320 px de ancho CSS en adelante** sin desbordamiento horizontal provocado por sus paneles o controles. En particular:
+
+- la grilla principal de dos columnas se apila cuando el ancho disponible no permite conservar ambas columnas;
+- tabs, toolbars, acciones y grupos de botones pueden hacer `wrap` sin superponerse ni salir del viewport;
+- el nombre o resumen largo de un Rol se ajusta o trunca dentro de su columna y nunca desplaza fuera de pantalla el estado `Activo`, `Inactivo` o `SISTEMA`;
+- las tarjetas de Permisos reducen sus columnas hasta una sola y sus códigos/descripciones pueden partir línea;
+- formularios, inputs, textareas y botones respetan el ancho de su contenedor.
+
+La regresión visual mínima se valida a **1180, 1024, 640, 440, 390 y 320 px**. El criterio de aceptación no es conservar siempre dos columnas, sino mantener legibilidad, acciones alcanzables, estados visibles y ausencia de scroll horizontal accidental.
+
 ## Política de requests
 
 Accesos no hace PATCH por cada checkbox/select. Los GET repetidos están sujetos al gobernador global y no existe polling sub-segundo.
@@ -93,6 +130,8 @@ Accesos no hace PATCH por cada checkbox/select. Los GET repetidos están sujetos
 
 ```text
 GET/PATCH/POST /api/iam/users...
+POST           /api/users/{user_id}/regenerate-password
+POST           /api/auth/reset-password
 GET/PATCH/POST /api/iam/groups...
 GET/PATCH/POST /api/iam/roles...
 GET            /api/iam/permissions
@@ -119,3 +158,11 @@ GET            /api/iam/me/permissions
 - sin sesión se vuelve a Login;
 - `config:read` no puede mutar;
 - un nombre de Rol actualizado se refleja inmediatamente.
+- el límite vacío significa ilimitado y cero/negativos se rechazan;
+- un Rol lleno rechaza asignación y reactivación, mientras inactivar libera cupo sin borrar el Rol;
+- el máximo no puede guardarse por debajo de la ocupación activa;
+- solo `config:manage` puede emitir un enlace para un Usuario activo no técnico;
+- la emisión confirmada es inmediata y no altera cambios staged de IAM;
+- el correo de restablecimiento contiene un enlace de uso único y no una contraseña;
+- emitir no rota credenciales/sesiones y el fallo de correo hace rollback;
+- consumir aplica Argon2, revoca sesiones, invalida enlaces y vuelve al Login sin auto-login.

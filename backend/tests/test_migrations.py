@@ -42,8 +42,10 @@ class MigrationTopologyTests(unittest.TestCase):
         config.set_main_option('script_location', str(backend_dir / 'alembic'))
         script = ScriptDirectory.from_config(config)
 
-        self.assertEqual(script.get_heads(), ['20260824_0009'])
+        self.assertEqual(script.get_heads(), ['20260825_0011'])
         revisions = {revision.revision: revision.down_revision for revision in script.walk_revisions()}
+        self.assertEqual(revisions['20260825_0011'], '20260824_0010')
+        self.assertEqual(revisions['20260824_0010'], '20260824_0009')
         self.assertEqual(revisions['20260824_0009'], '20260821_0008')
         self.assertEqual(revisions['20260821_0008'], '20260821_0007')
         self.assertEqual(revisions['20260821_0007'], '20260821_0006')
@@ -179,6 +181,29 @@ class MigrationTopologyTests(unittest.TestCase):
         self.assertIn("values['permission_codes'] = codes", migration)
         self.assertIn("values['permission_codes'] = []", migration)
         self.assertIn('_remove_permission_codes_from_activity_snapshots()', migration)
+
+    def test_password_reset_version_has_forward_migration(self):
+        backend_dir = Path(__file__).resolve().parents[1]
+        migration = (
+            backend_dir / 'alembic' / 'versions'
+            / '20260824_0010_password_reset_links.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("revision = '20260824_0010'", migration)
+        self.assertIn("down_revision = '20260824_0009'", migration)
+        self.assertIn("'password_reset_version'", migration)
+        self.assertIn("server_default=sa.text('0')", migration)
+
+    def test_role_user_limit_has_forward_migration_and_history_backfill(self):
+        backend_dir = Path(__file__).resolve().parents[1]
+        migration = (
+            backend_dir / 'alembic' / 'versions'
+            / '20260825_0011_role_user_limit.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("revision = '20260825_0011'", migration)
+        self.assertIn("down_revision = '20260824_0010'", migration)
+        self.assertIn("'ck_roles_max_users_positive'", migration)
+        self.assertIn("values['max_users'] = None", migration)
+        self.assertIn("values.pop('max_users', None)", migration)
 
     def test_group_permission_migration_renders_offline_upgrade_and_downgrade(self):
         postgres_upgrade = self._render_group_permission_sql(

@@ -6,7 +6,7 @@
 - [x] un Usuario no puede tener dos Roles del mismo Grupo.
 - [x] un Usuario puede tener varios Roles globales ordinarios.
 - [x] seleccionar Rol agrupado deriva membresía.
-- [x] “Sin rol” elimina membresía de ese Grupo.
+- [x] “Sin rol adicional” elimina membresía de ese Grupo sin eliminar el baseline `requests:read` del Usuario activo.
 - [x] un Rol global no crea membresía.
 - [x] quitar un Rol de un Grupo lo convierte en global sin borrar asignaciones.
 - [x] quitar un Rol de un Grupo conserva sus Permisos propios y elimina solo la herencia.

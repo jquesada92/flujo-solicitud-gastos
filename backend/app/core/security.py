@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -91,6 +92,44 @@ def create_token(user: User) -> str:
         settings.secret_key,
         algorithm='HS256',
     )
+
+
+def create_password_reset_token(user: User) -> str:
+    """Create a short-lived reset JWT independent from the user's sessions."""
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    return jwt.encode(
+        {
+            'purpose': 'password-reset',
+            'sub': str(user.id),
+            'prv': user.password_reset_version,
+            'jti': secrets.token_urlsafe(18),
+            'iat': now,
+            'exp': now + timedelta(minutes=settings.password_reset_token_expire_minutes),
+        },
+        settings.secret_key,
+        algorithm='HS256',
+    )
+
+
+def decode_password_reset_token(token: str) -> tuple[int, int]:
+    """Return the user/reset versions or fail without exposing token details."""
+    try:
+        payload = jwt.decode(
+            token,
+            get_settings().secret_key,
+            algorithms=['HS256'],
+            options={'require': ['purpose', 'sub', 'prv', 'exp', 'jti']},
+        )
+        if payload['purpose'] != 'password-reset':
+            raise ValueError('wrong token purpose')
+        user_id = int(payload['sub'])
+        reset_version = int(payload['prv'])
+        if user_id < 1 or reset_version < 1 or not isinstance(payload['jti'], str) or not payload['jti']:
+            raise ValueError('invalid reset claims')
+        return user_id, reset_version
+    except (jwt.PyJWTError, KeyError, TypeError, ValueError) as exc:
+        raise ValueError('invalid password reset token') from exc
 
 
 def apply_effective_permissions_to_user(db: Session, user: User) -> User:

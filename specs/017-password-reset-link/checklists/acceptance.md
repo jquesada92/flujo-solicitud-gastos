@@ -1,0 +1,29 @@
+# Aceptación 017
+
+- [x] solo una cuenta con `config:manage` efectivo puede emitir el enlace.
+- [x] un Usuario inactivo o una cuenta técnica no puede ser destinatario.
+- [x] la acción pide confirmación y se ejecuta separada de **Guardar cambios**.
+- [x] emitir no cambia la contraseña, `must_change_password` ni las sesiones.
+- [x] el token tiene propósito exclusivo y expira a los 30 minutos por defecto.
+- [x] `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES` permite configurar la vigencia.
+- [x] emitir un enlace nuevo invalida todos los anteriores del Usuario.
+- [x] cambiar correo o estado `active` invalida todos los enlaces del Usuario.
+- [x] un token solo puede consumirse una vez.
+- [x] token manipulado, expirado, reemplazado o consumido no modifica datos.
+- [x] un fallo reportado por el proveedor antes del commit revierte la emisión y conserva el enlace anterior.
+- [x] si el proveedor acepta y el commit falla, el enlace recibido es inútil y no cambia contraseña, sesiones o acceso.
+- [x] el correo contiene el enlace y no contiene contraseña temporal o nueva.
+- [x] el token viaja en fragmento, no llega a logs HTTP/CDN y la SPA lo retira al cargar.
+- [x] el consumo público almacena la contraseña con Argon2.
+- [x] el consumo establece `must_change_password=false`.
+- [x] el consumo revoca sesiones e invalida todos los enlaces del Usuario.
+- [x] completar el flujo vuelve al Login sin auto-login.
+- [x] después del commit se intenta notificar best-effort el cambio sin token ni contraseña.
+- [x] fallar esa notificación no revierte la contraseña confirmada.
+- [x] respuesta, UI y auditoría no exponen token, contraseña ni hash.
+- [x] los logs ordinarios no exponen el token; el cuerpo local de `console` es una excepción sensible documentada.
+- [x] emisión usa rate limit sensible autenticado y consumo limita localmente 5 intentos por 15 minutos por IP/proceso.
+- [x] la cuota pública limpia entradas por TTL y no se presenta como garantía global entre réplicas.
+- [x] la UI evita doble envío y mantiene foco y mensajes accesibles.
+- [x] la vista funciona a 1180, 1024, 640, 440, 390 y 320 px sin overflow.
+- [x] las pruebas de correo usan mocks o `console` y no realizan entrega externa.

@@ -20,8 +20,8 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
-      - run: python -m compileall -q app
-      - run: python -m unittest discover -s tests -v
+      - run: python -m compileall -q app scripts
+      - run: python -m scripts.run_tests
 
   frontend:
     runs-on: ubuntu-latest
@@ -37,11 +37,25 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run build
+      - name: Verify modular expense form is present in the built bundle
+        run: |
+          grep -R -F "Tipo de solicitud:" dist
+          grep -R -F "Opciones para votación" dist
       - run: npm audit --omit=dev --audit-level=moderate
 
   containers:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build backend
+      - run: docker build -t approval-backend:ci backend
+      - name: Smoke test backend entrypoint and operational module imports
+        run: |
+          docker run --rm --entrypoint /bin/sh approval-backend:ci -c \
+            'test -x /app/scripts/start.sh && test "$(head -n 1 /app/scripts/start.sh)" = "#!/bin/sh"'
+          docker run --rm \
+            -e DATABASE_URL=sqlite:////tmp/ci.db \
+            -e EMAIL_MODE=console \
+            --entrypoint python \
+            approval-backend:ci \
+            -c 'import app; import scripts.bootstrap_admin; import scripts.test_email'
       - run: docker build frontend

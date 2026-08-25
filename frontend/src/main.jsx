@@ -4,7 +4,17 @@ import { Analytics } from "@vercel/analytics/react";
 import { injectSpeedInsights } from "@vercel/speed-insights";
 import "./styles.css";
 
-injectSpeedInsights();
+const PASSWORD_RESET_PATH = "/reset-password";
+const isPasswordResetPath = (pathname = window.location.pathname) => (
+  pathname === PASSWORD_RESET_PATH || pathname === `${PASSWORD_RESET_PATH}/`
+);
+const PASSWORD_RESET_TOKEN = isPasswordResetPath()
+  ? new URLSearchParams(window.location.hash.slice(1)).get("token")?.trim() || ""
+  : "";
+
+if (PASSWORD_RESET_TOKEN) window.history.replaceState({}, "", PASSWORD_RESET_PATH);
+
+if (!isPasswordResetPath()) injectSpeedInsights();
 
 const API_BASE_URL = String(import.meta.env.VITE_API_URL || "").replace(
   /\/$/,
@@ -73,7 +83,8 @@ const confirmDiscardChanges = () => !hasUnsavedChanges() || window.confirm("¿De
 
 function protectAnalyticsEvent(event) {
   try {
-    if (new URL(event.url).pathname.startsWith("/approve/")) return null;
+    const pathname = new URL(event.url).pathname;
+    if (pathname.startsWith("/approve/") || isPasswordResetPath(pathname)) return null;
   } catch (_) {
     return null;
   }
@@ -270,6 +281,108 @@ function Login({ onLogin }) {
           {error && <div className="notice error">{error}</div>}
           <button className="primary">Entrar</button>
         </form>
+      </section>
+    </main>
+  );
+}
+
+function ResetPasswordPage() {
+  const [form, setForm] = useState({ new_password: "", confirmation: "" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const invalidLinkMessage = "El enlace de restablecimiento no es válido o ya venció.";
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setError("");
+    if (!PASSWORD_RESET_TOKEN) {
+      setError(invalidLinkMessage);
+      return;
+    }
+    if (form.new_password.length < 10 || form.new_password.length > 128) {
+      setError("La nueva contraseña debe tener entre 10 y 128 caracteres.");
+      return;
+    }
+    if (form.new_password !== form.confirmation) {
+      setError("Las contraseñas nuevas no coinciden.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await fetch(apiUrl("/api/auth/reset-password"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: PASSWORD_RESET_TOKEN, new_password: form.new_password }),
+      });
+      if (!response.ok) {
+        const responseError = new Error("Password reset request failed");
+        responseError.status = response.status;
+        throw responseError;
+      }
+      const result = await response.json();
+      localStorage.removeItem("access_token");
+      setForm({ new_password: "", confirmation: "" });
+      setSuccess(result.message || "Contraseña restablecida. Ya puedes iniciar sesión.");
+    } catch (requestError) {
+      setError(requestError.status === 400
+        ? invalidLinkMessage
+        : "No se pudo restablecer la contraseña. Intenta nuevamente.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <main className="single">
+      <section className="card login-card reset-password-card">
+        <div className="brand-mark dark">PH</div>
+        <p className="eyebrow">SEGURIDAD DE LA CUENTA</p>
+        <h1>{success ? "Contraseña restablecida" : "Crea una nueva contraseña"}</h1>
+        {success ? (
+          <>
+            <div className="notice success" role="status" aria-live="polite">{success}</div>
+            <a className="secondary reset-login-link" href="/">Volver a iniciar sesión</a>
+          </>
+        ) : (
+          <>
+            <p className="muted">Elige una contraseña nueva para completar el restablecimiento. El enlace es personal y solo puede utilizarse una vez.</p>
+            <form className="login-form" onSubmit={submit} aria-busy={saving}>
+              <label>
+                Nueva contraseña
+                <input
+                  type="password"
+                  value={form.new_password}
+                  onChange={(event) => setForm({ ...form, new_password: event.target.value })}
+                  required
+                  minLength="10"
+                  maxLength="128"
+                  autoComplete="new-password"
+                  disabled={saving || !PASSWORD_RESET_TOKEN}
+                />
+              </label>
+              <label>
+                Confirmar nueva contraseña
+                <input
+                  type="password"
+                  value={form.confirmation}
+                  onChange={(event) => setForm({ ...form, confirmation: event.target.value })}
+                  required
+                  minLength="10"
+                  maxLength="128"
+                  autoComplete="new-password"
+                  disabled={saving || !PASSWORD_RESET_TOKEN}
+                />
+              </label>
+              {(!PASSWORD_RESET_TOKEN || error) && <div className="notice error" role="alert" aria-live="assertive">{error || invalidLinkMessage}</div>}
+              <button className="primary" disabled={saving || !PASSWORD_RESET_TOKEN}>
+                {saving ? "Restableciendo..." : "Restablecer contraseña"}
+              </button>
+              <a className="reset-login-link" href="/">Volver a iniciar sesión</a>
+            </form>
+          </>
+        )}
       </section>
     </main>
   );
@@ -1601,7 +1714,7 @@ function Users({ canConfigure, canEditPeople, view }) {
   const regeneratePassword = async (user) => {
     if (
       !window.confirm(
-        `¿Regenerar la contraseña de ${user.name}? La contraseña anterior dejará de funcionar y se enviará una nueva por correo.`,
+        `¿Enviar un enlace de un solo uso para restablecer la contraseña de ${user.name} a ${user.email}? La contraseña actual seguirá vigente hasta que el usuario complete el cambio.`,
       )
     )
       return;
@@ -1613,9 +1726,8 @@ function Users({ canConfigure, canEditPeople, view }) {
       });
       setMessage({
         type: "success",
-        text: `Se envió una nueva contraseña temporal a ${user.email}.`,
+        text: `Se envió un enlace de un solo uso para restablecer la contraseña a ${user.email}.`,
       });
-      await load();
     } catch (err) {
       setMessage({ type: "error", text: err.message });
     } finally {
@@ -1922,6 +2034,7 @@ function Users({ canConfigure, canEditPeople, view }) {
             </button>
           </div>
         </div>
+        {message && <div className={`notice ${message.type}`} role={message.type === "error" ? "alert" : "status"} aria-live={message.type === "error" ? "assertive" : "polite"}>{message.text}</div>}
         <div className="table-filters">
           <label>
             Buscar usuario
@@ -2017,6 +2130,7 @@ function Users({ canConfigure, canEditPeople, view }) {
                     </td>
                     <td>
                       <button
+                        type="button"
                         className="secondary nowrap"
                         disabled={
                           !canConfigure || isSystemAdmin ||
@@ -2024,6 +2138,7 @@ function Users({ canConfigure, canEditPeople, view }) {
                           saving === `password-${u.id}`
                         }
                         onClick={() => regeneratePassword(u)}
+                        aria-busy={saving === `password-${u.id}`}
                       >
                         {saving === `password-${u.id}`
                           ? "Enviando..."
@@ -2245,6 +2360,7 @@ function Audit() {
   const actionNames = {
     USER_CREATED: "Usuario creado", USER_ACCESS_UPDATED: "Acceso actualizado",
     USER_PASSWORD_REGENERATED: "Contraseña regenerada", PROFILE_PERMISSIONS_APPLIED: "Permisos aplicados",
+    USER_PASSWORD_RESET_LINK_ISSUED: "Enlace de contraseña enviado", USER_PASSWORD_RESET_COMPLETED: "Contraseña restablecida",
     PROFILE_CREATED: "Perfil creado", PROFILE_UPDATED: "Perfil actualizado",
     POLICY_CREATED: "Regla creada", POLICY_UPDATED: "Regla actualizada", POLICY_DELETED: "Regla eliminada",
     APPROVAL_CREATED: "Aprobación creada", APPROVAL_ACTIVATED: "Aprobación activada",
@@ -3094,6 +3210,7 @@ function HomeDashboard({ refreshKey, onOpenRequests }) {
 }
 
 function App() {
+  const passwordResetRoute = isPasswordResetPath();
   const [user, setUser] = useState(null),
     [loading, setLoading] = useState(true),
     [tab, setTab] = useState("home"),
@@ -3102,6 +3219,10 @@ function App() {
     [revision, setRevision] = useState(null),
     [catalog, setCatalog] = useState([]);
   useEffect(() => {
+    if (passwordResetRoute) {
+      setLoading(false);
+      return;
+    }
     if (!localStorage.getItem("access_token")) {
       setLoading(false);
       return;
@@ -3110,7 +3231,7 @@ function App() {
       .then(setUser)
       .catch(() => localStorage.removeItem("access_token"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [passwordResetRoute]);
   useEffect(() => {
     if (user)
       api("/api/categories")
@@ -3167,6 +3288,7 @@ function App() {
     window.addEventListener("beforeunload", warnBeforeUnload);
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
   }, []);
+  if (passwordResetRoute) return <ResetPasswordPage />;
   const emailActionMatch = window.location.pathname.match(/^\/email-action\/(approval|vote)\/([^/]+)$/);
   if (emailActionMatch) return <EmailActionPage kind={emailActionMatch[1]} token={emailActionMatch[2]} />;
   if (loading) return <main className="single">Cargando...</main>;
@@ -3307,7 +3429,7 @@ createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <AppErrorBoundary>
       <App />
-      <Analytics beforeSend={protectAnalyticsEvent} />
+      {!isPasswordResetPath() && <Analytics beforeSend={protectAnalyticsEvent} />}
     </AppErrorBoundary>
   </React.StrictMode>,
 );

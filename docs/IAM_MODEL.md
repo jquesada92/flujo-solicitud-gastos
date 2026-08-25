@@ -17,6 +17,8 @@ Permission propia    → Role ── 0..1 Group ← Permission heredable
 - un Rol sin `GroupRole` es global;
 - un Usuario puede tener máximo un Rol por Grupo;
 - un Usuario puede tener cero o más Roles globales ordinarios;
+- un Rol puede tener `max_users` nullable; un valor configurado es entero positivo;
+- el cupo cuenta Usuarios activos asignados y los inactivos conservan la asignación sin consumirlo;
 - un Grupo puede tener cero o más Permisos heredables;
 - un Rol agrupado suma sus Permisos propios y los del Grupo, sin `DENY`;
 - `GroupMember` se deriva/reconstruye solo desde `UserRoleAssignment + GroupRole`;
@@ -48,7 +50,7 @@ group_activity_periods
 Cada tabla de períodos tiene llave primaria propia, llave foránea a su entidad,
 `active_from`, `active_until` y una instantánea `values` JSON. Solo puede existir
 una fila abierta por entidad. `values.active=false` identifica los intervalos de
-inactividad; el Usuario conserva su cédula y Roles, y el Rol su Grupo asociado.
+inactividad; el Usuario conserva su cédula y Roles, y el Rol su Grupo asociado y `max_users`.
 Los metadatos `event_at`, `actor_*`, `change_type`, `changed_fields` y `changes`
 permiten reconstruir quién cambió qué y cuándo, además de la vigencia temporal.
 
@@ -96,6 +98,8 @@ areas:manage
 config:manage
 ```
 
+En producción esa cuenta no recibe `requests:create` ni `requests:approve` y no participa en aprobación/votación. En desarrollo y pruebas puede recibir todos los Permisos activos para ejercitar flujos end-to-end; esa política ampliada es exclusiva del ambiente no productivo y no constituye el contrato de acceso real.
+
 El Rol `system-administrator` es global y `system_managed`. El bootstrap lo asigna a la cuenta técnica para representar su responsabilidad, pero `SystemAccount` continúa siendo la autoridad protegida para sus privilegios.
 
 ## `config:read`
@@ -121,6 +125,13 @@ Permite mutar Área/Categoría. Puede estar en un Rol global o en un Rol de nego
 - no se repita el mismo Grupo entre los Roles agrupados de un Usuario;
 - un Rol global ordinario pueda asignarse sin crear membresía de Grupo;
 - Roles técnicos `system_managed` no puedan asignarse desde la consola ordinaria.
+- un Rol con límite no exceda su cantidad de Usuarios activos al asignar o reactivar;
+- `max_users` no se reduzca por debajo de la ocupación activa vigente.
+
+La asignación bloquea las filas de Roles objetivo en orden estable antes de contar
+ocupación. Esto serializa dos asignaciones concurrentes en PostgreSQL. La
+desactivación libera cupo sin borrar `UserRoleAssignment`; reactivar vuelve a
+validarlo.
 
 ## Cambio de scope de un Rol
 
@@ -140,13 +151,15 @@ Usuarios:
 
 ```text
 Acceso por grupo
-Grupo A → [Rol A1 | Rol A2 | Sin rol]
-Grupo B → [Rol B1 | Rol B2 | Sin rol]
+Grupo A → [Rol A1 | Rol A2 | Sin rol adicional]
+Grupo B → [Rol B1 | Rol B2 | Sin rol adicional]
 
 Roles globales
 [x] Rol Global 1
 [x] Rol Global 2
 ```
+
+“Sin rol adicional” elimina la membresía derivada de ese Grupo, pero no elimina el baseline `requests:read` que conserva todo Usuario activo.
 
 Cambiar selectores o checks es local. **Guardar cambios** envía la lista completa de `role_ids` en una única actualización; el backend deriva `group_ids` solo desde los Roles agrupados.
 
@@ -163,6 +176,8 @@ Roles:
 - contienen Permisos propios;
 - muestran por separado los Permisos heredados del Grupo; un heredado sigue efectivo aunque el checkbox propio esté desmarcado;
 - pueden ser globales o pertenecer a máximo un Grupo;
+- pueden quedar sin límite o definir el máximo de Usuarios activos asignados;
+- muestran ocupación actual y deshabilitan como “sin cupo” una opción llena para otro Usuario;
 - guardar usa la respuesta del backend para actualizar el estado local y evitar GET innecesario.
 
 ## Fuentes explicables

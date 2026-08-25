@@ -77,7 +77,7 @@ function PermissionLabel({ permission }) {
 function RolesPanel({ permissions, roles, groups, onRoleSaved, setError }) {
   const [selectedId, setSelectedId] = useState(null);
   const [recovery, setRecovery] = useState(null);
-  const [form, setForm] = useState({ name: "", description: "", permission_codes: [] });
+  const [form, setForm] = useState({ name: "", description: "", permission_codes: [], limit_users: false, max_users: "" });
   const selected = roles.find((item) => item.id === selectedId) || null;
   const selectedGroup = selected
     ? groups.find((group) => (group.role_ids || []).includes(selected.id)) || null
@@ -96,14 +96,22 @@ function RolesPanel({ permissions, roles, groups, onRoleSaved, setError }) {
     selectedId === role.id && form.name.trim() ? form.name.trim() : role.name
   );
   const roleDirty = useMemo(() => {
-    if (!selected) return Boolean(form.name.trim() || form.description.trim() || form.permission_codes.length);
+    if (!selected) return Boolean(form.name.trim() || form.description.trim() || form.permission_codes.length || form.limit_users);
     return (
       form.name !== selected.name
       || form.description !== (selected.description || "")
       || !sameCodes(form.permission_codes, selected.permission_codes)
+      || form.limit_users !== (selected.max_users !== null)
+      || (form.limit_users && Number(form.max_users) !== selected.max_users)
     );
   }, [form, selected]);
-  const canPersistRole = roleDirty && form.name.trim().length >= 2;
+  const roleBeingEdited = selected || recovery;
+  const minimumRoleLimit = Math.max(1, roleBeingEdited?.assigned_user_count || 0);
+  const roleLimitIsValid = !form.limit_users || (
+    Number.isInteger(Number(form.max_users))
+    && Number(form.max_users) >= minimumRoleLimit
+  );
+  const canPersistRole = roleDirty && form.name.trim().length >= 2 && roleLimitIsValid;
 
   const confirmDiscardRoleDraft = (message) => (
     !roleDirty || window.confirm(message)
@@ -120,7 +128,7 @@ function RolesPanel({ permissions, roles, groups, onRoleSaved, setError }) {
     if (!confirmDiscardRoleDraft("Hay cambios sin guardar en este rol. ¿Deseas descartarlos y crear otro rol?")) return;
     setSelectedId(null);
     setRecovery(null);
-    setForm({ name: "", description: "", permission_codes: [] });
+    setForm({ name: "", description: "", permission_codes: [], limit_users: false, max_users: "" });
   };
 
   useEffect(() => {
@@ -128,7 +136,9 @@ function RolesPanel({ permissions, roles, groups, onRoleSaved, setError }) {
       name: selected.name,
       description: selected.description || "",
       permission_codes: selected.permission_codes || [],
-    } : { name: "", description: "", permission_codes: [] });
+      limit_users: selected.max_users !== null,
+      max_users: selected.max_users ?? "",
+    } : { name: "", description: "", permission_codes: [], limit_users: false, max_users: "" });
   }, [selectedId, roles]);
 
   const togglePermission = (code, checked) => setForm((current) => ({
@@ -146,7 +156,13 @@ function RolesPanel({ permissions, roles, groups, onRoleSaved, setError }) {
       const target = selected || recovery;
       const saved = await iamApi(target ? `/api/iam/roles/${target.id}` : "/api/iam/roles", {
         method: target ? "PATCH" : "POST",
-        body: JSON.stringify({ ...form, name: form.name.trim(), active: true }),
+        body: JSON.stringify({
+          name: form.name.trim(),
+          description: form.description,
+          permission_codes: form.permission_codes,
+          max_users: form.limit_users ? Number(form.max_users) : null,
+          active: true,
+        }),
       });
       setRecovery(null);
       onRoleSaved(saved);
@@ -160,7 +176,13 @@ function RolesPanel({ permissions, roles, groups, onRoleSaved, setError }) {
       const candidate = await iamApi(`/api/iam/roles/recovery?name=${encodeURIComponent(form.name.trim())}`);
       if (candidate && window.confirm(`El rol “${candidate.name}” ya existe inactivo. ¿Deseas recuperar sus datos y reactivarlo al guardar?`)) {
         setRecovery(candidate);
-        setForm({ name: candidate.name, description: candidate.description || "", permission_codes: candidate.permission_codes || [] });
+        setForm({
+          name: candidate.name,
+          description: candidate.description || "",
+          permission_codes: candidate.permission_codes || [],
+          limit_users: candidate.max_users !== null,
+          max_users: candidate.max_users ?? "",
+        });
       }
     } catch (error) { setError(error.message); }
   };
@@ -182,7 +204,7 @@ function RolesPanel({ permissions, roles, groups, onRoleSaved, setError }) {
     <section className="iam-card iam-role-list-card">
       <div className="iam-toolbar"><h2>Roles</h2><button className="iam-button" onClick={startNewRole}>+ Nuevo</button></div>
       <div className="iam-list iam-role-list">{roles.filter((role) => role.active).map((role) => <div className={`iam-list-item iam-role-list-item ${selectedId === role.id ? "selected" : ""}`} key={role.id}>
-        <button className="iam-button iam-role-select" onClick={() => selectRole(role.id)}><span className="iam-list-main"><strong>{displayRoleName(role)}</strong><small>{role.permission_codes.join(" · ") || "Sin permisos"}</small></span></button>
+        <button className="iam-button iam-role-select" onClick={() => selectRole(role.id)}><span className="iam-list-main"><strong>{displayRoleName(role)}</strong><small>{role.permission_codes.join(" · ") || "Sin permisos"}</small><small className="iam-role-capacity">{role.assigned_user_count} usuario(s) activo(s) · {role.max_users === null ? "Sin límite" : `Máximo ${role.max_users}`}</small></span></button>
         {role.system_managed ? <span className="iam-system iam-role-status">SISTEMA</span> : <button className="iam-button iam-role-status" onClick={() => toggleActive(role)}>{role.active ? "Activo" : "Inactivo"}</button>}
       </div>)}</div>
     </section>
@@ -191,6 +213,12 @@ function RolesPanel({ permissions, roles, groups, onRoleSaved, setError }) {
       {selected?.system_managed ? <div className="iam-notice">Este rol técnico global es administrado por el sistema.</div> : <form className="iam-form" onSubmit={save}>
         <label>Nombre<input value={form.name} onChange={(event) => { setRecovery(null); setForm({ ...form, name: event.target.value }); }} onBlur={findRecovery} required minLength={2} /></label>
         <label>Descripción<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
+        <fieldset className="iam-role-limit">
+          <label className="iam-role-limit-toggle"><input type="checkbox" checked={form.limit_users} onChange={(event) => setForm((current) => ({ ...current, limit_users: event.target.checked, max_users: event.target.checked ? (current.max_users || String(minimumRoleLimit)) : "" }))} /><span>Limitar cantidad de usuarios activos</span></label>
+          <label>Máximo de usuarios activos<input type="number" inputMode="numeric" min={minimumRoleLimit} step="1" value={form.max_users} disabled={!form.limit_users} onChange={(event) => setForm((current) => ({ ...current, max_users: event.target.value }))} /></label>
+          <small>{roleBeingEdited ? `Actualmente hay ${roleBeingEdited.assigned_user_count} usuario(s) activo(s) asignado(s).` : "Los usuarios inactivos conservan el rol, pero no consumen cupo."}</small>
+          {form.limit_users && !roleLimitIsValid && <small className="iam-field-error">Indica un número entero igual o mayor que {minimumRoleLimit}.</small>}
+        </fieldset>
         <div><strong>Permisos propios del rol</strong><p className="iam-muted">Estos permisos se conservan en el rol. {selectedGroup?.active ? `Además hereda los permisos de ${selectedGroup.name}.` : selectedGroup ? `Está vinculado a ${selectedGroup.name}, pero el grupo está inactivo y actualmente no aporta permisos.` : "Si luego se vincula a un grupo, sumará también los permisos de ese grupo."}</p></div>
         <CheckList
           items={permissions.filter((item) => item.active)}
@@ -315,6 +343,8 @@ function UsersPanel({ users, groups, roles, permissions, reload, setError }) {
   const [form, setForm] = useState(emptyUser);
   const [draftRoleIds, setDraftRoleIds] = useState([]);
   const [savingAccess, setSavingAccess] = useState(false);
+  const [passwordRequestUserId, setPasswordRequestUserId] = useState(null);
+  const [passwordNotice, setPasswordNotice] = useState(null);
   const [recovery, setRecovery] = useState(null);
   const [userQuery, setUserQuery] = useState("");
   const selected = users.find((item) => item.id === selectedId) || null;
@@ -439,6 +469,26 @@ function UsersPanel({ users, groups, roles, permissions, reload, setError }) {
     finally { setSavingAccess(false); }
   };
 
+  const regeneratePassword = async (user) => {
+    if (!user?.active || user.is_system_account || passwordRequestUserId !== null) return;
+    if (!window.confirm(`¿Enviar un enlace de un solo uso para restablecer la contraseña de ${user.name} a ${user.email}? La contraseña actual seguirá vigente hasta que el usuario complete el cambio.`)) return;
+    setPasswordRequestUserId(user.id);
+    setPasswordNotice(null);
+    setError("");
+    try {
+      await iamApi(`/api/users/${user.id}/regenerate-password`, { method: "POST" });
+      setPasswordNotice({
+        userId: user.id,
+        type: "success",
+        text: `Se envió un enlace de un solo uso para restablecer la contraseña a ${user.email}.`,
+      });
+    } catch (error) {
+      setPasswordNotice({ userId: user.id, type: "error", text: error.message });
+    } finally {
+      setPasswordRequestUserId(null);
+    }
+  };
+
   const protectedGlobalRoles = selected
     ? roles.filter((role) => role.system_managed && (selected.role_ids || []).includes(role.id))
     : [];
@@ -449,7 +499,19 @@ function UsersPanel({ users, groups, roles, permissions, reload, setError }) {
       <div className="iam-toolbar"><h2>Usuarios</h2><button className="iam-button" onClick={startCreate}>+ Usuario</button></div>
       <label className="iam-form">Buscar usuario<input type="search" value={userQuery} onChange={(event) => setUserQuery(event.target.value)} placeholder="Cédula, nombre, apellido, rol o grupo" /></label>
       <p className="iam-muted">Mostrando {visibleUsers.length} usuario(s), máximo 10.</p>
-      <div className="iam-list">{visibleUsers.map((user) => <button key={user.id} className={`iam-list-item ${selectedId === user.id ? "selected" : ""}`} onClick={() => selectUser(user.id)}><span className="iam-list-main"><strong>{user.name}</strong><small>{user.email}</small></span>{user.is_system_account ? <span className="iam-system">SISTEMA</span> : <span>Activo</span>}</button>)}</div>
+      <div className="iam-list iam-user-list">{visibleUsers.map((user) => {
+        const assignedRoleNames = roles
+          .filter((role) => (user.role_ids || []).includes(role.id))
+          .map((role) => `${role.name}${role.active ? "" : " (inactivo)"}`);
+        return <button key={user.id} className={`iam-list-item ${selectedId === user.id ? "selected" : ""}`} onClick={() => selectUser(user.id)}>
+          <span className="iam-list-main">
+            <strong>{user.name}</strong>
+            <small>{user.email}</small>
+            {assignedRoleNames.length > 0 && <small className="iam-user-roles"><strong>{assignedRoleNames.length === 1 ? "Rol" : "Roles"}:</strong> {assignedRoleNames.join(" · ")}</small>}
+          </span>
+          {user.is_system_account ? <span className="iam-system">SISTEMA</span> : <span>Activo</span>}
+        </button>;
+      })}</div>
       {!visibleUsers.length && <p className="iam-empty">No hay usuarios activos que coincidan con la búsqueda.</p>}
     </section>
     <section className="iam-card">{creating ? <form className="iam-form" onSubmit={createUser}>
@@ -463,9 +525,26 @@ function UsersPanel({ users, groups, roles, permissions, reload, setError }) {
     </form> : !selected ? <p className="iam-empty">Selecciona un usuario o crea uno nuevo.</p> : <>
       <div className="iam-toolbar"><div><h2>{selected.name}</h2><p className="iam-muted">{selected.email}</p></div>{selected.is_system_account ? <span className="iam-system">CUENTA TÉCNICA PROTEGIDA</span> : <button className="iam-button" onClick={toggleActive}>{selected.active ? "Inactivar" : "Activar"}</button>}</div>
       {selected.is_system_account ? <div className="iam-notice">Esta cuenta usa política técnica protegida. Rol global: {protectedGlobalRoles.map((role) => role.name).join(", ") || "Administrador del sistema"}. No se edita desde esta consola.</div> : <>
+        <div className="iam-section iam-security-section">
+          <div className="iam-toolbar">
+            <div><h3>Seguridad</h3><p className="iam-muted">Envía un enlace de un solo uso para crear una contraseña nueva. La contraseña actual seguirá vigente hasta completar el cambio. Esta acción es inmediata y no guarda ni descarta cambios del rol.</p></div>
+            <button
+              type="button"
+              className="iam-button iam-security-action"
+              disabled={!selected.active || passwordRequestUserId !== null}
+              title={!selected.active ? "Activa el usuario antes de regenerar su contraseña" : ""}
+              aria-label={`Regenerar contraseña de ${selected.name}`}
+              aria-busy={passwordRequestUserId === selected.id}
+              onClick={() => regeneratePassword(selected)}
+            >
+              {passwordRequestUserId === selected.id ? "Enviando..." : "Regenerar contraseña"}
+            </button>
+          </div>
+          {passwordNotice?.userId === selected.id && <div className={`iam-notice iam-security-notice ${passwordNotice.type}`} role={passwordNotice.type === "error" ? "alert" : "status"} aria-live={passwordNotice.type === "error" ? "assertive" : "polite"}>{passwordNotice.text}</div>}
+        </div>
         <div className="iam-section"><h3>Rol</h3><p className="iam-muted">Asigna un único rol al usuario. Si el rol pertenece a un grupo, la membresía se deriva automáticamente y el grupo se muestra solo como información.</p>
           <div className="iam-two-col iam-form">
-            <label>Rol asignado<select value={selectedRoleId} onChange={(event) => setRole(event.target.value)}><option value="">Sin rol / sin acceso</option>{assignableRoles.map((role) => { const roleGroup = groups.find((group) => (group.role_ids || []).includes(role.id)) || null; return <option value={role.id} key={role.id} disabled={Boolean(roleGroup && !roleGroup.active)}>{role.name}{roleGroup && !roleGroup.active ? " (grupo inactivo)" : ""}</option>; })}</select></label>
+            <label>Rol asignado<select value={selectedRoleId} onChange={(event) => setRole(event.target.value)}><option value="">Sin rol / sin acceso</option>{assignableRoles.map((role) => { const roleGroup = groups.find((group) => (group.role_ids || []).includes(role.id)) || null; const alreadyAssigned = (selected.role_ids || []).includes(role.id); const roleIsFull = role.max_users !== null && role.assigned_user_count >= role.max_users && !alreadyAssigned; return <option value={role.id} key={role.id} disabled={Boolean((roleGroup && !roleGroup.active) || roleIsFull)}>{role.name}{roleGroup && !roleGroup.active ? " (grupo inactivo)" : roleIsFull ? " (sin cupo)" : role.max_users !== null ? ` (${role.assigned_user_count}/${role.max_users})` : ""}</option>; })}</select></label>
             <label>Grupo<div className="iam-system">{selectedRoleGroup?.active ? `Miembro — ${selectedRoleGroup.name}` : selectedRoleGroup ? `${selectedRoleGroup.name} — Grupo inactivo, sin acceso` : selectedRole ? "Sin grupo — Rol global" : "Sin rol asignado"}</div></label>
           </div>
         </div>
@@ -489,9 +568,6 @@ function IamConsole() {
 
   const upsertRole = (savedRole) => {
     setData((current) => {
-      if (!savedRole.active) {
-        return { ...current, roles: current.roles.filter((item) => item.id !== savedRole.id) };
-      }
       const exists = current.roles.some((item) => item.id === savedRole.id);
       const roles = exists
         ? current.roles.map((item) => item.id === savedRole.id ? savedRole : item)
@@ -507,7 +583,7 @@ function IamConsole() {
     if (!me.permission_codes.includes("config:manage")) throw new Error("No tienes permiso para administrar la configuración de accesos");
     const [permissions, roles, groups, users] = await Promise.all([
       iamApi("/api/iam/permissions"),
-      iamApi("/api/iam/roles"),
+      iamApi("/api/iam/roles?include_inactive=true"),
       iamApi("/api/iam/groups?include_inactive=true"),
       iamApi("/api/iam/users"),
     ]);

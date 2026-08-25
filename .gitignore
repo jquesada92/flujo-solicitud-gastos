@@ -13,3 +13,8 @@ dist/
 .vscode/
 .idea/
 test-assets/
+
+# Database exports and local backups may contain credentials, hashes, tokens or PII.
+# Never version them; use an approved encrypted store outside the repository.
+backups/
+*.dump

@@ -33,7 +33,7 @@ from app.schemas.iam import (
     RoleUpdate,
     RoleWrite,
 )
-from app.services.iam_service import effective_permission_codes, permission_sources
+from app.services.iam_service import active_role_assignment_count, effective_permission_codes, permission_sources
 
 router = APIRouter()
 
@@ -103,6 +103,8 @@ def _role_out(db: Session, role: Role) -> RoleOut:
         description=role.description,
         active=role.active,
         system_managed=role.system_managed,
+        max_users=role.max_users,
+        assigned_user_count=active_role_assignment_count(db, role.id),
         permission_codes=codes,
     )
 
@@ -213,6 +215,7 @@ def create_role(payload: RoleWrite, db: Session = Depends(get_db)):
         description=payload.description.strip() if payload.description else None,
         active=payload.active,
         system_managed=False,
+        max_users=payload.max_users,
     )
     db.add(role)
     db.flush()
@@ -224,7 +227,9 @@ def create_role(payload: RoleWrite, db: Session = Depends(get_db)):
 
 @router.patch('/roles/{role_id}', response_model=RoleOut, dependencies=[Depends(require_permission('config:manage'))])
 def update_role(role_id: int, payload: RoleUpdate, db: Session = Depends(get_db)):
-    role = _role(db, role_id)
+    role = db.scalar(select(Role).where(Role.id == role_id).with_for_update())
+    if not role:
+        raise HTTPException(status_code=404, detail='Rol no encontrado')
     if role.system_managed:
         raise HTTPException(status_code=409, detail='Los roles técnicos administrados por el sistema no pueden modificarse desde la interfaz')
     changes = payload.model_dump(exclude_unset=True)
@@ -237,6 +242,17 @@ def update_role(role_id: int, payload: RoleUpdate, db: Session = Depends(get_db)
         role.description = changes['description'].strip() if changes['description'] else None
     if 'active' in changes:
         role.active = changes['active']
+    if 'max_users' in changes:
+        assigned_user_count = active_role_assignment_count(db, role.id)
+        if changes['max_users'] is not None and changes['max_users'] < assigned_user_count:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f'El rol tiene {assigned_user_count} usuario(s) activo(s) asignado(s); '
+                    'el máximo no puede ser menor que la ocupación actual'
+                ),
+            )
+        role.max_users = changes['max_users']
     if 'permission_codes' in changes:
         _replace_role_permissions(db, role, changes['permission_codes'])
     db.commit()
@@ -318,8 +334,20 @@ def remove_group_member(group_id: int, user_id: int, db: Session = Depends(get_d
 
 @router.put('/users/{user_id}/roles/{role_id}', dependencies=[Depends(require_permission('config:manage'))])
 def assign_direct_role(user_id: int, role_id: int, db: Session = Depends(get_db)):
-    user, role = _user(db, user_id), _role(db, role_id)
+    user = _user(db, user_id)
+    role = db.scalar(select(Role).where(Role.id == role_id).with_for_update())
+    if not role:
+        raise HTTPException(status_code=404, detail='Rol no encontrado')
     if not db.scalar(select(UserRoleAssignment.id).where(UserRoleAssignment.user_id == user.id, UserRoleAssignment.role_id == role.id)):
+        if (
+            user.active
+            and role.max_users is not None
+            and active_role_assignment_count(db, role.id, exclude_user_id=user.id) >= role.max_users
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=f'El rol {role.name} alcanzó su límite de {role.max_users} usuario(s) activo(s)',
+            )
         db.add(UserRoleAssignment(user_id=user.id, role_id=role.id))
         db.commit()
     return {'status': 'ok'}

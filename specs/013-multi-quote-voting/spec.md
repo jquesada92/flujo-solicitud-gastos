@@ -49,4 +49,4 @@ quotation_vote_events
 
 ## Validación local
 
-`python -m app.demo_monitoring` crea una ronda abierta sin votos y otra con voto parcial, ambas con tres opciones y datos persistentes visibles.
+`docker compose exec -T backend python -m app.demo_monitoring` crea, únicamente en el PostgreSQL local aislado, una ronda abierta sin votos y otra con voto parcial, ambas con tres opciones y datos persistentes visibles.

@@ -9,10 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.privacy import analytics_identifier, can_view_personal_data, mask_email, mask_tail
-from app.core.security import current_user, hash_password, normalize_email
+from app.core.security import create_password_reset_token, current_user, hash_password, normalize_email
 from app.models.entities import AccessProfile, AccessProfileChangeEvent, User, UserChangeEvent, UserRole
+from app.models.iam import Role, SystemAccount, UserRoleAssignment
 from app.schemas.user import AccessProfileOut, AccessProfileUpdate, AccessProfileWrite, BoardAssignmentUpdate, UserBulkUpdate, UserChangeEventOut, UserCreate, UserOut, UserUpdate
-from app.services.email_service import send_user_invitation
+from app.services.email_service import send_password_reset_link, send_user_invitation
+from app.services.iam_service import active_role_assignment_count
 
 
 BOARD_CODES = {'PRESIDENTE', 'VICEPRESIDENTE', 'TESORERO', 'VOCERO'}
@@ -365,6 +367,34 @@ def _apply_user_changes(db: Session, user: User, changes: dict, actor: User) -> 
             detail='El Administrador del sistema no puede modificarse desde esta pantalla',
         )
     before = _snapshot(user)
+    previous_email = user.email
+    previous_active = user.active
+    if changes.get('active') is True and not user.active:
+        assigned_role_ids = select(UserRoleAssignment.role_id).where(
+            UserRoleAssignment.user_id == user.id
+        )
+        assigned_roles = list(db.scalars(
+            select(Role)
+            .where(Role.id.in_(assigned_role_ids))
+            .order_by(Role.id)
+            .with_for_update()
+        ).all())
+        for role in assigned_roles:
+            if (
+                role.max_users is not None
+                and active_role_assignment_count(
+                    db,
+                    role.id,
+                    exclude_user_id=user.id,
+                ) >= role.max_users
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f'El rol {role.name} alcanzó su límite de '
+                        f'{role.max_users} usuario(s) activo(s)'
+                    ),
+                )
     if 'email' in changes:
         email = normalize_email(str(changes['email']))
         duplicate = db.scalar(
@@ -407,6 +437,9 @@ def _apply_user_changes(db: Session, user: User, changes: dict, actor: User) -> 
         if key in ('name', 'first_name', 'middle_name', 'last_name', 'second_last_name', 'phone') and value:
             value = value.strip()
         setattr(user, key, value)
+
+    if user.email != previous_email or user.active != previous_active:
+        user.password_reset_version += 1
 
     personal_name_fields = {'first_name', 'middle_name', 'last_name', 'second_last_name'}
     if personal_name_fields.intersection(changes):
@@ -533,36 +566,38 @@ def regenerate_password(
     user = db.scalar(select(User).where(User.id == user_id).with_for_update())
     if not user:
         raise HTTPException(status_code=404, detail='Usuario no encontrado')
-    if user.role == UserRole.ADMIN:
+    if db.scalar(select(SystemAccount.id).where(SystemAccount.user_id == user.id)):
         raise HTTPException(
             status_code=403,
-            detail='La contraseña del Administrador del sistema no puede regenerarse desde esta pantalla',
+            detail='La contraseña del Administrador del sistema no puede restablecerse desde esta pantalla',
         )
     if not user.active:
-        raise HTTPException(status_code=409, detail='Activa el usuario antes de regenerar su contraseña')
+        raise HTTPException(status_code=409, detail='Activa el usuario antes de enviar un enlace de restablecimiento')
 
-    before = _snapshot(user)
-    temporary_password = secrets.token_urlsafe(15)
-    user.password_hash = hash_password(temporary_password)
-    user.must_change_password = True
-    user.session_version += 1
-    after = _snapshot(user)
+    previous_reset_version = user.password_reset_version
+    user.password_reset_version += 1
+    reset_token = create_password_reset_token(user)
     db.add(UserChangeEvent(
-        event_type='USER_PASSWORD_REGENERATED', user_id=user.id,
+        event_type='USER_PASSWORD_RESET_LINK_ISSUED', user_id=user.id,
         user_email=_audit_email(user.email), actor_user_id=actor.id,
         actor_email=_audit_email(actor.email),
-        changed_fields=['password_hash', 'must_change_password'],
-        before_state=before, after_state=after,
+        changed_fields=['password_reset_link'],
+        before_state={'password_reset_version': previous_reset_version},
+        after_state={'password_reset_version': user.password_reset_version},
     ))
     try:
-        send_user_invitation(user, temporary_password)
-        db.commit()
+        send_password_reset_link(user, reset_token)
     except Exception as exc:
         db.rollback()
         raise HTTPException(
             status_code=502,
-            detail='No se pudo enviar la nueva contraseña. La contraseña anterior continúa vigente.',
+            detail='No se pudo enviar el enlace. La contraseña y las sesiones actuales continúan vigentes.',
         ) from exc
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     db.refresh(user)
     return user
 

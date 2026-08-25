@@ -47,7 +47,7 @@ Corregir una solicitud múltiple conserva el tipo, rehidrata opciones y soportes
 
 ## Escenarios locales
 
-`python -m app.demo_monitoring` deja dos casos persistentes:
+`docker compose exec -T backend python -m app.demo_monitoring` deja dos casos persistentes únicamente en el PostgreSQL local aislado:
 
 - votación abierta con tres opciones y cero votos;
 - votación abierta con tres opciones y un voto parcial.

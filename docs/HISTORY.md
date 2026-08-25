@@ -1,5 +1,55 @@
 # Historia funcional
 
+## 2026-08-25 — guardrails de IA sincronizados
+
+- La política operativa explicita que las divergencias de código no pueden
+  rebajar Constitución, Specs ni contrato.
+- Los cupos de Rol, herencia aditiva, asignaciones múltiples y enlaces de
+  restablecimiento quedan protegidos en `AGENTS.md` con sus excepciones y gates.
+- La política documental agrega una matriz de impacto y la prueba contractual
+  detecta expectativas Alembic obsoletas aunque el head nuevo figure en otra
+  sección.
+
+## 2026-08-25 — cupo opcional de Usuarios activos por Rol
+
+- La Constitución evoluciona a 2.18.0.
+- Un Rol puede permanecer ilimitado o definir un máximo entero positivo de
+  Usuarios activos asignados.
+- Usuarios inactivos conservan su asignación sin ocupar cupo; asignación y
+  reactivación se rechazan cuando el Rol está lleno.
+- FastAPI bloquea los Roles antes de contar y no permite reducir el máximo por
+  debajo de la ocupación activa.
+- Accesos incorpora el control staged, ocupación visible y opciones “sin cupo”.
+- Alembic agrega `20260825_0011_role_user_limit` y conserva ilimitados los Roles
+  existentes.
+
+## 2026-08-24 — restablecimiento seguro de contraseña
+
+- La Constitución evoluciona a 2.17.0.
+- El Administrador del sistema puede enviar desde Accesos un enlace confirmado a
+  un Usuario activo no técnico sin generar ni conocer su contraseña.
+- Cada emisión reemplaza las anteriores, dura 30 minutos por defecto y no cambia
+  contraseña, `must_change_password` o sesiones mientras no se consuma.
+- El consumo público almacena Argon2, revoca sesiones, invalida enlaces y vuelve
+  al Login sin auto-login.
+- El correo usa un template sin contraseña; un fallo de entrega revierte la
+  emisión y la auditoría no conserva token, contraseña ni hash.
+- Alembic agrega `20260824_0010_password_reset_links` para persistir la versión
+  vigente de los enlaces.
+
+## 2026-08-24 — Roles visibles en tarjetas de Usuario
+
+- La lista de Usuarios en Accesos muestra debajo del correo todos los Roles persistidos, omite la línea sin asignaciones y distingue los Roles inactivos conservados.
+
+## 2026-08-24 — documentación operativa verificable
+
+- Se agregó una política raíz para que agentes automatizados trabajen solo dentro del alcance autorizado y preserven ramas, cambios locales, secretos, respaldos y datos.
+- Los runbooks distinguen tests SQLite, PostgreSQL local y validación productiva no mutante; un health check ya no se presenta como prueba de identidad del release.
+- La guía Neon distingue pool de runtime y conexión directa de migración, incluida la limitación actual de una sola `DATABASE_URL`.
+- Los ejemplos locales dejaron de recomendar SMTP real y variables que el runtime ignora.
+- La UI de Accesos conserva un contrato responsive desde 320 px.
+- La regresión del selector único de Rol y los dumps ya versionados quedaron como bloqueos visibles que requieren remediación independiente.
+
 ## 2026-08-24 — herencia aditiva de Permisos por Grupo
 
 - La Constitución evoluciona a 2.16.0.

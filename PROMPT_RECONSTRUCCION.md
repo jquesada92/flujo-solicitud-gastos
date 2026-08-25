@@ -1,8 +1,10 @@
 # Prompt maestro de reconstrucción
 
-> Constitución vigente: **2.16.0**.
+> Constitución vigente: **2.18.0**.
 
 Reconstruye **Flujo de Control de Gastos** como una aplicación web neutral respecto al tipo de organización, lista para desplegar con React/Vite, FastAPI, SQLAlchemy, Alembic y PostgreSQL/Neon.
+
+Antes de ejecutar comandos o modificar el repositorio, aplica `AGENTS.md`. Esa política limita acciones operativas de personas y agentes automatizados; no altera la jerarquía funcional siguiente. Consulta también `docs/KNOWN_RISKS.md` para no reproducir divergencias conocidas como si fueran requisitos.
 
 ## Autoridad
 
@@ -59,6 +61,9 @@ Invariantes:
 - un Rol sin Grupo es global;
 - un Usuario puede tener máximo un Rol por Grupo;
 - un Usuario puede tener cero o más Roles globales ordinarios;
+- un Rol puede tener `max_users` opcional y positivo; `NULL` significa sin límite;
+- el cupo cuenta Usuarios activos asignados, no Usuarios inactivos que conservan el Rol;
+- asignar o reactivar se rechaza si el Rol está lleno y el máximo no puede bajarse de la ocupación actual;
 - la membresía de Grupo se deriva únicamente de Roles agrupados;
 - un Rol global no crea membresía de Grupo;
 - no se asignan Permisos directamente a Usuarios;
@@ -115,6 +120,7 @@ Grupos
 Roles
   → Permisos propios + herencia visible del Grupo
   → pueden ser globales o pertenecer a máximo un Grupo
+  → límite opcional y ocupación de Usuarios activos
 
 Permisos
   → catálogo de capacidades
@@ -124,7 +130,18 @@ No agregues controles de permisos directos a Usuario ni controles `DENY`. Cargo 
 
 Todas las ediciones de acceso son staged. No hagas requests de mutación al seleccionar una opción. Persiste con **Guardar cambios** y advierte antes de descartar cambios pendientes.
 
+En la lista de Usuarios, muestra debajo de cada correo todos los Roles persistidos, con etiqueta singular/plural. Omite la línea si no hay Roles y conserva visible una asignación inactiva identificándola como tal.
+
+En el editor de Rol permite activar/desactivar el límite y definir un entero positivo. Muestra la ocupación activa, no permite un máximo menor que ella y marca como sin cupo las opciones no asignables. El backend debe volver a validar y serializar asignaciones concurrentes; la UI no es la autoridad.
+
 Quitar un Rol de un Grupo lo convierte en global sin borrar `UserRoleAssignment` ni `RolePermission`; elimina solo la herencia del Grupo. Editar Permisos del Grupo tampoco modifica `RolePermission`. Vincular Roles globales a un Grupo debe rechazarse si produciría más de un Rol del mismo Grupo para algún Usuario. Después de cambiar el catálogo de Roles de un Grupo, reconstruye `GroupMember` desde las asignaciones de Roles agrupados.
+
+La consola debe funcionar sin overflow horizontal de página desde 320 px: paneles apilables, textos/códigos con wrap, estados y acciones siempre visibles y controles táctiles utilizables. Valida al menos 1180, 1024, 640, 440, 390 y 320 px. No reduzcas `role_ids` a una selección única total: el contrato es un selector por Grupo más multiselección de Roles globales.
+
+En la ficha de un Usuario activo no técnico agrega **Regenerar contraseña** para
+enviar el enlace de restablecimiento. Exige confirmación y `config:manage`; es
+una acción de seguridad inmediata, separada del estado staged y de **Guardar
+cambios**. Evita doble envío y nunca muestres el token en la respuesta o la UI.
 
 ## 4. Configuración
 
@@ -187,6 +204,12 @@ Los Roles globales no crean membresía ni filas por Grupo en Seguimiento. No per
 Una ruta privada sin sesión debe redirigir al Login antes de montar su contenido. Un 401 recibido con token almacenado debe limpiar la sesión y retornar al Login.
 
 Protege al menos Accesos y Seguimiento y aplica el mismo patrón a cualquier nueva pantalla privada.
+
+Trata `/reset-password#token=...` como ruta pública de propósito limitado y
+renderízala antes del Login. Captura el fragmento en memoria y retíralo de la URL
+al cargar; el fragmento no debe viajar en la petición HTTP ni aparecer en logs
+HTTP/CDN. No aceptes el token como sesión ni hagas auto-login al completar;
+muestra confirmación y vuelve al Login.
 
 ## 9. Eficiencia de red
 
@@ -278,6 +301,8 @@ Acepta PDF/JPEG/PNG/WEBP conforme a los límites configurados. Valida tipo, firm
 - Alembic antes del servidor ASGI;
 - response models explícitos;
 - rate limiting de API autenticada;
+- rate limiting sensible autenticado para emitir y cuota pública dedicada de 5
+  intentos por 15 minutos para consumir el enlace de restablecimiento;
 - headers `no-store` y headers de seguridad en respuestas API.
 
 ## 15. Persistencia Neon
@@ -290,6 +315,8 @@ DATABASE_SCHEMA=administracion
 ```
 
 Base objetivo: `ph_torre_delta`.
+
+Neon recomienda una conexión directa para migraciones y `pg_dump`. Si el proceso de arranque ejecuta Alembic y solo existe una `DATABASE_URL`, utiliza una URL directa. No declares runtime pooled + migración directa hasta implementar, configurar y probar una URL de migración independiente.
 
 Aislamiento:
 
@@ -313,6 +340,8 @@ Cadena:
 → 20260821_0007_period_audit_metadata
 → 20260821_0008_normalize_period_timestamps
 → 20260824_0009_group_permission_inheritance
+→ 20260824_0010_password_reset_links
+→ 20260825_0011_role_user_limit
 ```
 
 Toda creación o modificación relevante de Usuario, Área, Rol y Grupo se registra
@@ -324,13 +353,13 @@ La fila identifica actor, timestamp, tipo de evento, campos cambiados y valores
 Las listas GUI excluyen inactivos. Los formularios consultan recuperación por
 cédula o clave/nombre y reactivan el ID existente con confirmación del usuario.
 
-`0001` crea la instalación limpia. `0002` impide múltiples Grupos por Rol y dos Roles del mismo Grupo por Usuario. `0003` garantiza un Cargo por Usuario. `0004` permite Roles sin Grupo manteniendo la protección para Roles agrupados. `0009` agrega `group_permissions` vacía, sin cambiar accesos existentes ni `role_permissions`.
+`0001` crea la instalación limpia. `0002` impide múltiples Grupos por Rol y dos Roles del mismo Grupo por Usuario. `0003` garantiza un Cargo por Usuario. `0004` permite Roles sin Grupo manteniendo la protección para Roles agrupados. `0009` agrega `group_permissions` vacía, sin cambiar accesos existentes ni `role_permissions`. `0010` agrega `users.password_reset_version` para invalidar emisiones anteriores sin rotar credenciales ni sesiones.
 
 ## 16. Correo
 
-Producción: Brevo HTTPS API. Docker local: `console` por defecto; SMTP únicamente mediante override explícito.
+Producción: Brevo HTTPS API; nunca `console`, porque los cuerpos pueden contener contraseñas temporales o tokens y quedarían en logs. Docker local: `console` por defecto; SMTP únicamente mediante override explícito y autorizado.
 
-Las pruebas unitarias usan fixtures temporales y no dejan solicitudes visibles. Para datos persistentes locales ejecuta `python -m app.demo_monitoring`; debe crear catálogo, Roles IAM, escenarios SIMPLE y MULTI_QUOTE sin enviar correo real.
+Las pruebas unitarias usan fixtures temporales y no dejan solicitudes visibles. Para datos persistentes locales ejecuta `docker compose exec -T backend python -m app.demo_monitoring`; debe crear catálogo, Roles IAM, escenarios SIMPLE y MULTI_QUOTE sin enviar correo real. Ese comando muta datos y queda prohibido fuera del Compose PostgreSQL local aislado.
 
 Invitación de usuario activo:
 
@@ -344,6 +373,30 @@ URL pública
 
 Cuando cambia el Cargo de un usuario activo, envía actualización con Cargo y permisos efectivos actuales. El cambio de Cargo no modifica esos permisos.
 
+Restablecimiento administrativo:
+
+- `POST /api/users/{user_id}/regenerate-password` solo con `config:manage`, para
+  Usuario activo no técnico;
+- token de propósito exclusivo, un uso y 30 minutos por defecto, configurable
+  con `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES`;
+- emitir uno nuevo invalida los anteriores, pero no cambia contraseña,
+  `must_change_password` ni sesiones; cambiar correo o `active` también invalida;
+- el email contiene `/reset-password#token=...` y no contiene contraseñas;
+- `POST /api/auth/reset-password` consume el token, almacena Argon2, establece
+  `must_change_password=false`, revoca sesiones e invalida todos los enlaces;
+- tras el commit, intenta notificar best-effort que la contraseña cambió, sin
+  token/contraseña y sin revertir el cambio si esa notificación falla;
+- no hay auto-login; respuesta, UI y auditoría nunca contienen token, contraseña
+  o hash; los logs ordinarios tampoco, salvo el cuerpo local explícito de
+  `EMAIL_MODE=console`, que se trata como sensible.
+
+No declares atómica la entrega del correo con la base: un fallo del proveedor
+antes del commit revierte la emisión y conserva el enlace anterior; si el
+proveedor acepta y el commit falla, el enlace recibido queda inútil sin cambiar
+el acceso y se debe reintentar. La garantía exactamente-una-vez requiere outbox.
+La cuota pública de consumo es local por IP/proceso, limpia entradas por TTL, no
+se coordina entre réplicas y depende de que la IP cliente sea confiable.
+
 ## 17. Frontend relevante
 
 ```text
@@ -351,6 +404,7 @@ frontend/src/expense-form.jsx
 frontend/src/home-dashboard.jsx
 frontend/src/user-tracking.jsx
 frontend/src/iam-admin.jsx
+frontend/src/iam-responsive.css
 frontend/src/auth-route-guard.js
 frontend/src/request-governor.js
 frontend/src/classification-admin.js
@@ -366,14 +420,16 @@ Después de implementar cualquier cambio relevante revisa Constitución, Spec, P
 Gates:
 
 ```text
+docker compose exec -T backend alembic heads
+# esperado: 20260825_0011 (head)
+
 cd backend
-alembic heads
-# 20260824_0009
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m scripts.run_tests
+.\.venv\Scripts\python.exe -m unittest tests.test_documentation_contract -v
 
 cd ../frontend
 npm ci
 npm run build
 ```
 
-El resultado debe poder comprenderse y reconstruirse leyendo únicamente la documentación vigente, sin contexto externo.
+El resultado debe poder comprenderse y reconstruirse leyendo únicamente la documentación vigente, sin contexto externo. Reporta solamente comandos realmente ejecutados y conserva como fallos abiertos cualquier diferencia entre contrato, código y pruebas.

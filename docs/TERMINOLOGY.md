@@ -7,7 +7,7 @@ Cuenta autenticable que interactúa con el producto.
 Ámbito organizacional opcional que puede tener cero o más Roles y Permisos heredables. La membresía de un Usuario se deriva únicamente de sus Roles agrupados y no autoriza por sí sola.
 
 ## Rol
-Conjunto de Permisos propios. Puede ser global o pertenecer a máximo un Grupo. Un Usuario puede tener máximo un Rol por Grupo; si está agrupado, suma los Permisos del Grupo sin `DENY`.
+Conjunto de Permisos propios. Puede ser global o pertenecer a máximo un Grupo. Un Usuario puede tener máximo un Rol por Grupo; si está agrupado, suma los Permisos del Grupo sin `DENY`. Puede definir un máximo opcional de Usuarios activos asignados; los inactivos conservan el Rol sin consumir cupo.
 
 ## Rol global
 Rol sin Grupo. Puede asignarse a un Usuario sin crear membresía de Grupo. Un Usuario puede tener varios Roles globales ordinarios.

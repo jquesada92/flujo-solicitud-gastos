@@ -1,6 +1,6 @@
 from collections import defaultdict
 
-from sqlalchemy import exists, select, union
+from sqlalchemy import exists, func, select, union
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -28,6 +28,25 @@ CORE_PERMISSION_CODES = (
 BASELINE_PERMISSION_CODES = {'requests:read'}
 SYSTEM_ONLY_PERMISSION_CODES = {'config:manage'}
 PRODUCTION_SYSTEM_ACCOUNT_PERMISSIONS = {'requests:read', 'areas:manage', 'config:manage'}
+
+
+def active_role_assignment_count(
+    db: Session,
+    role_id: int,
+    *,
+    exclude_user_id: int | None = None,
+) -> int:
+    stmt = (
+        select(func.count(UserRoleAssignment.id))
+        .join(User, User.id == UserRoleAssignment.user_id)
+        .where(
+            UserRoleAssignment.role_id == role_id,
+            User.active.is_(True),
+        )
+    )
+    if exclude_user_id is not None:
+        stmt = stmt.where(User.id != exclude_user_id)
+    return int(db.scalar(stmt) or 0)
 
 
 def is_system_account(db: Session, user_id: int) -> bool:

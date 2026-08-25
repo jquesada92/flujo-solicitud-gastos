@@ -1,5 +1,46 @@
 # Changelog
 
+## 2.18.0 — 2026-08-25
+
+- `AGENTS.md` protege explícitamente los cupos de Rol, las rutas concurrentes y
+  legacy, la excepción inmediata del restablecimiento y la preservación de
+  asignaciones múltiples frente a simplificaciones de IA;
+- la política documental incorpora una matriz de impacto y el contrato
+  automático detecta resultados Alembic obsoletos y ausencia de guardrails IAM;
+- Roles admiten un `max_users` opcional para limitar Usuarios activos asignados;
+- Usuarios inactivos conservan su Rol sin consumir cupo y la reactivación vuelve a validarlo;
+- asignación y reducción del máximo se protegen con validación backend y bloqueo transaccional del Rol;
+- Accesos muestra ocupación/máximo, edita el límite con **Guardar cambios** y marca Roles sin cupo;
+- migración `20260825_0011_role_user_limit` conserva Roles existentes ilimitados y amplía sus instantáneas temporales;
+- el enlace de restablecimiento usa fragmento, cambios de correo/estado lo invalidan, el rate limit reconoce proxies locales de forma acotada y se envía confirmación best-effort posterior al commit.
+
+## 2.17.0 — 2026-08-24
+
+- ficha de Usuario incorpora envío confirmado de enlace de restablecimiento para
+  cuentas activas no técnicas, separado de **Guardar cambios**;
+- token de propósito exclusivo, un uso y 30 minutos por defecto, con
+  invalidación de emisiones anteriores mediante `password_reset_version`;
+- emisión no rota contraseña ni sesiones y hace rollback si falla el correo;
+- consumo público aplica Argon2, limpia `must_change_password`, revoca sesiones,
+  invalida enlaces y vuelve al Login sin auto-login;
+- template de correo específico con enlace y sin contraseña, auditoría segura y
+  rate limits diferenciados para emisión autenticada y consumo público;
+- migración `20260824_0010_password_reset_links` y configuración
+  `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=30`.
+
+## 2026-08-24 — soporte de desarrollo y guardrails
+
+- `AGENTS.md` incorpora límites explícitos para Git, producción, secretos, dumps, migraciones, Docker, correo y servicios externos;
+- prueba automática del contrato documental para enlaces, versión constitucional, head Alembic, rutas críticas, ejemplos de entorno y gate productivo;
+- runner backend aislado que deshabilita `backend/.env` y fija SQLite/console para evitar pruebas contra conexiones locales o externas accidentales;
+- PR y release comparten un único CI reusable con compileall, suite, build/auditoría frontend, anclas del bundle, imágenes y smoke del entrypoint;
+- README y runbooks locales/productivos alineados con Docker Compose, Python 3.12, PostgreSQL 16 y el entrypoint real del backend;
+- ejemplos de entorno pasan a correo `console`, eliminan schema/variables obsoletas y evitan sugerir Neon para Docker local;
+- preview público exige credenciales administrativas propias y aplica URL/CORS del túnel al backend;
+- consola de Accesos documentada y validada sin overflow a 1024, 640, 440, 390 y 320 px;
+- tarjetas de Usuario en Accesos muestran debajo del correo todos los Roles asignados, incluidos los inactivos conservados, sin agregar una línea cuando no hay Roles;
+- divergencia multirol de `UsersPanel`, dumps rastreados, identidad de release, correo productivo y conexión de migraciones registrados como riesgos abiertos, sin rebajar el contrato para ocultarlos.
+
 ## 2.16.0 — 2026-08-24
 
 - Permisos heredables configurables a nivel de Grupo;

@@ -4,6 +4,7 @@ import logging
 import smtplib
 from email.message import EmailMessage
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from app.core.config import get_settings
@@ -165,6 +166,52 @@ No compartas estas credenciales.
 <a href="{html.escape(PUBLIC_URL)}" style="display:inline-block;background:#172033;color:white;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">Iniciar sesión</a>''',
     )
     _send(user.email, f'Tu acceso a {PRODUCT_NAME}', text_body, html_body)
+
+
+def send_password_reset_link(user, reset_token: str) -> None:
+    reset_link = f'{PUBLIC_URL}/reset-password#token={quote(reset_token, safe="")}'
+    expires_in = settings.password_reset_token_expire_minutes
+    text_body = f'''Restablecimiento de contraseña de {PRODUCT_NAME}
+
+Hola {user.name},
+
+Un administrador generó un enlace para que restablezcas tu contraseña.
+El enlace vence en {expires_in} minutos y solo puede utilizarse una vez:
+
+{reset_link}
+
+Tu contraseña y tus sesiones actuales siguen vigentes hasta que completes el restablecimiento.
+Si no esperabas este mensaje, comunícate con el administrador del sistema.
+'''
+    html_body = _layout(
+        'RESTABLECIMIENTO DE CONTRASEÑA',
+        f'''<h2>Hola {html.escape(user.name)}</h2>
+<p>Un administrador generó un enlace para que restablezcas tu contraseña.</p>
+<p>El enlace vence en {expires_in} minutos y solo puede utilizarse una vez.</p>
+<a href="{html.escape(reset_link)}" style="display:inline-block;background:#172033;color:white;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">Restablecer contraseña</a>
+<p style="color:#697386">Tu contraseña y tus sesiones actuales siguen vigentes hasta que completes el restablecimiento. Si no esperabas este mensaje, comunícate con el administrador del sistema.</p>''',
+    )
+    _send(user.email, f'Restablece tu contraseña · {PRODUCT_NAME}', text_body, html_body)
+
+
+def send_password_reset_completed(user) -> None:
+    text_body = f'''Contraseña actualizada en {PRODUCT_NAME}
+
+Hola {user.name},
+
+Tu contraseña fue restablecida correctamente y las sesiones anteriores fueron cerradas.
+
+Si no realizaste esta acción, comunícate de inmediato con el administrador del sistema.
+Acceso: {PUBLIC_URL}
+'''
+    html_body = _layout(
+        'CONTRASEÑA ACTUALIZADA',
+        f'''<h2>Hola {html.escape(user.name)}</h2>
+<p>Tu contraseña fue restablecida correctamente y las sesiones anteriores fueron cerradas.</p>
+<p style="color:#697386">Si no realizaste esta acción, comunícate de inmediato con el administrador del sistema.</p>
+<a href="{html.escape(PUBLIC_URL)}" style="display:inline-block;background:#172033;color:white;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">Abrir sistema</a>''',
+    )
+    _send(user.email, f'Contraseña actualizada · {PRODUCT_NAME}', text_body, html_body)
 
 
 def send_user_access_updated(

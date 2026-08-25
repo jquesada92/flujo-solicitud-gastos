@@ -23,6 +23,7 @@ from app.models.iam import (
 from app.schemas.iam_user import IamUserCreate, IamUserOut, IamUserUpdate
 from app.services.email_service import send_user_access_updated, send_user_invitation
 from app.services.iam_service import (
+    active_role_assignment_count,
     effective_permission_codes,
     is_system_account,
     permission_sources,
@@ -114,11 +115,16 @@ def _validate_role_assignments(db: Session, role_ids: list[int]) -> tuple[list[R
     if not unique_role_ids:
         return [], []
 
-    roles = list(db.scalars(select(Role).where(
-        Role.id.in_(unique_role_ids),
-        Role.active.is_(True),
-        Role.system_managed.is_(False),
-    )).all())
+    roles = list(db.scalars(
+        select(Role)
+        .where(
+            Role.id.in_(unique_role_ids),
+            Role.active.is_(True),
+            Role.system_managed.is_(False),
+        )
+        .order_by(Role.id)
+        .with_for_update()
+    ).all())
     if len(roles) != len(unique_role_ids):
         raise HTTPException(status_code=422, detail='Uno o más roles no existen, están inactivos o son técnicos')
 
@@ -194,6 +200,24 @@ def _replace_assignments(
     target_role_ids = current_role_ids if role_ids is None else list(dict.fromkeys(role_ids))
     roles, groups = _validate_role_assignments(db, target_role_ids)
     _validate_derived_groups(group_ids, groups)
+
+    if user.active:
+        for role in roles:
+            if (
+                role.max_users is not None
+                and active_role_assignment_count(
+                    db,
+                    role.id,
+                    exclude_user_id=user.id,
+                ) >= role.max_users
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f'El rol {role.name} alcanzó su límite de '
+                        f'{role.max_users} usuario(s) activo(s)'
+                    ),
+                )
 
     if group_ids is not None and role_ids is None:
         current_group_ids = set(db.scalars(
@@ -329,6 +353,9 @@ def update_user(user_id: int, payload: IamUserUpdate, db: Session = Depends(get_
     if db.scalar(select(SystemAccount.id).where(SystemAccount.user_id == user.id)):
         raise HTTPException(status_code=409, detail='La cuenta técnica se administra mediante el bootstrap de despliegue')
 
+    previous_email = user.email
+    previous_active = user.active
+
     original_position_ids = set(db.scalars(
         select(UserPosition.position_id).where(UserPosition.user_id == user.id)
     ).all())
@@ -355,6 +382,8 @@ def update_user(user_id: int, payload: IamUserUpdate, db: Session = Depends(get_
         if isinstance(value, str):
             value = value.strip()
         setattr(user, key, value)
+    if user.email != previous_email or user.active != previous_active:
+        user.password_reset_version += 1
     user.name = _full_name(user)
     if {'email', 'identity_document'} & set(changes):
         user.analytics_id = analytics_identifier(user.identity_document, user.email)
