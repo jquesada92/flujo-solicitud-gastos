@@ -143,6 +143,7 @@ class DocumentationContractTests(unittest.TestCase):
             'frontend/vite.config.js',
             'docs/CURRENT_PRODUCT_CONTRACT.md',
             'docs/DOCUMENTATION_POLICY.md',
+            'docs/GUIA_USUARIO_FINAL.md',
             'docs/KNOWN_RISKS.md',
             'docs/VALIDACION_LOCAL.md',
             'docs/VALIDACION_PRODUCCION.md',
@@ -252,11 +253,13 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('(AGENTS.md)', readme)
         self.assertIn('(docs/VALIDACION_LOCAL.md)', readme)
         self.assertIn('(docs/VALIDACION_PRODUCCION.md)', readme)
+        self.assertIn('(docs/GUIA_USUARIO_FINAL.md)', readme)
         self.assertIn('(docs/KNOWN_RISKS.md)', readme)
         self.assertNotIn('git switch main', readme)
         self.assertIn('python.exe -m scripts.run_tests', readme)
         self.assertNotIn('unittest discover -s tests', readme)
         self.assertIn('(VALIDACION_PRODUCCION.md)', docs_index)
+        self.assertIn('(GUIA_USUARIO_FINAL.md)', docs_index)
         self.assertIn('(KNOWN_RISKS.md)', docs_index)
         self.assertNotRegex(constitution, r'(?m)^\\\.venv\\Scripts\\python\.exe')
 

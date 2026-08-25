@@ -335,6 +335,9 @@ closure-delegation.jsx
 
 ## Documentación
 
+Para uso operativo diario consulta la [Guía para Solicitantes y Junta
+Directiva](docs/GUIA_USUARIO_FINAL.md).
+
 Empieza por:
 
 1. [AGENTS.md](AGENTS.md), para límites operativos de personas y agentes automatizados.

@@ -2,6 +2,8 @@
 
 ## 2.18.0 — 2026-08-25
 
+- guía de usuario final para Solicitantes y Junta Directiva, con creación,
+  aprobación, votación, corrección, factura, cierre y solución de problemas;
 - `AGENTS.md` protege explícitamente los cupos de Rol, las rutas concurrentes y
   legacy, la excepción inmediata del restablecimiento y la preservación de
   asignaciones múltiples frente a simplificaciones de IA;

@@ -1,5 +1,13 @@
 # Historia funcional
 
+## 2026-08-25 — instructivo para usuarios finales
+
+- Se incorpora una guía operativa separada de la documentación técnica para
+  Solicitantes y miembros de Junta Directiva.
+- El instructivo cubre primer ingreso, solicitudes sencillas y múltiples,
+  aprobación, votación, revisión, corrección, cierre, factura, delegación y
+  problemas frecuentes sin redefinir permisos ni estados.
+
 ## 2026-08-25 — guardrails de IA sincronizados
 
 - La política operativa explicita que las divergencias de código no pueden

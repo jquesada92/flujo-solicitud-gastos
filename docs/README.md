@@ -13,6 +13,7 @@
 
 ## Producto y UX
 
+- [Guía de uso para Solicitantes y Junta Directiva](GUIA_USUARIO_FINAL.md)
 - [Terminología](TERMINOLOGY.md)
 - [Inicio y Seguimiento](REQUEST_TRACKING.md)
 - [Runtime frontend](FRONTEND_RUNTIME.md)
