@@ -1,6 +1,6 @@
 from collections import defaultdict
 
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.closure import ExpenseClosureDelegation
@@ -9,7 +9,6 @@ from app.models.entities import (
     ApprovalStatus,
     Expense,
     ExpenseStatus,
-    QuotationVote,
     QuotationVotingInvitation,
     User,
 )
@@ -69,19 +68,12 @@ def pending_actions_by_expense(
         for expense_id in db.scalars(approvals).all():
             _append(actions, expense_id, APPROVAL_DECISION)
 
-        already_voted = exists(
-            select(QuotationVote.id).where(
-                QuotationVote.expense_id == QuotationVotingInvitation.expense_id,
-                QuotationVote.voter_user_id == user.id,
-            )
-        )
         quotation_votes = (
             select(QuotationVotingInvitation.expense_id)
             .join(Expense, Expense.id == QuotationVotingInvitation.expense_id)
             .where(
                 QuotationVotingInvitation.voter_user_id == user.id,
                 Expense.status == ExpenseStatus.QUOTATION_VOTING,
-                ~already_voted,
             )
             .distinct()
         )
@@ -117,7 +109,17 @@ def pending_actions_by_expense(
         )
     )
     closures = select(Expense.id).where(
-        Expense.status == ExpenseStatus.APPROVED,
+        or_(
+            and_(
+                Expense.request_type != 'MULTI_QUOTE',
+                Expense.status == ExpenseStatus.APPROVED,
+            ),
+            and_(
+                Expense.request_type == 'MULTI_QUOTE',
+                Expense.status == ExpenseStatus.QUOTATION_VOTING,
+                Expense.selected_quotation_id.is_not(None),
+            ),
+        ),
         or_(
             func.lower(Expense.requested_by) == user.email.lower(),
             delegated_expense,

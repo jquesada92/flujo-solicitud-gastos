@@ -1,6 +1,6 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.19.0**.
+> Constitución vigente: **2.21.0**.
 
 Aplicación web para registrar, evaluar, aprobar, votar, seguir, corregir, cancelar, cerrar y documentar solicitudes de gasto con trazabilidad. El producto es neutral respecto al tipo de organización: la estructura se configura como datos y los nombres organizacionales no forman parte de la lógica de autorización.
 
@@ -40,6 +40,7 @@ Reglas clave:
   efectivo, no de nombres de perfiles ni reglas legacy;
 - una solicitud nueva sin ronda iniciable no queda persistida;
 - una pantalla privada sin sesión vuelve al Login;
+- la aplicación es operable desde 320 px sin overflow horizontal de página;
 - el frontend no debe hacer polling agresivo ni repetir GET idénticos innecesariamente.
 
 Ver [docs/CURRENT_PRODUCT_CONTRACT.md](docs/CURRENT_PRODUCT_CONTRACT.md).
@@ -145,6 +146,11 @@ Vista de equipo de solo lectura:
 
 Los Roles globales no generan membresía en Seguimiento.
 
+La tabla operativa de Solicitudes evita mostrar `0` en rondas `MULTI_QUOTE`: sin
+votos usa el monto máximo presentado, con líder único usa el monto de la opción
+que va ganando y ante empate usa nuevamente el máximo. Es un valor informativo
+separado del monto financiero seleccionado al cerrar.
+
 ## Nueva solicitud
 
 El formulario se muestra únicamente a quien tenga `requests:create`. Tener `requests:read` no es suficiente.
@@ -180,7 +186,13 @@ filtran participantes; la única autoridad es `requests:approve` efectivo. Esta
 divergencia visual está registrada en
 [docs/KNOWN_RISKS.md](docs/KNOWN_RISKS.md).
 
-En `MULTI_QUOTE`, la población votante se congela por ronda desde usuarios activos con `requests:approve`, excluyendo al solicitante. La ronda espera todos los votos y solo se resuelve con ganador único; un empate permanece abierto. Ver [docs/MULTI_QUOTE_VOTING.md](docs/MULTI_QUOTE_VOTING.md).
+En `MULTI_QUOTE`, la población votante se congela por ronda desde usuarios
+activos con `requests:approve`, excluyendo al solicitante. Cada invitado puede
+votar o cambiar su voto mientras la ronda permanezca abierta. Un ganador único
+es provisional; un empate elimina la selección y bloquea la factura. La ronda
+solo pasa directamente a `CLOSED` cuando un actor de cierre autorizado sube la
+factura y el backend confirma nuevamente que todos votaron y no existe empate.
+Ver [docs/MULTI_QUOTE_VOTING.md](docs/MULTI_QUOTE_VOTING.md).
 
 ## Revisión, corrección y cierre
 
@@ -198,6 +210,19 @@ can_delegate_close
 Cerrar/facturar depende de ser solicitante, Administrador del sistema o delegado activo de esa solicitud; no depende de un permiso global de cierre.
 
 ## Sesión y frontend
+
+### Layout móvil
+
+Desde 320 px, la navegación principal permanece disponible como una banda táctil
+desplazable y marca la vista actual. Los formularios, filtros, tableros, Accesos
+y Seguimiento se apilan; la consulta de Solicitudes cambia la tabla ancha por
+tarjetas con etiquetas visibles. Menús, modales y visores permanecen dentro del
+viewport, usan altura dinámica y respetan las áreas seguras del dispositivo.
+
+La implementación transversal vive en `frontend/src/mobile-layout.css`; los
+ajustes propios de Accesos, Inicio y Seguimiento permanecen junto a sus módulos.
+La validación manual mínima cubre 1180, 1024, 640, 440, 390 y 320 px, sin
+overflow horizontal de página, controles recortados ni pérdida de foco visible.
 
 Los hashes privados como `#access-management` y `#user-tracking` requieren sesión. Sin token se limpia la ruta privada y se muestra Login; un `401` invalida la sesión almacenada.
 
@@ -245,6 +270,7 @@ Cadena actual:
 → 20260824_0009_group_permission_inheritance
 → 20260824_0010_password_reset_links
 → 20260825_0011_role_user_limit
+→ 20260825_0012_keep_quotation_voting_open
 ```
 
 Usuarios, Áreas, Roles y Grupos conservan versiones temporales en tablas
@@ -258,7 +284,7 @@ Los catálogos de Usuario, Área, Rol y Grupo muestran solo activos. Al volver a
 introducir la cédula, código o nombre de una entidad inactiva, el formulario
 ofrece recuperar sus datos y reactivarla con el mismo ID.
 
-`0002` fija que un Rol no puede pertenecer a más de un Grupo y un Usuario no puede tener dos Roles del mismo Grupo. `0003` fija un Cargo por Usuario. `0004` permite Roles globales sin relajar la restricción de un Rol por Grupo. `0009` agrega Permisos heredables de Grupo sin backfill de grants, conserva `role_permissions` y normaliza `permission_codes` en las instantáneas temporales abiertas. `0010` agrega `users.password_reset_version` para invalidar enlaces anteriores sin cambiar la contraseña ni las sesiones al emitir. `0011` agrega el `max_users` opcional y positivo de cada Rol; los Roles existentes continúan sin límite.
+`0002` fija que un Rol no puede pertenecer a más de un Grupo y un Usuario no puede tener dos Roles del mismo Grupo. `0003` fija un Cargo por Usuario. `0004` permite Roles globales sin relajar la restricción de un Rol por Grupo. `0009` agrega Permisos heredables de Grupo sin backfill de grants, conserva `role_permissions` y normaliza `permission_codes` en las instantáneas temporales abiertas. `0010` agrega `users.password_reset_version` para invalidar enlaces anteriores sin cambiar la contraseña ni las sesiones al emitir. `0011` agrega el `max_users` opcional y positivo de cada Rol; los Roles existentes continúan sin límite. `0012` devuelve a votación las solicitudes múltiples antiguas aprobadas sin factura.
 
 ## Despliegue
 
@@ -313,7 +339,7 @@ Validación:
 
 ```powershell
 docker compose exec -T backend alembic heads
-# esperado: 20260825_0011 (head)
+# esperado: 20260825_0012 (head)
 
 cd backend
 .\.venv\Scripts\python.exe -m scripts.run_tests

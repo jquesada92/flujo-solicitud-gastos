@@ -1,6 +1,6 @@
 # Prompt maestro de reconstrucción
 
-> Constitución vigente: **2.19.0**.
+> Constitución vigente: **2.21.0**.
 
 Reconstruye **Flujo de Control de Gastos** como una aplicación web neutral respecto al tipo de organización, lista para desplegar con React/Vite, FastAPI, SQLAlchemy, Alembic y PostgreSQL/Neon.
 
@@ -199,6 +199,11 @@ Crea una pantalla privada, de solo lectura, para seguimiento del equipo:
 
 Los Roles globales no crean membresía ni filas por Grupo en Seguimiento. No permitas editar IAM desde Seguimiento.
 
+En la tabla operativa de Solicitudes, calcula un monto de Seguimiento separado
+de `Expense.amount` para `MULTI_QUOTE`: máximo presentado cuando no hay votos,
+monto del líder cuando existe uno único y máximo presentado cuando hay empate.
+No selecciones proveedor ni ganador solo para completar esta visualización.
+
 ## 8. Sesión y rutas privadas
 
 Una ruta privada sin sesión debe redirigir al Login antes de montar su contenido. Un 401 recibido con token almacenado debe limpiar la sesión y retornar al Login.
@@ -259,7 +264,14 @@ unidad de éxito. Si no existe otro participante elegible o el soporte pendiente
 impide iniciar el flujo, revierte la solicitud, adjuntos y aprobaciones; no dejes
 un `Expense` en estado intermedio. Envía notificaciones solo después del commit.
 
-Para `MULTI_QUOTE`, congela por ronda la población activa con `requests:approve`, excluye al solicitante y exige soporte en cada opción. Cada invitado mantiene un voto; la ronda espera a todos y solo avanza con ganador único. Un empate permanece en `QUOTATION_VOTING`.
+Para `MULTI_QUOTE`, congela por ronda la población activa con
+`requests:approve`, excluye al solicitante y exige soporte en cada opción. Cada
+invitado mantiene un voto activo y puede cambiarlo mientras la ronda siga en
+`QUOTATION_VOTING`; registra evento por cada cambio. Cuando todos votan, un
+ganador único es solo provisional y no lleva a `APPROVED`. Un empate limpia la
+selección provisional y bloquea la factura. Al subir factura, bloquea la
+solicitud, recalcula población y resultado y solo con ganador único pasa directo
+a `CLOSED`; en otro caso responde 409 sin persistir archivo.
 
 ## 11. Aprobación y revisión
 
@@ -354,6 +366,7 @@ Cadena:
 → 20260824_0009_group_permission_inheritance
 → 20260824_0010_password_reset_links
 → 20260825_0011_role_user_limit
+→ 20260825_0012_keep_quotation_voting_open
 ```
 
 Toda creación o modificación relevante de Usuario, Área, Rol y Grupo se registra
@@ -365,7 +378,7 @@ La fila identifica actor, timestamp, tipo de evento, campos cambiados y valores
 Las listas GUI excluyen inactivos. Los formularios consultan recuperación por
 cédula o clave/nombre y reactivan el ID existente con confirmación del usuario.
 
-`0001` crea la instalación limpia. `0002` impide múltiples Grupos por Rol y dos Roles del mismo Grupo por Usuario. `0003` garantiza un Cargo por Usuario. `0004` permite Roles sin Grupo manteniendo la protección para Roles agrupados. `0009` agrega `group_permissions` vacía, sin cambiar accesos existentes ni `role_permissions`. `0010` agrega `users.password_reset_version` para invalidar emisiones anteriores sin rotar credenciales ni sesiones.
+`0001` crea la instalación limpia. `0002` impide múltiples Grupos por Rol y dos Roles del mismo Grupo por Usuario. `0003` garantiza un Cargo por Usuario. `0004` permite Roles sin Grupo manteniendo la protección para Roles agrupados. `0009` agrega `group_permissions` vacía, sin cambiar accesos existentes ni `role_permissions`. `0010` agrega `users.password_reset_version` para invalidar emisiones anteriores sin rotar credenciales ni sesiones. `0011` agrega el cupo opcional de Rol. `0012` devuelve a `QUOTATION_VOTING` solicitudes múltiples en `APPROVED` sin factura.
 
 ## 16. Correo
 
@@ -417,6 +430,7 @@ frontend/src/home-dashboard.jsx
 frontend/src/user-tracking.jsx
 frontend/src/iam-admin.jsx
 frontend/src/iam-responsive.css
+frontend/src/mobile-layout.css
 frontend/src/auth-route-guard.js
 frontend/src/request-governor.js
 frontend/src/classification-admin.js
@@ -424,6 +438,14 @@ frontend/src/closure-delegation.jsx
 ```
 
 Los bridges o campos de compatibilidad que existan en código no definen el diseño objetivo.
+
+El layout completo funciona desde 320 px sin overflow horizontal de página. En
+móvil conserva la navegación como banda táctil desplazable, representa la tabla
+operativa de Solicitudes como tarjetas etiquetadas, apila formularios/tableros y
+mantiene menús, modales, visores, Accesos y Seguimiento dentro del viewport. Usa
+objetivos táctiles de al menos 44 px, alturas dinámicas y `safe-area`. No declares
+responsive un cambio validado solo con build: comprueba navegador a 1180, 1024,
+640, 440, 390 y 320 px.
 
 ## 18. Definition of Done
 
@@ -433,7 +455,7 @@ Gates:
 
 ```text
 docker compose exec -T backend alembic heads
-# esperado: 20260825_0011 (head)
+# esperado: 20260825_0012 (head)
 
 cd backend
 .\.venv\Scripts\python.exe -m scripts.run_tests

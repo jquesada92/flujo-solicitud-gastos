@@ -75,12 +75,16 @@ El Rol global técnico `Administrador del sistema` no pertenece a ningún Grupo.
 
 Un Rol puede limitar opcionalmente su cantidad de Usuarios activos. Los Usuarios inactivos conservan su asignación sin consumir cupo; asignar a otro Usuario activo o reactivar uno que conserva el Rol se rechaza si está lleno. El máximo no puede bajarse de la ocupación activa y FastAPI serializa la comprobación sobre la fila del Rol.
 
-Contrato responsive de Accesos:
+Contrato responsive global:
 
-- funciona desde 320 px de ancho CSS sin overflow horizontal de la aplicación;
-- la grilla se apila y tabs/toolbars/acciones hacen `wrap` cuando falta espacio;
-- el estado de cada Rol permanece visible aunque su nombre o resumen sea largo;
-- las tarjetas de Permisos pasan a una columna en anchos estrechos y el contenido largo parte línea;
+- funciona desde 320 px de ancho CSS sin overflow horizontal de página;
+- la navegación permanece disponible como banda táctil desplazable y los menús
+  flotantes no salen del viewport;
+- la consulta principal de Solicitudes cambia la tabla ancha por tarjetas con
+  etiquetas; formularios, filtros, tableros, Accesos y Seguimiento se apilan;
+- el estado de cada Rol, las acciones y los textos largos permanecen visibles;
+- modales y visores usan altura dinámica, `safe-area` y un cierre alcanzable;
+- los controles táctiles principales miden al menos 44 px;
 - la validación visual mínima cubre 1180, 1024, 640, 440, 390 y 320 px.
 
 **Divergencia conocida:** el contrato anterior sigue exigiendo un selector por Grupo y selección múltiple de Roles globales. La ficha actual de `iam-admin.jsx` expone temporalmente un único selector total y reduce el borrador a `role_ids[0]`. Esto no modifica la cardinalidad normativa y no debe copiarse en una reconstrucción; la corrección debe representar y preservar todos los Roles ya asignados antes de guardar.
@@ -107,7 +111,17 @@ La solicitud nueva, su soporte y su ronda constituyen una unidad de éxito. Si n
 puede prepararse el flujo, la API responde con error y no conserva la solicitud
 ni archivos huérfanos. Las notificaciones ocurren después del commit.
 
-`MULTI_QUOTE` congela por ronda a los usuarios activos con `requests:approve`, excluye al solicitante y requiere soporte en cada opción. Cada invitado tiene un voto activo; la ronda espera a todos y solo selecciona una cotización si existe ganador único. Los empates permanecen en `QUOTATION_VOTING`.
+`MULTI_QUOTE` congela por ronda a los usuarios activos con `requests:approve`,
+excluye al solicitante y requiere soporte en cada opción. Cada invitado tiene un
+voto activo que puede cambiar mientras la solicitud siga en
+`QUOTATION_VOTING`; cada cambio conserva evento. Cuando todos votan, un ganador
+único es provisional y no cambia el estado. Un empate limpia esa selección y
+bloquea la factura. Solo la factura, tras recalcular bajo bloqueo que la población
+está completa y no hay empate, lleva directamente a `CLOSED`.
+
+La tabla operativa expone `tracking_amount` sin alterar `Expense.amount`: máximo
+de opciones sin votos, monto del líder único cuando hay votos y máximo de todas
+las opciones cuando los líderes están empatados.
 
 Estados relevantes:
 
@@ -143,6 +157,9 @@ expense_category
 ## Responsabilidad por recurso
 
 El backend calcula `can_cancel`, `can_correct`, `can_close`, `can_delegate_close`. Estas capacidades dependen de estado y relación con la solicitud, no de un permiso IAM global.
+
+Para solicitudes múltiples, `can_close` solo es accionable con ganador
+provisional. Un 409 por empate o votos pendientes no persiste factura ni cierre.
 
 ## Seguridad de sesión
 

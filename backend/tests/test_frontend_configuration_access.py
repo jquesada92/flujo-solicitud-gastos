@@ -338,9 +338,9 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn('grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);', css)
         self.assertIn('@media (max-width: 1024px)', css)
         self.assertIn('@media (max-width: 720px)', css)
-        self.assertIn('top: 117px;', css)
+        self.assertIn('top: var(--mobile-topbar-offset, 117px);', css)
         self.assertIn('@media (max-width: 640px)', css)
-        self.assertIn('padding: 24px 14px 48px;', css)
+        self.assertIn('padding: 24px 14px calc(48px + env(safe-area-inset-bottom));', css)
         self.assertIn('.iam-checks {\n    grid-template-columns: minmax(0, 1fr);', css)
         self.assertIn('@media (max-width: 440px)', css)
 

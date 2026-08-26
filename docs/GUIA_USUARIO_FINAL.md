@@ -4,7 +4,7 @@
 
 **Dirigida a:** Solicitantes y miembros de Junta Directiva (JD)
 
-**Contrato vigente:** Constitución 2.19.0
+**Contrato vigente:** Constitución 2.21.0
 
 ## 1. ¿Para qué sirve la aplicación?
 
@@ -64,6 +64,12 @@ válido o ya venció”, pide uno nuevo.
 En **Inicio**, el bloque **Acciones pendientes** es la referencia principal de
 trabajo. Al seleccionar una acción, la aplicación vuelve a comprobar que siga
 vigente antes de mostrar los controles disponibles.
+
+En celular, la navegación aparece como una banda horizontal debajo de tu nombre:
+deslízala para ver todas las opciones. Las Solicitudes se muestran como tarjetas
+con el nombre de cada dato; formularios, filtros y acciones se apilan para poder
+usarlos sin ampliar la pantalla. Los menús y ventanas pueden cerrarse desde su
+control visible y respetan el área segura del dispositivo.
 
 ## 4. Instructivo para Solicitantes
 
@@ -213,7 +219,7 @@ En una acción **Responder aprobación**:
 debe indicar concretamente qué información, monto, proveedor o soporte necesita
 corrección. JD no edita directamente una solicitud ajena.
 
-### 5.3 Votar una cotización
+### 5.3 Votar o cambiar el voto de una cotización
 
 En una acción **Votar cotización**:
 
@@ -221,16 +227,27 @@ En una acción **Votar cotización**:
 2. selecciona **Votar por esta opción** en la alternativa elegida;
 3. confirma que la acción se registró correctamente.
 
+Tu opción queda marcada como **Voto actual**. Mientras la ronda continúe
+abierta puedes escoger **Cambiar voto a esta opción** en otra alternativa. El
+sistema conserva un solo voto vigente y registra cada cambio para auditoría.
+
 La ronda espera a todas las personas invitadas. Cuando todos votan:
 
-- una opción con la mayor cantidad de votos, sin empate, queda seleccionada y la
-  solicitud pasa a **Aprobada**;
+- una opción con la mayor cantidad de votos, sin empate, queda como ganadora
+  provisional, pero la solicitud continúa en **Votación de cotizaciones**;
 - un empate mantiene la solicitud en **Votación de cotizaciones** hasta que un
   participante cambie su voto;
 - cada participante conserva un único voto vigente.
 
-Después de votar, la acción personal puede desaparecer aunque la ronda continúe
-esperando a otros miembros.
+La acción personal no desaparece después de votar. Permanece disponible para
+cambiar el voto hasta que el Solicitante o un delegado autorizado suba la
+factura. Si hay empate, la factura no se puede registrar. Con ganador único, la
+factura cierra la solicitud.
+
+En la tabla de Solicitudes, el monto de una ronda sin votos corresponde al mayor
+monto presentado. Cuando ya existen votos muestra el monto de la opción líder;
+si hay empate muestra el mayor monto de todas las opciones. Es una referencia
+operativa y no significa que una cotización ya esté seleccionada para cierre.
 
 ### 5.4 Usar Seguimiento
 
@@ -252,7 +269,7 @@ solicitudes.
 | --- | --- |
 | **Enviada** | La solicitud fue registrada y el sistema prepara o inicia su flujo. |
 | **Pendiente de aprobación** | Espera una o más decisiones asignadas. |
-| **Votación de cotizaciones** | Espera los votos de la ronda activa. |
+| **Votación de cotizaciones** | Espera votos, permite cambiarlos o tiene un ganador provisional pendiente de factura. |
 | **Aprobada** | La decisión fue favorable; falta registrar factura y cerrar. |
 | **Rechazada** | La solicitud no fue aprobada. |
 | **Corrección solicitada** | El Solicitante debe modificarla y reenviarla. |
@@ -289,8 +306,15 @@ reemplazada por una corrección o no haber sido asignada a tu usuario.
 
 ### La solicitud continúa en votación después de mi voto
 
-Es normal si faltan participantes o existe empate. Tu acción personal puede
-desaparecer mientras el proceso general continúa abierto.
+Es normal si faltan participantes, existe empate o hay un ganador provisional
+pero aún no se ha registrado la factura. Si fuiste invitado, tu acción permanece
+disponible para cambiar el voto hasta el cierre.
+
+### No puedo subir la factura de una solicitud con cotizaciones
+
+Verifica que todos los invitados hayan votado y que no exista empate. Si la
+pantalla indica empate, al menos un aprobador debe cambiar su voto antes de que
+el sistema permita cerrar con factura.
 
 ### No puedo abrir un soporte
 

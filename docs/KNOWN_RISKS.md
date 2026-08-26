@@ -1,6 +1,6 @@
 # Riesgos y divergencias conocidas
 
-Última revisión: 2026-08-25.
+Última revisión: 2026-08-26.
 
 Este registro evita que una persona o IA convierta una limitación actual en una regla falsa. Los documentos normativos siguen describiendo el comportamiento correcto; una divergencia se corrige en código y pruebas, no rebajando el contrato.
 

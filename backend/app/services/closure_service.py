@@ -9,14 +9,15 @@ from app.models.iam import SystemAccount
 from app.services.iam_service import is_system_account
 
 
-CLOSURE_ACTION_STATUSES = {
-    ExpenseStatus.APPROVED,
-    ExpenseStatus.CLOSED,
-}
-
-# Delegation is intentionally offered only when closure/invoice work is
-# actionable. This keeps the request table free of premature closure controls.
-DELEGATABLE_STATUSES = CLOSURE_ACTION_STATUSES
+def is_closure_actionable(expense: Expense) -> bool:
+    if expense.status == ExpenseStatus.CLOSED:
+        return True
+    if expense.request_type == 'MULTI_QUOTE':
+        return (
+            expense.status == ExpenseStatus.QUOTATION_VOTING
+            and expense.selected_quotation_id is not None
+        )
+    return expense.status == ExpenseStatus.APPROVED
 
 
 def is_requester(expense: Expense, user: User) -> bool:
@@ -48,7 +49,7 @@ def can_manage_closure(
     Authority belongs to the original requester, the protected system account,
     or the active per-request delegate chosen by the requester.
     """
-    if expense.status not in CLOSURE_ACTION_STATUSES:
+    if not is_closure_actionable(expense):
         return False
     if is_requester(expense, user):
         return True
@@ -63,7 +64,7 @@ def can_manage_closure(
 
 def can_delegate_closure(expense: Expense, user: User) -> bool:
     """Only the original requester may create/revoke a delegation."""
-    return expense.status in DELEGATABLE_STATUSES and is_requester(expense, user)
+    return is_closure_actionable(expense) and is_requester(expense, user)
 
 
 def closure_delegation_candidates(db: Session, expense: Expense) -> list[User]:

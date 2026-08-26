@@ -50,6 +50,7 @@ class DatabaseSchemaContractTests(unittest.TestCase):
                 '20260824_0009_group_permission_inheritance.py',
                 '20260824_0010_password_reset_links.py',
                 '20260825_0011_role_user_limit.py',
+                '20260825_0012_keep_quotation_voting_open.py',
             ],
         )
 
@@ -92,6 +93,9 @@ class DatabaseSchemaContractTests(unittest.TestCase):
         self.assertIn("revision = '20260825_0011'", role_limit)
         self.assertIn("down_revision = '20260824_0010'", role_limit)
         self.assertIn("'ck_roles_max_users_positive'", role_limit)
+        open_voting = (VERSIONS_DIR / '20260825_0012_keep_quotation_voting_open.py').read_text(encoding='utf-8')
+        self.assertIn("revision = '20260825_0012'", open_voting)
+        self.assertIn("down_revision = '20260825_0011'", open_voting)
         self.assertIn("down_revision = '20260820_0002'", single_position)
 
         global_roles = (VERSIONS_DIR / '20260821_0004_allow_global_roles.py').read_text(encoding='utf-8')

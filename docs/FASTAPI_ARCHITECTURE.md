@@ -84,6 +84,13 @@ adjuntos compensa además la solicitud `SIMPLE` pendiente creada en la llamada
 anterior si no puede iniciar su primera ronda. Las notificaciones se despachan
 solo después del commit mediante `notify_approval_flow_started()`.
 
+`quotation_service.cast_quotation_vote()` mantiene un voto activo por invitado,
+registra cada cambio y recalcula la selección provisional. La solicitud conserva
+`QUOTATION_VOTING`: una opción líder no es una aprobación final. Las rutas de voto
+y cierre bloquean la fila de `Expense`; al cargar factura,
+`require_unique_winner_for_closure()` exige todos los votos y ganador único antes
+de que `financial_actions` persista el adjunto y cambie a `CLOSED`.
+
 ## Middlewares
 
 - CORS explícito;
@@ -118,6 +125,7 @@ Los contratos críticos deben tener pruebas HTTP/modelo para:
 - cardinalidades IAM;
 - cupo de Rol en asignación, reactivación y reducción del máximo;
 - workflow/capacidades;
+- empate, cambio de voto, ganador provisional y cierre atómico `MULTI_QUOTE`;
 - población IAM y ausencia de solicitudes huérfanas cuando el flujo no inicia;
 - schema PostgreSQL;
 - frontend contracts cuando haya bridges transitorios.

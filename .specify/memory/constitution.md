@@ -1,8 +1,8 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.19.0
-**Vigente desde:** 2026-08-25
+**Versión:** 2.21.0
+**Vigente desde:** 2026-08-26
 
 ## 1. Propósito
 
@@ -173,6 +173,11 @@ Responde a: **“¿Cómo está la carga del equipo?”**
 
 Los Roles globales no crean filas de membresía en Seguimiento. Es de solo lectura y no modifica accesos.
 
+En la tabla operativa de Solicitudes, el monto visible de una ronda
+`MULTI_QUOTE` abierta es informativo y no modifica `Expense.amount`: sin votos
+es el máximo presentado; con líder único es el monto de esa opción; con empate
+es el máximo de todas las opciones.
+
 ## 9. Sesión y rutas privadas
 
 Toda pantalla protegida requiere sesión válida. Abrir directamente una ruta/hash privado sin token debe volver al Login sin montar una vista parcial. Un `401` con token almacenado invalida la sesión local y retorna al Login.
@@ -223,7 +228,7 @@ SIMPLE      → SIMPLE
 MULTI_QUOTE → MULTI_QUOTE
 ```
 
-Una ronda `MULTI_QUOTE` congela como participantes a usuarios activos con permiso efectivo `requests:approve`, excluye al solicitante y exige soporte válido en cada opción. Cada invitado mantiene un voto activo y todo cambio conserva evento. La ronda espera a todos los invitados: un ganador único lleva a `APPROVED`; un empate permanece en `QUOTATION_VOTING`.
+Una ronda `MULTI_QUOTE` congela como participantes a usuarios activos con permiso efectivo `requests:approve`, excluye al solicitante y exige soporte válido en cada opción. Cada invitado mantiene un voto activo y todo cambio conserva un evento inmutable. La ronda espera a todos los invitados y permanece en `QUOTATION_VOTING` incluso cuando existe un ganador único provisional, para que los invitados puedan cambiar su voto. Un empate elimina cualquier ganador provisional y bloquea la factura. La carga válida de la factura, con votación completa y ganador único calculado bajo bloqueo transaccional, es el evento que cierra la ronda y lleva la solicitud a `CLOSED`.
 
 Una ronda `SIMPLE` también resuelve sus participantes desde todos los Usuarios
 activos con permiso efectivo `requests:approve`, excluyendo al Solicitante. El
@@ -252,6 +257,10 @@ CLOSE_REQUEST
 ```
 
 Son tareas contextuales, no Permisos IAM.
+
+`QUOTATION_VOTE` permanece disponible para cada invitado mientras la ronda siga
+en `QUOTATION_VOTING`, aunque ya haya votado, porque representa **votar o cambiar
+el voto**. Desaparece al cerrar la solicitud.
 
 ## 13. Aprobación, revisión y corrección
 
@@ -288,6 +297,12 @@ OR delegado activo de esa solicitud
 ```
 
 `requests:close` no participa.
+
+En `MULTI_QUOTE`, `QUOTATION_VOTING` es compatible con cierre solo cuando todos
+los invitados votaron y existe un ganador único provisional. La API vuelve a
+calcular el resultado bajo bloqueo al recibir la factura; si falta un voto o hay
+empate responde 409 y no persiste archivo ni cierre. Una cotización con ganador
+provisional no pasa por `APPROVED`: la factura la lleva directamente a `CLOSED`.
 
 ## 15. Cuenta técnica
 
@@ -341,6 +356,7 @@ Cadena Alembic vigente:
 → 20260824_0009_group_permission_inheritance
 → 20260824_0010_password_reset_links
 → 20260825_0011_role_user_limit
+→ 20260825_0012_keep_quotation_voting_open
 ```
 
 `20260824_0009_group_permission_inheritance` agrega `group_permissions` vacía para no alterar accesos existentes durante la migración. La tabla relaciona Grupo y Permiso de forma única; no introduce denegaciones ni modifica `role_permissions`.
@@ -354,6 +370,10 @@ emisión por sí sola no modifica la contraseña, `must_change_password` ni
 `20260825_0011_role_user_limit` agrega `roles.max_users` nullable con un check
 positivo y normaliza las instantáneas temporales de Rol. No asigna límites a
 Roles existentes: todos migran como ilimitados.
+
+`20260825_0012_keep_quotation_voting_open` devuelve a `QUOTATION_VOTING` las
+solicitudes `MULTI_QUOTE` que habían quedado prematuramente en `APPROVED` sin
+factura. No altera solicitudes cerradas ni adjuntos existentes.
 
 Usuarios, Áreas, Roles y Grupos mantienen historial temporal versionado. Cada
 alta crea una fila cuyo `active_from` coincide con `created_at`; toda modificación
@@ -421,7 +441,27 @@ proceso, con limpieza TTL; no constituye una cuota global entre réplicas y
 depende de una dirección cliente confiable. La auditoría registra la acción y
 sus actores sin persistir ni exponer el token, la contraseña o su hash.
 
-## 18. Definition of Done
+## 18. Experiencia móvil
+
+La interfaz privada y las rutas públicas deben funcionar desde 320 px de ancho
+CSS sin overflow horizontal de la página, controles recortados ni pérdida de
+foco visible. En pantallas estrechas:
+
+- la navegación principal sigue disponible mediante una banda táctil desplazable
+  y sus menús flotantes permanecen dentro del viewport;
+- las consultas operativas prioritarias se representan como tarjetas legibles,
+  no como tablas de escritorio comprimidas;
+- formularios, filtros, acciones, Accesos y Seguimiento se apilan sin perder
+  contenido ni acciones;
+- diálogos y visores usan altura dinámica, respetan `safe-area` y mantienen una
+  forma visible de cerrar;
+- los objetivos táctiles principales miden al menos 44 px.
+
+El escritorio conserva su densidad y estructura. Todo cambio visual transversal
+se valida en navegador a 1180, 1024, 640, 440, 390 y 320 px; el build por sí solo
+no acredita el contrato responsive.
+
+## 19. Definition of Done
 
 Todo cambio relevante debe revisar y actualizar, según aplique:
 
@@ -442,7 +482,7 @@ Validaciones mínimas:
 ```text
 docker compose up -d --build
 docker compose exec -T backend alembic heads
-# esperado: 20260825_0011
+# esperado: 20260825_0012
 
 cd backend
 .\.venv\Scripts\python.exe -m scripts.run_tests
@@ -455,6 +495,12 @@ npm run build
 Los sembradores `app.demo_monitoring`/`app.live_demo` no son gates universales: mutan datos y solo pueden ejecutarse cuando la validación funcional lo requiera, dentro del PostgreSQL local aislado de Compose.
 
 Para cambios IAM, la aceptación debe cubrir además la unión aditiva Rol ∪ Grupo, ausencia de `DENY`, conservación de `RolePermission` al editar o desvincular, ausencia de autoridad por `GroupMember` aislado, exclusión de `config:manage` para usuarios ordinarios y, cuando aplique, cupo del Rol ante asignación, reactivación y concurrencia.
+
+Para `MULTI_QUOTE`, la aceptación debe cubrir voto inicial y cambio de voto,
+evento por cada cambio, ganador provisional sin transición a `APPROVED`, empate
+que limpia la selección y bloquea la factura, recálculo transaccional al cerrar,
+cierre directo a `CLOSED` con factura, rechazo de votos posteriores y monto
+operativo máximo/líder/máximo para los casos sin votos/líder único/empate.
 
 Para restablecimiento de contraseña, la aceptación debe cubrir autorización y
 destinos protegidos, expiración y uso único, invalidación del enlace anterior,

@@ -141,6 +141,7 @@ class DocumentationContractTests(unittest.TestCase):
             'frontend/src/home-dashboard.jsx',
             'frontend/src/iam-admin.jsx',
             'frontend/src/iam-responsive.css',
+            'frontend/src/mobile-layout.css',
             'frontend/src/auth-route-guard.js',
             'frontend/src/request-governor.js',
             'frontend/vite.config.js',
@@ -204,6 +205,12 @@ class DocumentationContractTests(unittest.TestCase):
             'ApprovalPolicy.approver_profile_codes',
             'solicitud nueva sin ronda iniciable no se persiste',
             'nunca dejar una fila `Expense` huérfana',
+            'permanece en `QUOTATION_VOTING` hasta que se carga la factura',
+            'Un ganador único es provisional',
+            'un empate limpia la selección y bloquea el cierre',
+            'nunca restaurar la transición automática a `APPROVED`',
+            'El monto operativo mostrado para `MULTI_QUOTE` es máximo sin votos',
+            'separado de `Expense.amount`',
         )
         for fragment in access_fragments + reset_fragments + workflow_fragments:
             with self.subTest(fragment=fragment):
@@ -212,6 +219,36 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('Matriz mínima de impacto', policy)
         self.assertIn('test_documentation_contract.py', policy)
         self.assertIn('no puede omitir una fuente', policy)
+
+    def test_mobile_layout_contract_is_synchronized(self):
+        required_fragments = {
+            REPO_ROOT / '.specify' / 'memory' / 'constitution.md': (
+                '## 18. Experiencia móvil',
+                'desde 320 px',
+                '1180, 1024, 640, 440, 390 y 320 px',
+            ),
+            REPO_ROOT / 'README.md': (
+                '### Layout móvil',
+                'frontend/src/mobile-layout.css',
+            ),
+            REPO_ROOT / 'PROMPT_RECONSTRUCCION.md': (
+                'tabla operativa de Solicitudes como tarjetas etiquetadas',
+                'objetivos táctiles de al menos 44 px',
+            ),
+            REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
+                'Contrato responsive global',
+                'sin overflow horizontal de página',
+            ),
+            REPO_ROOT / 'AGENTS.md': (
+                '`mobile-layout.css` es la capa responsive transversal',
+                'ni ocultar datos/acciones para evitar overflow',
+            ),
+        }
+        for document, fragments in required_fragments.items():
+            source = re.sub(r'\s+', ' ', read(document))
+            for fragment in fragments:
+                with self.subTest(document=document.name, fragment=fragment):
+                    self.assertIn(fragment, source)
 
     def test_workflow_support_docs_cannot_restore_legacy_approver_authority(self):
         required_fragments = {
@@ -234,6 +271,36 @@ class DocumentationContractTests(unittest.TestCase):
             REPO_ROOT / 'docs' / 'VALIDACION_LOCAL.md': (
                 '`SIMPLE` sin `ApprovalPolicy`',
                 'sin `Expense`, `ExpenseAttachment` ni archivo físico huérfano',
+            ),
+        }
+        for document, fragments in required_fragments.items():
+            source = re.sub(r'\s+', ' ', read(document))
+            for fragment in fragments:
+                with self.subTest(document=document.name, fragment=fragment):
+                    self.assertIn(fragment, source)
+
+    def test_multi_quote_docs_keep_voting_open_until_invoice(self):
+        required_fragments = {
+            REPO_ROOT / '.specify' / 'memory' / 'constitution.md': (
+                'ganador único provisional',
+                'bloquea la factura',
+                'lleva la solicitud a `CLOSED`',
+            ),
+            REPO_ROOT / 'specs' / '013-multi-quote-voting' / 'spec.md': (
+                'puede cambiar su voto',
+                'pasa directamente a `CLOSED`',
+                'Sin votos muestra el máximo',
+                'líderes están empatados muestra nuevamente el máximo',
+            ),
+            REPO_ROOT / 'docs' / 'MULTI_QUOTE_VOTING.md': (
+                '**Votar o cambiar voto**',
+                'Ante empate o voto pendiente responde 409',
+                'antes del primer voto muestra el máximo',
+                'si hay empate, vuelve a mostrar el máximo',
+            ),
+            REPO_ROOT / 'docs' / 'VALIDACION_LOCAL.md': (
+                '`MULTI_QUOTE` con todos los votos empatados',
+                'ganador provisional sin pasar a `APPROVED`',
             ),
         }
         for document, fragments in required_fragments.items():

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Analytics } from "@vercel/analytics/react";
 import { injectSpeedInsights } from "@vercel/speed-insights";
 import "./styles.css";
+import "./mobile-layout.css";
 
 const PASSWORD_RESET_PATH = "/reset-password";
 const isPasswordResetPath = (pathname = window.location.pathname) => (
@@ -931,13 +932,20 @@ const flowEventName = (event) => ({
   EXPENSE_CANCELLED: "Solicitud cancelada",
 })[event] || descriptor(event);
 
-function FlowProgressViewer({ expense, onClose }) {
+function FlowProgressViewer({ expense, currentUserEmail, canApprove, onChangeVote, onClose }) {
   const metrics = expenseFlowMetrics(expense);
   const multiQuote = expense.request_type === "MULTI_QUOTE";
+  const currentVote = multiQuote ? expense.quotation_votes.find((vote) => vote.voter_email?.toLowerCase() === currentUserEmail?.toLowerCase()) : null;
+  const voteCounts = multiQuote ? expense.quotation_options.map((option) => expense.quotation_votes.filter((vote) => vote.quotation_option_id === option.id).length) : [];
+  const highestVoteCount = voteCounts.length ? Math.max(...voteCounts) : 0;
+  const tied = multiQuote && metrics.pending === 0 && voteCounts.filter((count) => count === highestVoteCount).length > 1;
   return <div className="confirm-overlay" role="presentation" onMouseDown={onClose}>
     <section className="confirm-dialog flow-progress-dialog" role="dialog" aria-modal="true" aria-labelledby="flow-progress-title" onMouseDown={(event) => event.stopPropagation()}>
       <div className="card-heading"><div><p className="eyebrow">AVANCE DEL FLUJO</p><h2 id="flow-progress-title">{expense.display_id}</h2><span className="muted">{expense.title}</span></div><button className="secondary" onClick={onClose}>Cerrar</button></div>
       <div className="flow-summary"><strong>{metrics.percentage}% respondido</strong><span>{metrics.answered} respuesta(s) · {metrics.pending} pendiente(s) · {metrics.total} participante(s)</span><div className="flow-progress-track"><span style={{width:`${metrics.percentage}%`}} /></div></div>
+      {tied && <div className="notice error">La votación está empatada y no permite registrar la factura. Los aprobadores pueden cambiar su voto.</div>}
+      {multiQuote && !tied && expense.selected_quotation_id && <div className="notice success">Existe un ganador provisional. La votación se cerrará al registrar la factura.</div>}
+      {multiQuote && canApprove && currentVote && expense.status === "QUOTATION_VOTING" && <button className="primary" onClick={onChangeVote}>Cambiar mi voto</button>}
       <div className="flow-response-list">{multiQuote ? expense.quotation_votes.map((vote) => { const option = expense.quotation_options.find((item) => item.id === vote.quotation_option_id); return <article key={`${vote.voter_email}-${vote.quotation_option_id}`} className="flow-response-card">
         <div><strong>{vote.voter_name || vote.voter_email}</strong><span>{titleName(vote.voter_role)}</span></div>
         <StatusBadge status="APPROVED"/>
@@ -953,7 +961,8 @@ function FlowProgressViewer({ expense, onClose }) {
   </div>;
 }
 
-function ExpenseDetailViewer({ expense, categoryName, subcategoryName, canApprove, onVoted, onClose }) {
+function ExpenseDetailViewer({ expense, categoryName, subcategoryName, canApprove, currentUserEmail, onVoted, onClose }) {
+  const hasCurrentVote = expense.quotation_votes?.some((item) => item.voter_email?.toLowerCase() === currentUserEmail?.toLowerCase());
   const vote = async (optionId) => {
     await api(`/api/expenses/${expense.internal_request_id || expense.request_id}/quotation-vote`, { method: "POST", body: JSON.stringify({ quotation_option_id: optionId }) });
     onVoted?.(); onClose();
@@ -972,7 +981,7 @@ function ExpenseDetailViewer({ expense, categoryName, subcategoryName, canApprov
         <div><dt>Inicio</dt><dd>{approvalTimestamp(expense.created_at)}</dd></div>
         <div><dt>Última actualización</dt><dd>{flowEventName(expense.last_event_type)}<span className="subtext">{approvalTimestamp(expense.last_event_at)}</span></dd></div>
       </dl>
-      {expense.request_type === "MULTI_QUOTE" && <div className="quotation-audit-list"><h3>Cotizaciones presentadas</h3>{expense.quotation_options.map((option) => { const count = expense.quotation_votes.filter((item) => item.quotation_option_id === option.id).length; return <article className={`quote-option-card ${expense.selected_quotation_id === option.id ? "selected" : ""}`} key={option.id}><div><strong>Opción {option.option_number}: {option.supplier}</strong><span className="subtext">${Number(option.amount).toLocaleString(undefined,{minimumFractionDigits:2})} · {count} voto(s)</span>{option.notes && <span className="subtext">{option.notes}</span>}</div>{option.item_url && <a href={option.item_url} target="_blank" rel="noreferrer">Ver cotización</a>}{canApprove && expense.status === "QUOTATION_VOTING" && <button className="primary" onClick={() => vote(option.id)}>Votar por esta opción</button>}</article> })}</div>}
+      {expense.request_type === "MULTI_QUOTE" && <div className="quotation-audit-list"><h3>Cotizaciones presentadas</h3>{expense.quotation_options.map((option) => { const count = expense.quotation_votes.filter((item) => item.quotation_option_id === option.id).length; const isCurrentVote = expense.quotation_votes.some((item) => item.quotation_option_id === option.id && item.voter_email?.toLowerCase() === currentUserEmail?.toLowerCase()); return <article className={`quote-option-card ${expense.selected_quotation_id === option.id ? "selected" : ""}`} key={option.id}><div><strong>Opción {option.option_number}: {option.supplier}</strong><span className="subtext">${Number(option.amount).toLocaleString(undefined,{minimumFractionDigits:2})} · {count} voto(s)</span>{isCurrentVote && <span className="subtext">Tu voto actual</span>}{option.notes && <span className="subtext">{option.notes}</span>}</div>{option.item_url && <a href={option.item_url} target="_blank" rel="noreferrer">Ver cotización</a>}{canApprove && expense.status === "QUOTATION_VOTING" && <button className="primary" disabled={isCurrentVote} onClick={() => vote(option.id)}>{isCurrentVote ? "Voto actual" : hasCurrentVote ? "Cambiar voto a esta opción" : "Votar por esta opción"}</button>}</article> })}</div>}
       <div className="description-box"><strong>Descripción / justificación</strong><p>{expense.description}</p></div>
       <div className="expense-detail-references"><span><strong>ID:</strong> {expense.display_id}</span><span><strong>Flujo:</strong> {expense.flow_id}</span></div>
     </section>
@@ -984,6 +993,7 @@ function ExpenseTable({
   canEdit,
   canApprove,
   canClose,
+  currentUserEmail,
   onEdit,
   onChanged,
   categoryOptions = [],
@@ -1063,8 +1073,8 @@ function ExpenseTable({
   return (
     <section className="card">
       {viewing && <AttachmentViewer file={viewing} onClose={() => setViewing(null)} />}
-      {flowViewing && <FlowProgressViewer expense={flowViewing} onClose={() => setFlowViewing(null)} />}
-      {detailViewing && <ExpenseDetailViewer expense={detailViewing} categoryName={categoryName} subcategoryName={subcategoryName} canApprove={canApprove} onVoted={onChanged} onClose={() => setDetailViewing(null)} />}
+      {flowViewing && <FlowProgressViewer expense={flowViewing} currentUserEmail={currentUserEmail} canApprove={canApprove} onChangeVote={() => { setDetailViewing(flowViewing); setFlowViewing(null); }} onClose={() => setFlowViewing(null)} />}
+      {detailViewing && <ExpenseDetailViewer expense={detailViewing} categoryName={categoryName} subcategoryName={subcategoryName} canApprove={canApprove} currentUserEmail={currentUserEmail} onVoted={onChanged} onClose={() => setDetailViewing(null)} />}
       <div className="card-heading">
         <div>
           <p className="eyebrow">SEGUIMIENTO</p>
@@ -1178,22 +1188,22 @@ function ExpenseTable({
             <tbody>
               {filtered.map((x) => (
                 <tr key={x.request_id}>
-                  <td className="request-cell">
+                  <td className="request-cell" data-label="Solicitud">
                     <button className="request-detail-button" onClick={() => setDetailViewing(x)}>{x.title}</button>
                     <span className={`urgency-badge urgency-${String(x.urgency || "NORMAL").toLowerCase()}`}>{urgencyName(x.urgency)}</span>
                     <span className="subtext">{x.supplier}</span>
                     <span className="subtext id-code" title={x.request_id}>{x.request_id}</span>
                     {x.revised_from_request_id && <span className="subtext">Solicitud corregida</span>}
                   </td>
-                  <td className="timestamp-cell">{approvalTimestamp(x.created_at)}</td>
-                  <td className="timestamp-cell"><strong>{flowEventName(x.last_event_type)}</strong><span className="subtext">{approvalTimestamp(x.last_event_at)}</span></td>
-                  <td>
+                  <td className="timestamp-cell" data-label="Inicio">{approvalTimestamp(x.created_at)}</td>
+                  <td className="timestamp-cell" data-label="Actualización"><strong>{flowEventName(x.last_event_type)}</strong><span className="subtext">{approvalTimestamp(x.last_event_at)}</span></td>
+                  <td data-label="Categoría">
                     {x.expense_type}
                     <span className="subtext">
                       {subcategoryName(x.expense_subcategory)}
                     </span>
                   </td>
-                  <td className="support-cell">
+                  <td className="support-cell" data-label="Soportes">
                     {x.item_url && (
                       <a href={x.item_url} target="_blank" rel="noreferrer">
                         Ver producto/servicio
@@ -1217,7 +1227,7 @@ function ExpenseTable({
                       <span className="muted">—</span>
                     )}
                   </td>
-                  <td className="invoice-cell">
+                  <td className="invoice-cell" data-label="Factura">
                     {x.status === "CLOSED" ? (
                       x.attachments.filter((a) => a.document_type === "INVOICE").map((a) => (
                         <button className="link-button" key={a.id} onClick={() => loadAttachment(a).then(setViewing).catch((e) => setError(e.message))}>
@@ -1228,13 +1238,13 @@ function ExpenseTable({
                     ) : <span className="muted">Disponible al cerrar</span>}
                     {x.status === "CLOSED" && !x.attachments.some((a) => a.document_type === "INVOICE") && <span className="muted">Sin factura registrada</span>}
                   </td>
-                  <td className="amount-cell">
+                  <td className="amount-cell" data-label="Monto">
                     $
-                    {Number(x.amount).toLocaleString(undefined, {
+                    {Number(x.tracking_amount ?? x.amount).toLocaleString(undefined, {
                       minimumFractionDigits: 2,
                     })}
                   </td>
-                  <td>
+                  <td data-label="Estado">
                     <StatusBadge status={x.status} />
                     {x.cancellation_reason && (
                       <span className="subtext" title={x.cancellation_reason}>
@@ -1245,7 +1255,7 @@ function ExpenseTable({
                       <span className="subtext">Cerrada por {x.closed_by}</span>
                     )}
                   </td>
-                  <td className="flow-cell">
+                  <td className="flow-cell" data-label="Avance">
                     {(() => { const progress=expenseFlowMetrics(x); return <button className="flow-progress-button" onClick={() => setFlowViewing(x)} aria-label={`Ver avance del flujo ${x.display_id}`}>
                       <span><strong>{progress.percentage}%</strong> respondido</span>
                       <div className="flow-progress-track"><span style={{width:`${progress.percentage}%`}} /></div>
@@ -1253,7 +1263,7 @@ function ExpenseTable({
                     </button> })()}
                   </td>
                   {(canEdit || canClose) && (
-                    <td>
+                    <td data-label="Acciones">
                       <div className="row-actions">
                         {canEdit && x.status !== "CLOSED" && <button
                           className="secondary nowrap"
@@ -1277,7 +1287,7 @@ function ExpenseTable({
                             Cancelar solicitud
                           </button>
                         )}
-                        {canClose && x.status === "APPROVED" && (
+                        {canClose && ["APPROVED", "QUOTATION_VOTING"].includes(x.status) && (
                           <button
                             className="primary nowrap"
                             onClick={() => setClosing(x)}
@@ -3359,17 +3369,22 @@ function App() {
           </div>
         </div>
         <div className="header-actions">
-          <button onClick={() => navigateTo("home")}>Inicio</button>
-          <button onClick={() => navigateTo("expenses")}>Solicitudes</button>
+          <button aria-current={tab === "home" ? "page" : undefined} onClick={() => navigateTo("home")}>Inicio</button>
+          <button aria-current={tab === "expenses" ? "page" : undefined} onClick={() => navigateTo("expenses")}>Solicitudes</button>
           {canView && (
-            <button onClick={() => navigateTo("invoices")}>Facturas</button>
+            <button aria-current={tab === "invoices" ? "page" : undefined} onClick={() => navigateTo("invoices")}>Facturas</button>
           )}
           {canConfigure && (
-            <button onClick={() => navigateTo("audit")}>Auditoría</button>
+            <button aria-current={tab === "audit" ? "page" : undefined} onClick={() => navigateTo("audit")}>Auditoría</button>
           )}
           {canManagePeople && (
             <div className="config-menu">
-              <button onClick={() => setConfigOpen((open) => !open)}>Configuración {configOpen ? "▴" : "▾"}</button>
+              <button
+                aria-current={["people", "organization", "categories", "rules"].includes(tab) ? "page" : undefined}
+                aria-expanded={configOpen}
+                aria-haspopup="menu"
+                onClick={() => setConfigOpen((open) => !open)}
+              >Configuración {configOpen ? "▴" : "▾"}</button>
               {configOpen && <div className="config-menu-items">
                 <button onClick={() => navigateTo("people")}>Personas</button>
                 {canAccessOrganization && <button onClick={() => navigateTo("organization")}>Organigrama</button>}
@@ -3414,6 +3429,7 @@ function App() {
               canEdit={canCreate}
               canApprove={canApprove}
               canClose={true}
+              currentUserEmail={user.email}
               onEdit={startRevision}
               onChanged={() => setRefresh((x) => x + 1)}
               categoryOptions={categoryOptions}

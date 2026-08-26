@@ -1,5 +1,33 @@
 # Historia funcional
 
+## 2026-08-26 — votación abierta hasta factura y sin cierre en empate
+
+- La Constitución evoluciona a 2.21.0.
+- Completar los votos ya no mueve una solicitud múltiple a `APPROVED`; un
+  ganador único queda provisional en `QUOTATION_VOTING`.
+- Cada invitado puede cambiar su voto hasta la factura y cada cambio mantiene
+  trazabilidad inmutable.
+- Empates y votos pendientes bloquean el cierre; la factura recalcula el
+  resultado bajo bloqueo y lleva directamente a `CLOSED` solo con ganador único.
+- La revisión `20260825_0012_keep_quotation_voting_open` normaliza solicitudes
+  anteriores aprobadas sin factura.
+- El monto operativo de solicitudes múltiples deja de aparecer como cero: usa
+  máximo sin votos, monto del líder único y máximo ante empate, separado de la
+  selección financiera final.
+- Interfaz, guía de usuario, arquitectura, contrato, Spec 013, pruebas y
+  guardrails de agentes quedan sincronizados con la nueva regla.
+
+## 2026-08-25 — layout móvil transversal
+
+- La Constitución evoluciona a 2.20.0 y extiende el contrato responsive a toda
+  la aplicación desde 320 px.
+- La navegación permanece accesible como banda táctil y la consulta principal
+  de Solicitudes usa tarjetas etiquetadas en lugar de comprimir una tabla ancha.
+- Inicio, Accesos, Seguimiento, formularios, menús, modales y visores respetan
+  ancho, altura dinámica y áreas seguras del dispositivo.
+- La Spec 020 y sus pruebas protegen el layout móvil sin cambiar permisos ni
+  reglas del flujo; la validación visual completa sigue como gate explícito.
+
 ## 2026-08-25 — aprobadores IAM y creación atómica
 
 - La Constitución evoluciona a 2.19.0.

@@ -199,6 +199,24 @@
   color: #166534;
 }
 
+.pending-action-warning,
+.pending-action-info {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.pending-action-warning {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.pending-action-info {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
 .pending-supports {
   flex-direction: column;
   align-items: flex-start;
@@ -233,6 +251,11 @@
   background: #f8fafc;
 }
 
+.pending-quote-card.current-vote {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
 .pending-quote-heading {
   justify-content: space-between;
   align-items: flex-start;
@@ -251,9 +274,24 @@
 
   .pending-action-modal {
     width: 100%;
-    max-height: 92vh;
+    max-height: calc(100dvh - env(safe-area-inset-top));
     border-radius: 20px 20px 0 0;
+    padding: 0 18px calc(18px + env(safe-area-inset-bottom));
+  }
+
+  .pending-action-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    margin-inline: -18px;
     padding: 18px;
+    background: rgba(255, 255, 255, .97);
+  }
+
+  .pending-action-header > div,
+  .pending-quote-heading > * {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .pending-request-summary,
@@ -263,5 +301,10 @@
 
   .pending-action-buttons > button {
     flex: 1 1 100%;
+    min-height: 44px;
+  }
+
+  .pending-quote-heading {
+    flex-direction: column;
   }
 }

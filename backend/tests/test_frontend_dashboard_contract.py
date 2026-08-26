@@ -30,6 +30,10 @@ class FrontendDashboardContractTests(unittest.TestCase):
         self.assertIn('Enviar a revisión', source)
         self.assertIn('comment.trim().length < 3', source)
         self.assertIn('Votar por esta opción', source)
+        self.assertIn('Votar o cambiar voto', source)
+        self.assertIn('Cambiar voto a esta opción', source)
+        self.assertIn('La votación está empatada', source)
+        self.assertIn('ganador provisional', source)
         self.assertIn('Subir factura y cerrar', source)
 
     def test_closure_pending_action_reuses_existing_delegation_component(self):
@@ -57,6 +61,10 @@ class FrontendDashboardContractTests(unittest.TestCase):
         self.assertIn('<article className="dashboard-kpi success">', source)
         self.assertNotIn('<button className="dashboard-kpi attention"', source)
         self.assertNotIn('<button className="dashboard-kpi" onClick={onOpenRequests}', source)
+
+    def test_request_tracking_uses_the_operational_multi_quote_amount(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'main.jsx').read_text(encoding='utf-8')
+        self.assertIn('Number(x.tracking_amount ?? x.amount)', source)
 
     def test_vite_extracts_legacy_components_and_uses_resource_capabilities(self):
         vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')

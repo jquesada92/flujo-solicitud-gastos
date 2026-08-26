@@ -93,6 +93,7 @@ Nunca imprime ni envía secretos de producción. Los correos de workflow se mues
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m scripts.run_tests
+.\.venv\Scripts\python.exe -m unittest tests.test_multi_quote_open_voting -v
 
 cd ..\frontend
 npm ci
@@ -111,7 +112,7 @@ docker compose exec -T backend alembic current
 docker compose exec -T backend alembic heads
 ```
 
-Ambos deben indicar `20260825_0011 (head)`.
+Ambos deben indicar `20260825_0012 (head)`.
 
 Las tablas, tipos ENUM, contadores e `alembic_version` deben resolverse dentro de `administracion`. Toda consulta SQL cruda debe usar el nombre calificado derivado del modelo; no debe depender de `search_path`.
 
@@ -128,6 +129,12 @@ Las tablas, tipos ENUM, contadores e `alembic_version` deben resolverse dentro d
 - `SIMPLE` sin `ApprovalPolicy`, con aprobadores por Rol propio, herencia de Grupo
   o Rol global → ronda `MAJORITY` con esos Usuarios;
 - `SIMPLE` sin otro Usuario con `requests:approve` → 422 sin `Expense` persistido;
+- `MULTI_QUOTE` con todos los votos empatados → conserva
+  `QUOTATION_VOTING`, no tiene selección y rechaza factura con 409;
+- un invitado cambia su voto → conserva un voto activo, agrega evento y, si
+  rompe el empate, establece ganador provisional sin pasar a `APPROVED`;
+- factura con todos los votos y ganador único → pasa directo a `CLOSED`;
+- votar después del cierre → 409;
 - fallo al iniciar la primera ronda después de cargar soporte → 422 sin
   `Expense`, `ExpenseAttachment` ni archivo físico huérfano;
 - origen CORS no autorizado sin `Access-Control-Allow-Origin`;

@@ -123,6 +123,9 @@ una tarea con alcance explícito.
   listados en el README son las superficies nuevas; los anchors de extracción en
   `main.jsx`/`vite.config.js` siguen siendo frágiles. Todo cambio allí exige
   `npm run build`.
+- `mobile-layout.css` es la capa responsive transversal. No devolver Solicitudes
+  a una tabla fija en móvil ni ocultar datos/acciones para evitar overflow; los
+  estilos específicos de Accesos, Inicio y Seguimiento siguen junto a sus módulos.
 - IAM usa grants aditivos `RolePermission ∪ GroupPermission`, sin `DENY`.
   `GroupMember`, Cargo y nombres organizacionales no autorizan;
   `config:manage` sigue reservado a `system_accounts`.
@@ -144,6 +147,17 @@ una tarea con alcance explícito.
   legacy por correo no crea autoridad; la ausencia de política no desactiva IAM.
   En particular, `ApprovalPolicy.approver_profile_codes` es metadata física de
   compatibilidad: nunca usarla para filtrar, agregar o autorizar participantes.
+- Una ronda `MULTI_QUOTE` permanece en `QUOTATION_VOTING` hasta que se carga la
+  factura. Cada invitado conserva un voto activo pero puede cambiarlo mientras
+  la ronda esté abierta, registrando un evento por cambio. Un ganador único es
+  provisional; un empate limpia la selección y bloquea el cierre. La carga de
+  factura debe bloquear la solicitud, recalcular población y resultado, y solo
+  entonces pasar directamente a `CLOSED`; nunca restaurar la transición
+  automática a `APPROVED` ni ocultar la acción después del primer voto.
+- El monto operativo mostrado para `MULTI_QUOTE` es máximo sin votos, monto del
+  líder único cuando existe y máximo ante empate. Debe exponerse separado de
+  `Expense.amount`: nunca fijar proveedor o selección financiera solo para evitar
+  que la tabla muestre cero.
 - Una solicitud nueva sin ronda iniciable no se persiste. Si SIMPLE requiere una
   carga de soporte en una segunda llamada, un fallo al preparar el flujo debe
   revertir también la solicitud y el archivo; nunca dejar una fila `Expense`
@@ -192,6 +206,13 @@ Flujo de aprobación o atomicidad de solicitudes:
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m unittest tests.test_request_flow_creation -v
+```
+
+Votación de cotizaciones o cierre con factura:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m unittest tests.test_multi_quote_open_voting -v
 ```
 
 No sustituir el runner por discovery directo: `scripts.run_tests` evita leer

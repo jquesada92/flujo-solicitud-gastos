@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.21.0 — 2026-08-26
+
+- las rondas `MULTI_QUOTE` permanecen en `QUOTATION_VOTING` aunque exista un
+  ganador único provisional;
+- los invitados conservan **Votar o cambiar voto** hasta que se registre la
+  factura, manteniendo un voto activo y un evento inmutable por cada cambio;
+- un empate limpia la selección provisional y bloquea la factura con 409 sin
+  persistir adjuntos;
+- el cierre recalcula votos bajo bloqueo y solo una población completa con
+  ganador único pasa directamente a `CLOSED` al subir factura;
+- Alembic `20260825_0012_keep_quotation_voting_open` devuelve a votación las
+  solicitudes múltiples antiguas en `APPROVED` sin factura;
+- Inicio y Seguimiento muestran voto actual, cambio de voto, empate y ganador
+  provisional; se agregan pruebas integrales y guardrails contra regresiones.
+- la tabla operativa de Solicitudes muestra para `MULTI_QUOTE` el máximo sin
+  votos, el monto del líder único o el máximo ante empate, sin alterar el monto
+  financiero canónico.
+
+## 2.20.0 — 2026-08-25
+
+- layout móvil transversal desde 320 px, con navegación táctil desplazable y
+  vista actual identificable;
+- consulta de Solicitudes convertida de tabla fija de 1450 px a tarjetas
+  etiquetadas en celular, sin eliminar datos ni acciones;
+- filtros, tableros, Accesos y Seguimiento apilables con textos largos legibles;
+- menús, confirmaciones, acciones pendientes y visores ajustados a `100dvh`,
+  `safe-area` y objetivos táctiles de al menos 44 px;
+- nueva Spec 020 y contrato estático; la aceptación visual completa permanece
+  pendiente hasta revisar navegador en todos los anchos exigidos.
+
 ## 2.19.0 — 2026-08-25
 
 - las solicitudes `SIMPLE` seleccionan aprobadores IAM aunque no exista una

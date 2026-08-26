@@ -205,7 +205,11 @@ class QuotationVote(Base):
 class QuotationVoteEvent(Base):
     __tablename__ = 'quotation_vote_events'
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, 'sqlite'),
+        primary_key=True,
+        autoincrement=True,
+    )
     expense_id: Mapped[int] = mapped_column(ForeignKey('expenses.id', ondelete='CASCADE'), nullable=False, index=True)
     flow_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     voter_user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), nullable=False)

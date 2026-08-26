@@ -39,8 +39,8 @@ function replaceClosureVisibility(source) {
   );
   next = replaceRequired(
     next,
-    '{canClose && x.status === "APPROVED" && (',
-    '{x.can_close && x.status === "APPROVED" && (',
+    '{canClose && ["APPROVED", "QUOTATION_VOTING"].includes(x.status) && (',
+    '{x.can_close && ["APPROVED", "QUOTATION_VOTING"].includes(x.status) && (',
     "approved closure guard",
   );
   return next;
@@ -95,7 +95,7 @@ function injectClosureDelegationButton(source) {
 }
 
 function replaceAuditMenuVisibility(source) {
-  const pattern = /\{\s*canConfigure\s*&&\s*\(\s*<button\s+onClick=\{\(\)\s*=>\s*navigateTo\("audit"\)\}>\s*Auditoría\s*<\/button>\s*\)\s*\}/g;
+  const pattern = /\{\s*canConfigure\s*&&\s*\(\s*(<button\b[^>]*onClick=\{\(\)\s*=>\s*navigateTo\("audit"\)\}[^>]*>\s*Auditoría\s*<\/button>)\s*\)\s*\}/g;
   const matches = [...source.matchAll(pattern)];
   if (matches.length !== 1) {
     throw new Error(
@@ -104,7 +104,7 @@ function replaceAuditMenuVisibility(source) {
   }
   return source.replace(
     pattern,
-    '{canReadConfiguration && (\n            <button onClick={() => navigateTo("audit")}>Auditoría</button>\n          )}',
+    '{canReadConfiguration && (\n            $1\n          )}',
   );
 }
 

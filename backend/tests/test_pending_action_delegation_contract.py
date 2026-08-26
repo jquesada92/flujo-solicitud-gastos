@@ -10,7 +10,7 @@ class PendingActionDelegationContractTests(unittest.TestCase):
         source = (REPO_ROOT / 'backend' / 'app' / 'api' / 'my_actions.py').read_text(encoding='utf-8')
         self.assertIn('from app.services.closure_service import can_delegate_closure', source)
         self.assertIn("'can_delegate_close': can_delegate_closure(expense, user)", source)
-        self.assertIn("'request': _request_payload(expense, user)", source)
+        self.assertIn("'request': _request_payload(db, expense, user)", source)
 
 
 if __name__ == '__main__':

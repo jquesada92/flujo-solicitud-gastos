@@ -31,15 +31,34 @@ Cada usuario mantiene un voto activo por solicitud. Cambiar de opción actualiza
 
 La ronda espera el voto de todas las invitaciones congeladas. Cuando todos han votado:
 
-- un ganador único selecciona la cotización y lleva la solicitud a `APPROVED`;
-- un empate mantiene la ronda abierta hasta que un participante cambie su voto;
+- un ganador único selecciona una cotización **provisional**, pero conserva la solicitud en `QUOTATION_VOTING`;
+- un empate mantiene la ronda abierta, elimina cualquier selección provisional y bloquea la carga de factura;
+- cada invitado puede cambiar su voto y el resultado se recalcula sin crear un segundo voto activo;
 - una opción ajena se rechaza con 422;
 - un usuario fuera de la población recibe 403;
 - votar cuando la ronda ya cerró recibe 409.
 
+La ronda no termina al completar los votos. El ganador sigue siendo provisional
+porque un invitado puede cambiar su decisión. La carga de factura es el evento de
+finalización: FastAPI bloquea la solicitud, vuelve a contar los votos y solo si
+todos votaron y existe un ganador único persiste la factura y pasa directamente
+a `CLOSED`. Ante empate o voto pendiente responde 409 y no crea el adjunto.
+
 ## Inicio y Seguimiento
 
-`QUOTATION_VOTE` aparece en Inicio solo para un invitado que aún no votó. La solicitud continúa visible en Seguimiento para usuarios activos aunque la acción personal ya se haya completado.
+`QUOTATION_VOTE` aparece en Inicio como **Votar o cambiar voto** para todo
+invitado mientras la ronda esté abierta, incluso después de votar. La UI marca
+el voto actual, permite escoger otra opción y avisa si existe empate o ganador
+provisional. Seguimiento conserva la visibilidad de la solicitud.
+
+En la columna **Monto**, Seguimiento usa un valor operativo: antes del primer
+voto muestra el máximo de las cotizaciones, durante la votación muestra el monto
+del líder único y, si hay empate, vuelve a mostrar el máximo presentado. Este
+valor no selecciona proveedor ni sustituye el monto financiero de cierre.
+
+El solicitante original, la cuenta técnica o el delegado activo pueden registrar
+la factura conforme a la autoridad de cierre por recurso. El botón solo se
+ofrece cuando hay ganador provisional; el backend siempre revalida el resultado.
 
 ## Corrección
 
@@ -53,3 +72,7 @@ Corregir una solicitud múltiple conserva el tipo, rehidrata opciones y soportes
 - votación abierta con tres opciones y un voto parcial.
 
 Las credenciales y el procedimiento están en [VALIDACION_LOCAL.md](VALIDACION_LOCAL.md).
+
+La migración `20260825_0012_keep_quotation_voting_open` devuelve a
+`QUOTATION_VOTING` las solicitudes múltiples antiguas en `APPROVED` que no tienen
+factura. Solicitudes ya cerradas o con factura no se modifican.

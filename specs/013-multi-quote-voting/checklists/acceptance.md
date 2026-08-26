@@ -11,8 +11,13 @@
 - [x] cada usuario mantiene un voto activo.
 - [x] cambios de voto conservan evento.
 - [x] la ronda espera a todos los invitados.
-- [x] ganador único lleva a APPROVED.
-- [x] empate conserva QUOTATION_VOTING.
+- [x] ganador único queda provisional y conserva QUOTATION_VOTING.
+- [x] empate conserva QUOTATION_VOTING y limpia la selección provisional.
+- [x] empate o voto pendiente bloquean la factura sin persistirla.
+- [x] cada invitado puede cambiar su voto mientras la ronda esté abierta.
+- [x] factura con población completa y ganador único lleva directo a CLOSED.
+- [x] voto posterior al cierre recibe 409.
 - [x] corrección reinicia población, votos y flow_id activos.
-- [x] Inicio muestra QUOTATION_VOTE solo mientras esté pendiente.
-- [x] Docker local contiene votación abierta y voto parcial visibles.
+- [x] Inicio mantiene QUOTATION_VOTE como "Votar o cambiar voto" hasta el cierre.
+- [x] monto operativo muestra máximo sin votos, líder único o máximo ante empate sin alterar `Expense.amount`.
+- [x] PostgreSQL local confirma `20260825_0012` como `current=head`.
