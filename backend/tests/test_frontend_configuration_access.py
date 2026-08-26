@@ -6,6 +6,29 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class FrontendConfigurationAccessTests(unittest.TestCase):
+    def test_topbar_shows_assigned_iam_roles_instead_of_legacy_permission_profile(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'main.jsx').read_text(encoding='utf-8')
+        styles = (REPO_ROOT / 'frontend' / 'src' / 'styles.css').read_text(encoding='utf-8')
+        header = source.split('<header className="topbar">', 1)[1].split(
+            '<div className="header-actions">', 1
+        )[0]
+
+        self.assertIn('const headerRoleLabel = user.role_names?.length', source)
+        self.assertIn('user.role_names.join(" · ")', source)
+        self.assertIn('"Administrador del sistema"', source)
+        self.assertIn('"Sin rol asignado"', source)
+        self.assertIn('className="session-role-summary"', header)
+        self.assertIn('{user.name} · {headerRoleLabel}', header)
+        self.assertNotIn('roleName(user.role)', source)
+        self.assertNotIn('["VIEWER", "Puede consultar"]', source)
+        role_summary_css = styles.split('.topbar .session-role-summary {', 2)
+        self.assertEqual(len(role_summary_css), 3)
+        self.assertIn('overflow-wrap: anywhere;', role_summary_css[1].split('}', 1)[0])
+        mobile_rule = role_summary_css[2].split('}', 1)[0]
+        self.assertIn('overflow: visible;', mobile_rule)
+        self.assertIn('text-overflow: clip;', mobile_rule)
+        self.assertIn('white-space: normal;', mobile_rule)
+
     def test_inactive_iam_records_disappear_and_can_be_recovered(self):
         source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
         self.assertIn('/api/iam/users/recovery?identity_document=', source)

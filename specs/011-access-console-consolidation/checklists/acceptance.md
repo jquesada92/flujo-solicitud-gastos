@@ -25,6 +25,7 @@
 - [x] Administrador del sistema aparece como Rol global técnico protegido.
 - [x] rutas privadas sin sesión vuelven a Login.
 - [x] 401 invalida sesión local.
+- [x] login y `/api/auth/me` entregan los nombres de Roles IAM activos y la cabecera los muestra en lugar del perfil técnico legacy.
 - [x] no existe polling cada segundo/sub-segundo.
 - [x] GET idénticos concurrentes se deduplican.
 - [x] botón Recargar puede obtener datos frescos.

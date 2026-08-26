@@ -53,6 +53,19 @@ def is_system_account(db: Session, user_id: int) -> bool:
     return db.scalar(select(SystemAccount.id).where(SystemAccount.user_id == user_id)) is not None
 
 
+def assigned_role_names(db: Session, user_id: int) -> list[str]:
+    """Return the stable display names of active IAM roles assigned to a user."""
+    return list(db.scalars(
+        select(Role.name)
+        .join(UserRoleAssignment, UserRoleAssignment.role_id == Role.id)
+        .where(
+            UserRoleAssignment.user_id == user_id,
+            Role.active.is_(True),
+        )
+        .order_by(func.lower(Role.name), Role.id)
+    ).all())
+
+
 def _active_permission_codes(db: Session) -> set[str]:
     return set(db.scalars(
         select(Permission.code).where(Permission.active.is_(True))

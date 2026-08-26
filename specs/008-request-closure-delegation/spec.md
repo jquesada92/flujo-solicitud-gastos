@@ -1,7 +1,7 @@
 # Spec 008 — Cierre, factura y delegación
 
 **Estado:** Implementada  
-**Constitución:** 2.13.0
+**Constitución:** 2.21.0
 
 ## Objetivo
 
@@ -10,7 +10,13 @@ Separar la aprobación del cierre administrativo y permitir que el solicitante d
 ## Autoridad de cierre
 
 ```text
-status ∈ {APPROVED, CLOSED}
+estado compatible =
+  SIMPLE      + APPROVED
+  OR SIMPLE   + CLOSED
+  OR MULTI_QUOTE + QUOTATION_VOTING + población completa + ganador único provisional
+  OR MULTI_QUOTE + CLOSED
+
+estado compatible
 AND (
   solicitante original
   OR Administrador del sistema
@@ -30,4 +36,8 @@ La autoridad es por recurso; `requests:close` no participa.
 
 ## Factura
 
-Cerrar requiere factura válida. En `CLOSED`, un actor autorizado puede reemplazar/corregir la factura conservando evidencia de la versión anterior, actor y motivo.
+Cerrar requiere factura válida. Para `MULTI_QUOTE`, FastAPI recalcula bajo
+bloqueo la población y el resultado: votos pendientes o empate responden 409 sin
+persistir archivo, y un ganador único lleva directamente de `QUOTATION_VOTING`
+a `CLOSED`. En `CLOSED`, un actor autorizado puede reemplazar/corregir la factura
+conservando evidencia de la versión anterior, actor y motivo.

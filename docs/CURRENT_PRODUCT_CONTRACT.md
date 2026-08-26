@@ -73,6 +73,11 @@ Rol     → Permisos propios + herencia visible; global o agrupado
 
 El Rol global técnico `Administrador del sistema` no pertenece a ningún Grupo. El bootstrap lo asigna a la cuenta técnica como representación, pero la autorización privilegiada sigue dependiendo de `system_accounts`.
 
+La respuesta de sesión expone `role_names` con los Roles IAM activos asignados.
+La cabecera muestra todos esos nombres y no el perfil técnico legacy ni una frase
+de Permiso. Sin asignación ordinaria muestra **Sin rol asignado**; una cuenta
+técnica sin Rol visible muestra **Administrador del sistema**.
+
 Un Rol puede limitar opcionalmente su cantidad de Usuarios activos. Los Usuarios inactivos conservan su asignación sin consumir cupo; asignar a otro Usuario activo o reactivar uno que conserva el Rol se rechaza si está lleno. El máximo no puede bajarse de la ocupación activa y FastAPI serializa la comprobación sobre la fila del Rol.
 
 Contrato responsive global:
@@ -224,6 +229,7 @@ Alembic:
 → 0009 group_permission_inheritance
 → 0010 password_reset_links
 → 0011 role_user_limit
+→ 0012 keep_quotation_voting_open
 ```
 
 `0004` permite Roles globales manteniendo la protección de máximo un Rol por Usuario/Grupo.
@@ -238,6 +244,9 @@ procesos internos quedan marcados como `SYSTEM:*`.
 `0009` agrega `group_permissions` vacía y no altera `role_permissions` ni accesos preexistentes.
 `0010` agrega `users.password_reset_version` para invalidar enlaces de restablecimiento sin almacenar tokens ni rotar la contraseña durante la emisión.
 `0011` agrega `roles.max_users` nullable, exige valores positivos y añade el campo a las instantáneas temporales de Rol sin limitar Roles existentes.
+`0012` devuelve a `QUOTATION_VOTING` las solicitudes `MULTI_QUOTE` que habían
+quedado en `APPROVED` sin factura, sin modificar solicitudes cerradas ni sus
+adjuntos.
 
 ## Recuperación de entidades inactivas
 

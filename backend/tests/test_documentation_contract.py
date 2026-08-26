@@ -298,9 +298,52 @@ class DocumentationContractTests(unittest.TestCase):
                 'antes del primer voto muestra el máximo',
                 'si hay empate, vuelve a mostrar el máximo',
             ),
+            REPO_ROOT / 'specs' / '008-request-closure-delegation' / 'spec.md': (
+                'MULTI_QUOTE + QUOTATION_VOTING + población completa + ganador único provisional',
+                'votos pendientes o empate responden 409 sin',
+                'a `CLOSED`',
+            ),
+            REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
+                '→ 0012 keep_quotation_voting_open',
+                '`0012` devuelve a `QUOTATION_VOTING`',
+            ),
+            REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md': (
+                '**Votar o cambiar voto**',
+                'La acción personal no desaparece después de votar',
+            ),
             REPO_ROOT / 'docs' / 'VALIDACION_LOCAL.md': (
                 '`MULTI_QUOTE` con todos los votos empatados',
                 'ganador provisional sin pasar a `APPROVED`',
+            ),
+        }
+        for document, fragments in required_fragments.items():
+            source = re.sub(r'\s+', ' ', read(document))
+            for fragment in fragments:
+                with self.subTest(document=document.name, fragment=fragment):
+                    self.assertIn(fragment, source)
+
+    def test_session_header_uses_assigned_iam_roles(self):
+        required_fragments = {
+            REPO_ROOT / 'specs' / '011-access-console-consolidation' / 'spec.md': (
+                '`role_names`',
+                'todos los Roles IAM activos asignados',
+                'no traduce el perfil técnico legacy `user.role`',
+            ),
+            REPO_ROOT / 'README.md': (
+                '`role_names`',
+                'nunca las etiquetas de capacidad del perfil técnico legacy',
+            ),
+            REPO_ROOT / 'PROMPT_RECONSTRUCCION.md': (
+                'los nombres ordenados de todos los Roles IAM activos',
+                'no traducir el perfil técnico legacy `user.role`',
+            ),
+            REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
+                'La respuesta de sesión expone `role_names`',
+                'no el perfil técnico legacy ni una frase de Permiso',
+            ),
+            REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md': (
+                'la cabecera muestra tu nombre y el Rol o los Roles',
+                'no describe Permisos con frases como',
             ),
         }
         for document, fragments in required_fragments.items():

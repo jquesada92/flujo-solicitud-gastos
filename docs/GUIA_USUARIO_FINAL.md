@@ -65,6 +65,11 @@ En **Inicio**, el bloque **Acciones pendientes** es la referencia principal de
 trabajo. Al seleccionar una acción, la aplicación vuelve a comprobar que siga
 vigente antes de mostrar los controles disponibles.
 
+Debajo de **Gestión de Gastos**, la cabecera muestra tu nombre y el Rol o los
+Roles que tienes asignados. Ese texto identifica Roles organizacionales como
+**Vocal**, **Presidente** o **Solicitante**; no describe Permisos con frases como
+“Puede consultar”. Si todavía no tienes un Rol, muestra **Sin rol asignado**.
+
 En celular, la navegación aparece como una banda horizontal debajo de tu nombre:
 deslízala para ver todas las opciones. Las Solicitudes se muestran como tarjetas
 con el nombre de cada dato; formularios, filtros y acciones se apilan para poder
@@ -221,7 +226,7 @@ corrección. JD no edita directamente una solicitud ajena.
 
 ### 5.3 Votar o cambiar el voto de una cotización
 
-En una acción **Votar cotización**:
+En una acción **Votar o cambiar voto**:
 
 1. compara proveedor, monto, observaciones y soportes de todas las opciones;
 2. selecciona **Votar por esta opción** en la alternativa elegida;

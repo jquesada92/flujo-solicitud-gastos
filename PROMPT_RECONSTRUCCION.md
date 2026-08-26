@@ -208,6 +208,12 @@ No selecciones proveedor ni ganador solo para completar esta visualización.
 
 Una ruta privada sin sesión debe redirigir al Login antes de montar su contenido. Un 401 recibido con token almacenado debe limpiar la sesión y retornar al Login.
 
+Incluye en login y `GET /api/auth/me` los nombres ordenados de todos los Roles IAM
+activos asignados al Usuario. La cabecera debe mostrar esos nombres, no traducir
+el perfil técnico legacy `user.role` a capacidades como “Puede consultar”. Si el
+Usuario ordinario no tiene Rol muestra **Sin rol asignado**; para una cuenta
+técnica sin Rol visible usa **Administrador del sistema**.
+
 Protege al menos Accesos y Seguimiento y aplica el mismo patrón a cualquier nueva pantalla privada.
 
 Trata `/reset-password#token=...` como ruta pública de propósito limitado y

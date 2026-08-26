@@ -13,7 +13,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.audit_context import set_audit_actor
 from app.models.entities import User
-from app.services.iam_service import effective_permission_codes, has_permission, is_system_account
+from app.services.iam_service import assigned_role_names, effective_permission_codes, has_permission, is_system_account
 
 bearer = HTTPBearer(auto_error=False)
 password_hash = PasswordHash.recommended()
@@ -145,6 +145,7 @@ def apply_effective_permissions_to_user(db: Session, user: User) -> User:
     user.can_close = 'requests:close' in permissions
     user.permission_codes = sorted(permissions)
     user.is_system_account = is_system_account(db, user.id)
+    user.role_names = assigned_role_names(db, user.id)
     return user
 
 

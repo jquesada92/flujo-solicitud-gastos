@@ -17,6 +17,8 @@
 - la tabla operativa de Solicitudes muestra para `MULTI_QUOTE` el máximo sin
   votos, el monto del líder único o el máximo ante empate, sin alterar el monto
   financiero canónico.
+- login y `/api/auth/me` exponen los Roles IAM activos asignados y la cabecera
+  muestra sus nombres en lugar de etiquetas legacy de capacidad.
 
 ## 2.20.0 — 2026-08-25
 
