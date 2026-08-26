@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Analytics } from "@vercel/analytics/react";
 import { injectSpeedInsights } from "@vercel/speed-insights";
 import "./styles.css";
+import "./mobile-layout.css";
 
 const PASSWORD_RESET_PATH = "/reset-password";
 const isPasswordResetPath = (pathname = window.location.pathname) => (
@@ -1178,22 +1179,22 @@ function ExpenseTable({
             <tbody>
               {filtered.map((x) => (
                 <tr key={x.request_id}>
-                  <td className="request-cell">
+                  <td className="request-cell" data-label="Solicitud">
                     <button className="request-detail-button" onClick={() => setDetailViewing(x)}>{x.title}</button>
                     <span className={`urgency-badge urgency-${String(x.urgency || "NORMAL").toLowerCase()}`}>{urgencyName(x.urgency)}</span>
                     <span className="subtext">{x.supplier}</span>
                     <span className="subtext id-code" title={x.request_id}>{x.request_id}</span>
                     {x.revised_from_request_id && <span className="subtext">Solicitud corregida</span>}
                   </td>
-                  <td className="timestamp-cell">{approvalTimestamp(x.created_at)}</td>
-                  <td className="timestamp-cell"><strong>{flowEventName(x.last_event_type)}</strong><span className="subtext">{approvalTimestamp(x.last_event_at)}</span></td>
-                  <td>
+                  <td className="timestamp-cell" data-label="Inicio">{approvalTimestamp(x.created_at)}</td>
+                  <td className="timestamp-cell" data-label="Actualización"><strong>{flowEventName(x.last_event_type)}</strong><span className="subtext">{approvalTimestamp(x.last_event_at)}</span></td>
+                  <td data-label="Categoría">
                     {x.expense_type}
                     <span className="subtext">
                       {subcategoryName(x.expense_subcategory)}
                     </span>
                   </td>
-                  <td className="support-cell">
+                  <td className="support-cell" data-label="Soportes">
                     {x.item_url && (
                       <a href={x.item_url} target="_blank" rel="noreferrer">
                         Ver producto/servicio
@@ -1217,7 +1218,7 @@ function ExpenseTable({
                       <span className="muted">—</span>
                     )}
                   </td>
-                  <td className="invoice-cell">
+                  <td className="invoice-cell" data-label="Factura">
                     {x.status === "CLOSED" ? (
                       x.attachments.filter((a) => a.document_type === "INVOICE").map((a) => (
                         <button className="link-button" key={a.id} onClick={() => loadAttachment(a).then(setViewing).catch((e) => setError(e.message))}>
@@ -1228,13 +1229,13 @@ function ExpenseTable({
                     ) : <span className="muted">Disponible al cerrar</span>}
                     {x.status === "CLOSED" && !x.attachments.some((a) => a.document_type === "INVOICE") && <span className="muted">Sin factura registrada</span>}
                   </td>
-                  <td className="amount-cell">
+                  <td className="amount-cell" data-label="Monto">
                     $
                     {Number(x.amount).toLocaleString(undefined, {
                       minimumFractionDigits: 2,
                     })}
                   </td>
-                  <td>
+                  <td data-label="Estado">
                     <StatusBadge status={x.status} />
                     {x.cancellation_reason && (
                       <span className="subtext" title={x.cancellation_reason}>
@@ -1245,7 +1246,7 @@ function ExpenseTable({
                       <span className="subtext">Cerrada por {x.closed_by}</span>
                     )}
                   </td>
-                  <td className="flow-cell">
+                  <td className="flow-cell" data-label="Avance">
                     {(() => { const progress=expenseFlowMetrics(x); return <button className="flow-progress-button" onClick={() => setFlowViewing(x)} aria-label={`Ver avance del flujo ${x.display_id}`}>
                       <span><strong>{progress.percentage}%</strong> respondido</span>
                       <div className="flow-progress-track"><span style={{width:`${progress.percentage}%`}} /></div>
@@ -1253,7 +1254,7 @@ function ExpenseTable({
                     </button> })()}
                   </td>
                   {(canEdit || canClose) && (
-                    <td>
+                    <td data-label="Acciones">
                       <div className="row-actions">
                         {canEdit && x.status !== "CLOSED" && <button
                           className="secondary nowrap"
@@ -3359,17 +3360,22 @@ function App() {
           </div>
         </div>
         <div className="header-actions">
-          <button onClick={() => navigateTo("home")}>Inicio</button>
-          <button onClick={() => navigateTo("expenses")}>Solicitudes</button>
+          <button aria-current={tab === "home" ? "page" : undefined} onClick={() => navigateTo("home")}>Inicio</button>
+          <button aria-current={tab === "expenses" ? "page" : undefined} onClick={() => navigateTo("expenses")}>Solicitudes</button>
           {canView && (
-            <button onClick={() => navigateTo("invoices")}>Facturas</button>
+            <button aria-current={tab === "invoices" ? "page" : undefined} onClick={() => navigateTo("invoices")}>Facturas</button>
           )}
           {canConfigure && (
-            <button onClick={() => navigateTo("audit")}>Auditoría</button>
+            <button aria-current={tab === "audit" ? "page" : undefined} onClick={() => navigateTo("audit")}>Auditoría</button>
           )}
           {canManagePeople && (
             <div className="config-menu">
-              <button onClick={() => setConfigOpen((open) => !open)}>Configuración {configOpen ? "▴" : "▾"}</button>
+              <button
+                aria-current={["people", "organization", "categories", "rules"].includes(tab) ? "page" : undefined}
+                aria-expanded={configOpen}
+                aria-haspopup="menu"
+                onClick={() => setConfigOpen((open) => !open)}
+              >Configuración {configOpen ? "▴" : "▾"}</button>
               {configOpen && <div className="config-menu-items">
                 <button onClick={() => navigateTo("people")}>Personas</button>
                 {canAccessOrganization && <button onClick={() => navigateTo("organization")}>Organigrama</button>}

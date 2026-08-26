@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.19.0
+**Versión:** 2.20.0
 **Vigente desde:** 2026-08-25
 
 ## 1. Propósito
@@ -421,7 +421,27 @@ proceso, con limpieza TTL; no constituye una cuota global entre réplicas y
 depende de una dirección cliente confiable. La auditoría registra la acción y
 sus actores sin persistir ni exponer el token, la contraseña o su hash.
 
-## 18. Definition of Done
+## 18. Experiencia móvil
+
+La interfaz privada y las rutas públicas deben funcionar desde 320 px de ancho
+CSS sin overflow horizontal de la página, controles recortados ni pérdida de
+foco visible. En pantallas estrechas:
+
+- la navegación principal sigue disponible mediante una banda táctil desplazable
+  y sus menús flotantes permanecen dentro del viewport;
+- las consultas operativas prioritarias se representan como tarjetas legibles,
+  no como tablas de escritorio comprimidas;
+- formularios, filtros, acciones, Accesos y Seguimiento se apilan sin perder
+  contenido ni acciones;
+- diálogos y visores usan altura dinámica, respetan `safe-area` y mantienen una
+  forma visible de cerrar;
+- los objetivos táctiles principales miden al menos 44 px.
+
+El escritorio conserva su densidad y estructura. Todo cambio visual transversal
+se valida en navegador a 1180, 1024, 640, 440, 390 y 320 px; el build por sí solo
+no acredita el contrato responsive.
+
+## 19. Definition of Done
 
 Todo cambio relevante debe revisar y actualizar, según aplique:
 

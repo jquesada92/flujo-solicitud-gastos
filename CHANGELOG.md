@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.20.0 — 2026-08-25
+
+- layout móvil transversal desde 320 px, con navegación táctil desplazable y
+  vista actual identificable;
+- consulta de Solicitudes convertida de tabla fija de 1450 px a tarjetas
+  etiquetadas en celular, sin eliminar datos ni acciones;
+- filtros, tableros, Accesos y Seguimiento apilables con textos largos legibles;
+- menús, confirmaciones, acciones pendientes y visores ajustados a `100dvh`,
+  `safe-area` y objetivos táctiles de al menos 44 px;
+- nueva Spec 020, contrato estático y validación de navegador en 1180, 1024,
+  640, 440, 390 y 320 px.
+
 ## 2.19.0 — 2026-08-25
 
 - las solicitudes `SIMPLE` seleccionan aprobadores IAM aunque no exista una

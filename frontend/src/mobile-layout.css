@@ -1,0 +1,289 @@
+/* Contrato movil global. Se carga despues de styles.css para corregir el
+   layout legacy sin alterar las reglas funcionales ni el escritorio. */
+
+.layout > *,
+.dashboard-layout > *,
+.table-wrap {
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 720px) {
+  :root {
+    --mobile-page-gutter: 14px;
+    --mobile-topbar-height: 117px;
+    --mobile-topbar-offset: calc(var(--mobile-topbar-height) - 14px + max(14px, env(safe-area-inset-top)));
+  }
+
+  html,
+  body,
+  #root {
+    max-width: 100%;
+  }
+
+  body {
+    overflow-x: clip;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    padding-top: max(14px, env(safe-area-inset-top));
+  }
+
+  .header-actions {
+    padding-bottom: 12px;
+    scroll-padding-inline: 16px;
+  }
+
+  .header-actions button {
+    border: 1px solid transparent;
+  }
+
+  .header-actions button[aria-current="page"],
+  .header-actions button[data-active="true"] {
+    border-color: #7f8ba1;
+    background: #fff;
+    color: #111827;
+  }
+
+  .config-menu {
+    position: static;
+  }
+
+  .config-menu-items {
+    position: fixed;
+    top: calc(var(--mobile-topbar-offset) - 4px);
+    right: var(--mobile-page-gutter);
+    left: var(--mobile-page-gutter);
+    max-height: calc(100dvh - var(--mobile-topbar-offset) - 24px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .layout,
+  .hero,
+  .card,
+  .form-grid,
+  .table-filters,
+  .dashboard-layout,
+  .dashboard-request-list,
+  .correction-bar,
+  .audit-search {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .layout {
+    padding-bottom: calc(48px + env(safe-area-inset-bottom));
+  }
+
+  .hero h1,
+  .card-heading h2,
+  .notice,
+  .muted,
+  .subtext {
+    overflow-wrap: anywhere;
+  }
+
+  .audit-search {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .audit-search button,
+  .audit-load-more button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  /* La consulta operativa deja de ser una tabla de 1450 px y pasa a tarjetas. */
+  .table-wrap:has(.expenses-table) {
+    width: 100%;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+  }
+
+  .expenses-table {
+    display: block;
+    min-width: 0;
+    table-layout: auto;
+  }
+
+  .expenses-table colgroup,
+  .expenses-table thead {
+    display: none;
+  }
+
+  .expenses-table tbody {
+    display: grid;
+    gap: 14px;
+  }
+
+  .expenses-table tr {
+    display: grid;
+    min-width: 0;
+    padding: 14px;
+    overflow: hidden;
+    border: 1px solid #dfe5ee;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 5px 18px rgba(17, 24, 39, .05);
+  }
+
+  .expenses-table td,
+  .expenses-table .support-cell,
+  .expenses-table .flow-cell {
+    position: static;
+    display: grid;
+    grid-template-columns: minmax(92px, 30%) minmax(0, 1fr);
+    gap: 10px;
+    min-width: 0;
+    padding: 10px 0;
+    overflow: visible;
+    border-bottom: 1px solid #eef0f4;
+    background: transparent;
+    box-shadow: none;
+    white-space: normal;
+  }
+
+  .expenses-table td::before {
+    content: attr(data-label);
+    color: #717b8d;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .expenses-table .request-cell {
+    display: block;
+    padding-top: 2px;
+  }
+
+  .expenses-table .request-cell::before {
+    display: block;
+    margin-bottom: 7px;
+  }
+
+  .expenses-table .request-detail-button {
+    min-height: 44px;
+    align-items: center;
+    -webkit-line-clamp: unset;
+  }
+
+  .expenses-table .support-cell a,
+  .expenses-table .link-button,
+  .expenses-table .invoice-cell .subtext,
+  .expenses-table .flow-cell > span {
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .expenses-table td:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .expenses-table td[data-label="Acciones"] {
+    display: block;
+  }
+
+  .expenses-table td[data-label="Acciones"]::before {
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .expenses-table .row-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .expenses-table .row-actions button,
+  .expenses-table .flow-progress-button {
+    width: 100%;
+    min-height: 44px;
+    white-space: normal;
+  }
+
+  .dashboard-request-list > button {
+    min-width: 0;
+  }
+
+  .dashboard-request-list > button > span:first-child,
+  .dashboard-request-list strong,
+  .dashboard-request-list small,
+  .dashboard-request-list time {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .confirm-overlay,
+  .document-overlay {
+    align-items: end;
+    padding: 0;
+  }
+
+  .confirm-dialog,
+  .document-viewer {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - env(safe-area-inset-top));
+    border-radius: 18px 18px 0 0;
+  }
+
+  .confirm-dialog {
+    padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+  }
+
+  .document-viewer {
+    height: calc(100dvh - env(safe-area-inset-top));
+  }
+
+  .document-toolbar {
+    min-width: 0;
+    padding: 12px 14px;
+  }
+
+  .document-toolbar > div {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 440px) {
+  :root {
+    --mobile-page-gutter: 10px;
+  }
+
+  .expenses-table td,
+  .expenses-table .support-cell,
+  .expenses-table .flow-cell {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .expenses-table td::before {
+    margin-bottom: 2px;
+  }
+
+  .dashboard-request-list > button {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard-request-list time {
+    grid-column: auto;
+  }
+
+  .dashboard-request-list .urgency-badge {
+    justify-self: start;
+  }
+}
