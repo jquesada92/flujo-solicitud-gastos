@@ -125,6 +125,11 @@ Las tablas, tipos ENUM, contadores e `alembic_version` deben resolverse dentro d
 - token de restablecimiento expirado, reemplazado o reutilizado → rechazo sin cambio de contraseña;
 - Rol con cupo lleno → asignación y reactivación rechazadas; Usuario inactivo asignado no consume cupo;
 - reducción del máximo de Rol por debajo de su ocupación activa → 409 sin cambio persistido;
+- `SIMPLE` sin `ApprovalPolicy`, con aprobadores por Rol propio, herencia de Grupo
+  o Rol global → ronda `MAJORITY` con esos Usuarios;
+- `SIMPLE` sin otro Usuario con `requests:approve` → 422 sin `Expense` persistido;
+- fallo al iniciar la primera ronda después de cargar soporte → 422 sin
+  `Expense`, `ExpenseAttachment` ni archivo físico huérfano;
 - origen CORS no autorizado sin `Access-Control-Allow-Origin`;
 - exceso del límite autenticado → 429 con `Retry-After`;
 - archivo cuyo contenido no coincide con MIME → 415;

@@ -7,7 +7,7 @@ from app.core.database import get_db
 from app.core.security import require_permission
 from app.models.entities import Expense, ExpenseAttachment, QuotationOption, User
 from app.schemas.expense import AttachmentOut
-from app.services.approval_engine import start_approval_flow
+from app.services.approval_engine import notify_approval_flow_started, start_approval_flow
 from app.services.document_service import document_path, read_upload, write_document
 
 router = APIRouter()
@@ -47,20 +47,36 @@ def upload_attachment(
             document_type='QUOTATION',
         )
         db.add(attachment)
-        db.commit()
-        db.refresh(attachment)
+        db.flush()
 
         if expense.request_type == 'SIMPLE' and not any(
             approval.flow_id == expense.flow_id for approval in expense.approvals
         ):
+            is_new_request_without_flow = not expense.approvals
             try:
-                start_approval_flow(db, expense)
+                approvals = start_approval_flow(db, expense, commit=False)
             except ValueError as exc:
-                db.delete(attachment)
+                db.rollback()
+                if is_new_request_without_flow:
+                    db.delete(expense)
                 db.commit()
                 if path.exists():
                     path.unlink()
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
+            except Exception:
+                db.rollback()
+                if is_new_request_without_flow:
+                    persisted_expense = db.get(Expense, expense.id)
+                    if persisted_expense:
+                        db.delete(persisted_expense)
+                        db.commit()
+                raise
+            db.commit()
+            db.refresh(attachment)
+            notify_approval_flow_started(approvals)
+        else:
+            db.commit()
+            db.refresh(attachment)
         return attachment
     except HTTPException:
         raise

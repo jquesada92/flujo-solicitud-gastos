@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.19.0 — 2026-08-25
+
+- las solicitudes `SIMPLE` seleccionan aprobadores IAM aunque no exista una
+  `ApprovalPolicy` aplicable, usando `MAJORITY` como modalidad predeterminada;
+- Permiso propio de Rol agrupado, herencia de Grupo y Rol global con
+  `requests:approve` participan de forma equivalente, excluyendo al Solicitante;
+- reglas legacy por correo dejan de seleccionar aprobadores;
+- crear una solicitud con URL prepara la ronda en la misma transacción y, si un
+  soporte se carga aparte, el fallo del flujo elimina la solicitud y el archivo;
+- Accesos separa visualmente el código efectivo de su origen para evitar textos
+  engañosos como `requests:approveRol` o `requests:approveGrupo`;
+- nueva Spec 019 y pruebas de regresión para población IAM y creación sin filas
+  huérfanas;
+- guardrails, matriz documental, Configuración y runbook local fijan
+  `approver_profile_codes` como metadata legacy sin autoridad y registran la
+  divergencia visual de la pantalla Reglas.
+
 ## 2.18.0 — 2026-08-25
 
 - guía de usuario final para Solicitantes y Junta Directiva, con creación,

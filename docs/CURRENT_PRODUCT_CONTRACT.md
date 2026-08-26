@@ -94,6 +94,19 @@ SIMPLE
 MULTI_QUOTE
 ```
 
+`SIMPLE` crea su ronda con todos los Usuarios activos que tengan permiso efectivo
+`requests:approve`, excluyendo al Solicitante. Participan por igual el Permiso
+propio de un Rol global, el propio de un Rol agrupado y el heredado de su Grupo
+activo. Una regla de monto puede definir la modalidad; si no existe una aplicable,
+IAM sigue activo y se usa `MAJORITY`. Cargo, `GroupMember`, nombres de perfiles y
+reglas legacy por correo no seleccionan aprobadores.
+`ApprovalPolicy.approver_profile_codes` es metadata física legacy y tampoco
+participa en la población.
+
+La solicitud nueva, su soporte y su ronda constituyen una unidad de éxito. Si no
+puede prepararse el flujo, la API responde con error y no conserva la solicitud
+ni archivos huérfanos. Las notificaciones ocurren después del commit.
+
 `MULTI_QUOTE` congela por ronda a los usuarios activos con `requests:approve`, excluye al solicitante y requiere soporte en cada opción. Cada invitado tiene un voto activo; la ronda espera a todos y solo selecciona una cotización si existe ganador único. Los empates permanecen en `QUOTATION_VOTING`.
 
 Estados relevantes:

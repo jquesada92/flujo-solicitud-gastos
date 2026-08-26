@@ -15,7 +15,7 @@ from app.models.entities import (
     User,
 )
 from app.schemas.expense import ExpenseCreate, ExpenseOut
-from app.services.approval_engine import start_approval_flow
+from app.services.approval_engine import notify_approval_flow_started, start_approval_flow
 from app.services.email_service import send_quotation_vote_request
 from app.services.iam_service import users_with_permission
 
@@ -113,15 +113,18 @@ def create_expense(
                 logger.exception('Quotation voting email delivery failed; request remains saved')
         return expense
 
-    db.commit()
-    db.refresh(expense)
-    if not quotation_pending:
+    if quotation_pending:
+        db.commit()
+        db.refresh(expense)
+    else:
         try:
-            start_approval_flow(db, expense)
+            approvals = start_approval_flow(db, expense, commit=False)
         except ValueError as exc:
-            db.delete(expense)
-            db.commit()
+            db.rollback()
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        db.commit()
+        db.refresh(expense)
+        notify_approval_flow_started(approvals)
 
     stmt = (
         select(Expense)

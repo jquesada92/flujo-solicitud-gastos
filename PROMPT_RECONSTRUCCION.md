@@ -1,6 +1,6 @@
 # Prompt maestro de reconstrucción
 
-> Constitución vigente: **2.18.0**.
+> Constitución vigente: **2.19.0**.
 
 Reconstruye **Flujo de Control de Gastos** como una aplicación web neutral respecto al tipo de organización, lista para desplegar con React/Vite, FastAPI, SQLAlchemy, Alembic y PostgreSQL/Neon.
 
@@ -246,6 +246,18 @@ MULTI_QUOTE
 ```
 
 Una corrección conserva el tipo original.
+
+Para `SIMPLE`, crea la ronda con todos los Usuarios activos que tengan permiso
+efectivo `requests:approve`, excluyendo al Solicitante. Incluye Permisos propios
+de Roles globales o agrupados y Permisos heredados de Grupos activos. La ausencia
+de `ApprovalPolicy` no desactiva IAM: usa `MAJORITY`. No uses Cargo, membresía,
+nombres de perfiles ni reglas legacy por correo para seleccionar aprobadores.
+Trata `ApprovalPolicy.approver_profile_codes` solo como metadata física legacy.
+
+La creación de una solicitud nueva y la preparación de su ronda forman una sola
+unidad de éxito. Si no existe otro participante elegible o el soporte pendiente
+impide iniciar el flujo, revierte la solicitud, adjuntos y aprobaciones; no dejes
+un `Expense` en estado intermedio. Envía notificaciones solo después del commit.
 
 Para `MULTI_QUOTE`, congela por ronda la población activa con `requests:approve`, excluye al solicitante y exige soporte en cada opción. Cada invitado mantiene un voto; la ronda espera a todos y solo avanza con ganador único. Un empate permanece en `QUOTATION_VOTING`.
 

@@ -46,6 +46,14 @@ commit falla después, el Usuario puede recibir un enlace inútil. No cambia su
 contraseña ni sesiones; el Administrador debe reemitir. La garantía fuerte
 requiere un outbox transaccional, que aún no existe.
 
+### Entrega de notificaciones del flujo
+
+La solicitud y sus aprobaciones se confirman antes de invocar al proveedor de
+correo para no enviar enlaces de una transacción fallida. Si el proveedor falla
+después del commit, la ronda sigue válida pero el mensaje puede no llegar. Los
+logs registran el fallo sin invalidar la solicitud; entrega garantizada y
+reintentos durables requieren un outbox transaccional aún no implementado.
+
 ### Rate limit público por proceso
 
 El consumo de enlaces se limita por IP dentro de la memoria de cada proceso. La
@@ -56,6 +64,15 @@ compartido y no debe darse por implementado.
 ### Transformaciones de Vite
 
 `frontend/vite.config.js` transforma fragmentos concretos de `main.jsx` y `iam-admin.jsx` durante el build. Una edición puede funcionar en el archivo fuente y romper la extracción. Todo cambio en esos puntos exige `npm run build`; consultar `FRONTEND_RUNTIME.md` antes de mover componentes o guards.
+
+### Perfiles legacy visibles en Reglas
+
+La pantalla `Configuración → Reglas` todavía muestra y exige
+`approver_profile_codes`, aunque el motor vigente no usa perfiles para elegir
+aprobadores. La población se resuelve únicamente mediante `requests:approve`
+efectivo. Hasta rediseñar esa pantalla, no interpretar sus checkboxes como
+autoridad, no reintroducir filtros por nombre de perfil y no documentarlos como
+requisito para que una ronda pueda iniciar.
 
 ### Scripts demo
 

@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.18.0
+**Versión:** 2.19.0
 **Vigente desde:** 2026-08-25
 
 ## 1. Propósito
@@ -224,6 +224,21 @@ MULTI_QUOTE → MULTI_QUOTE
 ```
 
 Una ronda `MULTI_QUOTE` congela como participantes a usuarios activos con permiso efectivo `requests:approve`, excluye al solicitante y exige soporte válido en cada opción. Cada invitado mantiene un voto activo y todo cambio conserva evento. La ronda espera a todos los invitados: un ganador único lleva a `APPROVED`; un empate permanece en `QUOTATION_VOTING`.
+
+Una ronda `SIMPLE` también resuelve sus participantes desde todos los Usuarios
+activos con permiso efectivo `requests:approve`, excluyendo al Solicitante. El
+Permiso puede provenir de un Rol global, ser propio de un Rol agrupado o heredarse
+de su Grupo activo. Una `ApprovalPolicy` aplicable puede determinar la modalidad,
+pero su ausencia no desactiva IAM; se usa `MAJORITY`. Reglas legacy por correo y
+nombres de perfiles no autorizan ni seleccionan aprobadores.
+`ApprovalPolicy.approver_profile_codes` permanece únicamente como metadata de
+compatibilidad hasta retirar esa estructura física.
+
+Una solicitud nueva solo se confirma cuando puede iniciar su ronda con soporte
+válido y al menos otro participante elegible. Si el flujo no puede prepararse,
+FastAPI revierte la creación y no deja una solicitud ni un soporte huérfanos. Las
+notificaciones se intentan después del commit y no sustituyen la creación
+transaccional de la ronda.
 
 ## 12. Acciones pendientes
 
