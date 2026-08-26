@@ -22,6 +22,21 @@ npm run build
 
 El build valida compilación y contratos estáticos, no la interacción real. Cambios de responsive, foco, modales o navegación requieren además revisión de navegador en los anchos soportados.
 
+## Layout móvil
+
+`frontend/src/mobile-layout.css` es la capa responsive transversal y se importa
+después de `styles.css`. Desde 320 px, la página no genera overflow horizontal:
+la navegación es una banda táctil desplazable, la consulta de Solicitudes se
+convierte en tarjetas etiquetadas y menús, modales y visores se mantienen dentro
+del viewport con altura dinámica y `safe-area`. Los estilos particulares siguen
+en `iam-responsive.css`, `home-dashboard.css` y `user-tracking.css`.
+
+No se elimina información para ajustar una pantalla. Si una tabla secundaria
+conserva desplazamiento interno, el documento completo no debe desplazarse y la
+primera columna debe permanecer utilizable. La prueba de navegador cubre 1180,
+1024, 640, 440, 390 y 320 px y verifica overflow, controles recortados, cierre de
+diálogos y foco visible.
+
 ## Guard de sesión
 
 `auth-route-guard.js` protege las superficies privadas basadas en hash. Regla:

@@ -141,6 +141,12 @@ let root = null;
 
 function renderTracking() {
   const active = window.location.hash === TRACKING_HASH;
+  const navigationButton = document.querySelector('[data-user-tracking="true"]');
+  if (navigationButton) {
+    navigationButton.dataset.active = String(active);
+    if (active) navigationButton.setAttribute("aria-current", "page");
+    else navigationButton.removeAttribute("aria-current");
+  }
   if (active && !mounted) {
     const host = document.createElement("div");
     host.id = "user-tracking-root";

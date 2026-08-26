@@ -1,6 +1,6 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.19.0**.
+> Constitución vigente: **2.20.0**.
 
 Aplicación web para registrar, evaluar, aprobar, votar, seguir, corregir, cancelar, cerrar y documentar solicitudes de gasto con trazabilidad. El producto es neutral respecto al tipo de organización: la estructura se configura como datos y los nombres organizacionales no forman parte de la lógica de autorización.
 
@@ -40,6 +40,7 @@ Reglas clave:
   efectivo, no de nombres de perfiles ni reglas legacy;
 - una solicitud nueva sin ronda iniciable no queda persistida;
 - una pantalla privada sin sesión vuelve al Login;
+- la aplicación es operable desde 320 px sin overflow horizontal de página;
 - el frontend no debe hacer polling agresivo ni repetir GET idénticos innecesariamente.
 
 Ver [docs/CURRENT_PRODUCT_CONTRACT.md](docs/CURRENT_PRODUCT_CONTRACT.md).
@@ -198,6 +199,19 @@ can_delegate_close
 Cerrar/facturar depende de ser solicitante, Administrador del sistema o delegado activo de esa solicitud; no depende de un permiso global de cierre.
 
 ## Sesión y frontend
+
+### Layout móvil
+
+Desde 320 px, la navegación principal permanece disponible como una banda táctil
+desplazable y marca la vista actual. Los formularios, filtros, tableros, Accesos
+y Seguimiento se apilan; la consulta de Solicitudes cambia la tabla ancha por
+tarjetas con etiquetas visibles. Menús, modales y visores permanecen dentro del
+viewport, usan altura dinámica y respetan las áreas seguras del dispositivo.
+
+La implementación transversal vive en `frontend/src/mobile-layout.css`; los
+ajustes propios de Accesos, Inicio y Seguimiento permanecen junto a sus módulos.
+La validación manual mínima cubre 1180, 1024, 640, 440, 390 y 320 px, sin
+overflow horizontal de página, controles recortados ni pérdida de foco visible.
 
 Los hashes privados como `#access-management` y `#user-tracking` requieren sesión. Sin token se limpia la ruta privada y se muestra Login; un `401` invalida la sesión almacenada.
 

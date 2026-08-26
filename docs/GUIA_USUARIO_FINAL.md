@@ -4,7 +4,7 @@
 
 **Dirigida a:** Solicitantes y miembros de Junta Directiva (JD)
 
-**Contrato vigente:** Constitución 2.19.0
+**Contrato vigente:** Constitución 2.20.0
 
 ## 1. ¿Para qué sirve la aplicación?
 
@@ -64,6 +64,12 @@ válido o ya venció”, pide uno nuevo.
 En **Inicio**, el bloque **Acciones pendientes** es la referencia principal de
 trabajo. Al seleccionar una acción, la aplicación vuelve a comprobar que siga
 vigente antes de mostrar los controles disponibles.
+
+En celular, la navegación aparece como una banda horizontal debajo de tu nombre:
+deslízala para ver todas las opciones. Las Solicitudes se muestran como tarjetas
+con el nombre de cada dato; formularios, filtros y acciones se apilan para poder
+usarlos sin ampliar la pantalla. Los menús y ventanas pueden cerrarse desde su
+control visible y respetan el área segura del dispositivo.
 
 ## 4. Instructivo para Solicitantes
 

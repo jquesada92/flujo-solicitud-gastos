@@ -1,6 +1,6 @@
 # Prompt maestro de reconstrucción
 
-> Constitución vigente: **2.19.0**.
+> Constitución vigente: **2.20.0**.
 
 Reconstruye **Flujo de Control de Gastos** como una aplicación web neutral respecto al tipo de organización, lista para desplegar con React/Vite, FastAPI, SQLAlchemy, Alembic y PostgreSQL/Neon.
 
@@ -417,6 +417,7 @@ frontend/src/home-dashboard.jsx
 frontend/src/user-tracking.jsx
 frontend/src/iam-admin.jsx
 frontend/src/iam-responsive.css
+frontend/src/mobile-layout.css
 frontend/src/auth-route-guard.js
 frontend/src/request-governor.js
 frontend/src/classification-admin.js
@@ -424,6 +425,14 @@ frontend/src/closure-delegation.jsx
 ```
 
 Los bridges o campos de compatibilidad que existan en código no definen el diseño objetivo.
+
+El layout completo funciona desde 320 px sin overflow horizontal de página. En
+móvil conserva la navegación como banda táctil desplazable, representa la tabla
+operativa de Solicitudes como tarjetas etiquetadas, apila formularios/tableros y
+mantiene menús, modales, visores, Accesos y Seguimiento dentro del viewport. Usa
+objetivos táctiles de al menos 44 px, alturas dinámicas y `safe-area`. No declares
+responsive un cambio validado solo con build: comprueba navegador a 1180, 1024,
+640, 440, 390 y 320 px.
 
 ## 18. Definition of Done
 

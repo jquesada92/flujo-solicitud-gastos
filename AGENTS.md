@@ -123,6 +123,9 @@ una tarea con alcance explícito.
   listados en el README son las superficies nuevas; los anchors de extracción en
   `main.jsx`/`vite.config.js` siguen siendo frágiles. Todo cambio allí exige
   `npm run build`.
+- `mobile-layout.css` es la capa responsive transversal. No devolver Solicitudes
+  a una tabla fija en móvil ni ocultar datos/acciones para evitar overflow; los
+  estilos específicos de Accesos, Inicio y Seguimiento siguen junto a sus módulos.
 - IAM usa grants aditivos `RolePermission ∪ GroupPermission`, sin `DENY`.
   `GroupMember`, Cargo y nombres organizacionales no autorizan;
   `config:manage` sigue reservado a `system_accounts`.

@@ -125,6 +125,7 @@ Para UX actual:
 ```text
 frontend/src/iam-admin.jsx
 frontend/src/iam-responsive.css
+frontend/src/mobile-layout.css
 frontend/src/home-dashboard.jsx
 frontend/src/user-tracking.jsx
 frontend/src/auth-route-guard.js

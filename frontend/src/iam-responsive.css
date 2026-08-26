@@ -224,14 +224,30 @@
 
 @media (max-width: 720px) {
   .iam-overlay {
-    top: 117px;
+    top: var(--mobile-topbar-offset, 117px);
+    overscroll-behavior: contain;
   }
 }
 
 @media (max-width: 640px) {
   .iam-shell {
     width: 100%;
-    padding: 24px 14px 48px;
+    padding: 24px 14px calc(48px + env(safe-area-inset-bottom));
+  }
+
+  .iam-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .iam-tabs button {
+    min-height: 44px;
+  }
+
+  .iam-refresh {
+    width: 100%;
+    min-height: 44px;
   }
 
   .iam-card {
@@ -261,6 +277,10 @@
 }
 
 @media (max-width: 440px) {
+  .iam-shell {
+    padding-inline: 10px;
+  }
+
   .iam-role-list-card .iam-role-list-item {
     grid-template-columns: minmax(0, 1fr);
   }

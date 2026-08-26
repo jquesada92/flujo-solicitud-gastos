@@ -141,6 +141,7 @@ class DocumentationContractTests(unittest.TestCase):
             'frontend/src/home-dashboard.jsx',
             'frontend/src/iam-admin.jsx',
             'frontend/src/iam-responsive.css',
+            'frontend/src/mobile-layout.css',
             'frontend/src/auth-route-guard.js',
             'frontend/src/request-governor.js',
             'frontend/vite.config.js',
@@ -212,6 +213,36 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('Matriz mínima de impacto', policy)
         self.assertIn('test_documentation_contract.py', policy)
         self.assertIn('no puede omitir una fuente', policy)
+
+    def test_mobile_layout_contract_is_synchronized(self):
+        required_fragments = {
+            REPO_ROOT / '.specify' / 'memory' / 'constitution.md': (
+                '## 18. Experiencia móvil',
+                'desde 320 px',
+                '1180, 1024, 640, 440, 390 y 320 px',
+            ),
+            REPO_ROOT / 'README.md': (
+                '### Layout móvil',
+                'frontend/src/mobile-layout.css',
+            ),
+            REPO_ROOT / 'PROMPT_RECONSTRUCCION.md': (
+                'tabla operativa de Solicitudes como tarjetas etiquetadas',
+                'objetivos táctiles de al menos 44 px',
+            ),
+            REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
+                'Contrato responsive global',
+                'sin overflow horizontal de página',
+            ),
+            REPO_ROOT / 'AGENTS.md': (
+                '`mobile-layout.css` es la capa responsive transversal',
+                'ni ocultar datos/acciones para evitar overflow',
+            ),
+        }
+        for document, fragments in required_fragments.items():
+            source = re.sub(r'\s+', ' ', read(document))
+            for fragment in fragments:
+                with self.subTest(document=document.name, fragment=fragment):
+                    self.assertIn(fragment, source)
 
     def test_workflow_support_docs_cannot_restore_legacy_approver_authority(self):
         required_fragments = {

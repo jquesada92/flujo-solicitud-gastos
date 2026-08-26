@@ -1,5 +1,16 @@
 # Historia funcional
 
+## 2026-08-25 — layout móvil transversal
+
+- La Constitución evoluciona a 2.20.0 y extiende el contrato responsive a toda
+  la aplicación desde 320 px.
+- La navegación permanece accesible como banda táctil y la consulta principal
+  de Solicitudes usa tarjetas etiquetadas en lugar de comprimir una tabla ancha.
+- Inicio, Accesos, Seguimiento, formularios, menús, modales y visores respetan
+  ancho, altura dinámica y áreas seguras del dispositivo.
+- La Spec 020 y sus pruebas protegen el layout móvil sin cambiar permisos ni
+  reglas del flujo.
+
 ## 2026-08-25 — aprobadores IAM y creación atómica
 
 - La Constitución evoluciona a 2.19.0.
