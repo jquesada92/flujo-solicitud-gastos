@@ -21,6 +21,12 @@
   flex-wrap: wrap;
 }
 
+.iam-permission-row code,
+.iam-permission-row small {
+  display: block;
+  margin-top: 3px;
+}
+
 .iam-toolbar > div,
 .iam-toolbar > h2,
 .iam-toolbar > span,

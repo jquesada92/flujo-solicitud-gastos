@@ -4,7 +4,7 @@
 
 **Dirigida a:** Solicitantes y miembros de Junta Directiva (JD)
 
-**Contrato vigente:** Constitución 2.18.0
+**Contrato vigente:** Constitución 2.19.0
 
 ## 1. ¿Para qué sirve la aplicación?
 
@@ -89,6 +89,11 @@ Usa este tipo cuando existe un proveedor y una cotización principal.
 
 La Categoría depende del Área seleccionada. Si no aparece la categoría
 correcta, consulta con la administración antes de enviar la solicitud.
+
+La aplicación solo confirma la solicitud cuando puede iniciar el flujo con al
+menos otra persona habilitada para aprobar. Si muestra un error de aprobadores o
+de soporte, la solicitud nueva no queda registrada: corrige la configuración o
+el archivo y vuelve a enviarla.
 
 ### 4.2 Crear una solicitud con múltiples cotizaciones
 

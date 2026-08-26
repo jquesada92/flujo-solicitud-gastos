@@ -1,6 +1,6 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.18.0**.
+> Constitución vigente: **2.19.0**.
 
 Aplicación web para registrar, evaluar, aprobar, votar, seguir, corregir, cancelar, cerrar y documentar solicitudes de gasto con trazabilidad. El producto es neutral respecto al tipo de organización: la estructura se configura como datos y los nombres organizacionales no forman parte de la lógica de autorización.
 
@@ -36,6 +36,9 @@ Reglas clave:
 - los cambios de acceso se guardan explícitamente con **Guardar cambios**;
 - el restablecimiento administrativo envía un enlace de un solo uso, no una contraseña;
 - Inicio es personal; Seguimiento es una vista de equipo de solo lectura;
+- los participantes de aprobación/votación provienen de `requests:approve`
+  efectivo, no de nombres de perfiles ni reglas legacy;
+- una solicitud nueva sin ronda iniciable no queda persistida;
 - una pantalla privada sin sesión vuelve al Login;
 - el frontend no debe hacer polling agresivo ni repetir GET idénticos innecesariamente.
 
@@ -163,6 +166,19 @@ MULTI_QUOTE
 ```
 
 Las correcciones conservan el tipo original.
+
+En `SIMPLE`, los aprobadores son todos los usuarios activos con permiso efectivo
+`requests:approve`, excepto el Solicitante. El permiso puede ser propio de un Rol
+global o agrupado, o heredado del Grupo. No se requiere una regla de monto para
+activar IAM; sin una política aplicable se usa mayoría. Si no existe otro
+aprobador elegible o el flujo no puede prepararse, la API no conserva la nueva
+solicitud ni su soporte pendiente.
+
+La pantalla **Configuración → Reglas** conserva temporalmente
+`approver_profile_codes` como metadata legacy. Esos valores no conceden acceso ni
+filtran participantes; la única autoridad es `requests:approve` efectivo. Esta
+divergencia visual está registrada en
+[docs/KNOWN_RISKS.md](docs/KNOWN_RISKS.md).
 
 En `MULTI_QUOTE`, la población votante se congela por ronda desde usuarios activos con `requests:approve`, excluyendo al solicitante. La ronda espera todos los votos y solo se resuelve con ganador único; un empate permanece abierto. Ver [docs/MULTI_QUOTE_VOTING.md](docs/MULTI_QUOTE_VOTING.md).
 

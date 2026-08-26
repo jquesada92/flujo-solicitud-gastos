@@ -382,6 +382,14 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn('.iam-inherited', css)
         self.assertIn('.iam-effective-summary', css)
 
+    def test_effective_permission_code_and_source_have_separate_labels(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        css = (REPO_ROOT / 'frontend' / 'src' / 'iam-responsive.css').read_text(encoding='utf-8')
+        self.assertIn('<code>Permiso: {code}</code>', source)
+        self.assertIn('<small>Origen: {', source)
+        self.assertIn('.iam-permission-row code,\n.iam-permission-row small {', css)
+        self.assertIn('display: block;', css)
+
 
 if __name__ == '__main__':
     unittest.main()

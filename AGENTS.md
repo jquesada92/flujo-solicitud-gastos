@@ -138,6 +138,16 @@ una tarea con alcance explícito.
   estable. Debe cubrir rutas canónicas, rutas legacy aún expuestas y
   reactivaciones; `assigned_user_count` o un selector deshabilitado en frontend
   no sustituyen la comprobación de servidor.
+- Las rondas `SIMPLE` y `MULTI_QUOTE` seleccionan participantes únicamente desde
+  Usuarios activos con permiso efectivo `requests:approve`, excluyendo al
+  Solicitante. Un `ApprovalPolicy`, nombre de perfil, Cargo, `GroupMember` o regla
+  legacy por correo no crea autoridad; la ausencia de política no desactiva IAM.
+  En particular, `ApprovalPolicy.approver_profile_codes` es metadata física de
+  compatibilidad: nunca usarla para filtrar, agregar o autorizar participantes.
+- Una solicitud nueva sin ronda iniciable no se persiste. Si SIMPLE requiere una
+  carga de soporte en una segunda llamada, un fallo al preparar el flujo debe
+  revertir también la solicitud y el archivo; nunca dejar una fila `Expense`
+  huérfana para convertir el error en un estado válido.
 - Toda edición de acceso se prepara en UI y se persiste solo con **Guardar
   cambios**. El envío confirmado de un enlace de restablecimiento es una acción
   de seguridad inmediata y constituye una excepción explícita: no debe aplicar
@@ -175,6 +185,13 @@ Backend o contrato API:
 cd backend
 .\.venv\Scripts\python.exe -m compileall -q app scripts
 .\.venv\Scripts\python.exe -m scripts.run_tests
+```
+
+Flujo de aprobación o atomicidad de solicitudes:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m unittest tests.test_request_flow_creation -v
 ```
 
 No sustituir el runner por discovery directo: `scripts.run_tests` evita leer

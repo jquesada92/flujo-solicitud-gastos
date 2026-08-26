@@ -263,7 +263,7 @@ export default function ExpenseForm({
       setMessage({
         type: "error",
         text: item
-          ? `La solicitud ${item.display_id} se guardó, pero un soporte no pudo cargarse: ${err.message}`
+          ? `No se pudo completar el envío de la solicitud ${item.display_id}: ${err.message}`
           : err.message,
       });
     } finally {

@@ -69,6 +69,21 @@ no consumen cupo.
 
 `iam_access_policy.py` se registra antes del router IAM de compatibilidad para bloquear rutas que contradigan el modelo actual.
 
+## Inicio de flujos
+
+`approval_engine.start_approval_flow()` selecciona participantes exclusivamente
+mediante `users_with_permission(..., 'requests:approve')` y excluye al
+Solicitante. Una `ApprovalPolicy` aplicable define la modalidad; sin política se
+usa `MAJORITY`. Las tablas legacy de reglas por correo no autorizan.
+`ApprovalPolicy.approver_profile_codes` se conserva como metadata compatible y
+no entra en la consulta de participantes.
+
+Las rutas canónicas pueden preparar aprobaciones con `commit=False` para incluir
+la solicitud, el soporte y la ronda en una misma transacción. El endpoint de
+adjuntos compensa además la solicitud `SIMPLE` pendiente creada en la llamada
+anterior si no puede iniciar su primera ronda. Las notificaciones se despachan
+solo después del commit mediante `notify_approval_flow_started()`.
+
 ## Middlewares
 
 - CORS explícito;
@@ -103,6 +118,7 @@ Los contratos críticos deben tener pruebas HTTP/modelo para:
 - cardinalidades IAM;
 - cupo de Rol en asignación, reactivación y reducción del máximo;
 - workflow/capacidades;
+- población IAM y ausencia de solicitudes huérfanas cuando el flujo no inicia;
 - schema PostgreSQL;
 - frontend contracts cuando haya bridges transitorios.
 - emisión/consumo de restablecimiento: autorización, expiración, uso único,

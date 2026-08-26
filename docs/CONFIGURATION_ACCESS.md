@@ -100,6 +100,18 @@ Catálogo de capacidades implementadas. Se asignan como grants propios a Roles o
 
 Cargo/Posición es metadato organizacional y no aparece como fuente de autorización. La cardinalidad vigente es un Cargo máximo por Usuario.
 
+## Reglas de aprobación
+
+Las políticas de monto (`ApprovalPolicy`) pueden definir el rango aplicable y la
+modalidad de una ronda `SIMPLE`. Si no existe una política aplicable, la ronda no
+se desactiva: usa `MAJORITY` y mantiene la población IAM.
+
+La pantalla actual todavía solicita perfiles en `approver_profile_codes`. Ese
+campo es metadata legacy y no selecciona, agrega ni autoriza participantes. La
+población se obtiene exclusivamente de Usuarios activos con permiso efectivo
+`requests:approve`, excluyendo al Solicitante. No reconstruir autorización desde
+el nombre de Cargo, Rol, Grupo, perfil, membresía o una regla antigua por correo.
+
 ## Modo lectura
 
 Un usuario con `config:read` puede consultar la información autorizada de Configuración sin mutarla. El backend sigue siendo la barrera real: cualquier intento de escritura devuelve 403 si no existe autoridad de escritura.

@@ -90,6 +90,12 @@ effective = baseline
 
 Para cada Rol agrupado se calcula `RolePermission ∪ GroupPermission`. Es una unión aditiva: no duplica códigos, un Permiso propio adicional se conserva y la ausencia de un Permiso propio hereda el del Grupo. No existe estado `DENY`. `GroupMember` no aparece en la consulta de autorización.
 
+La selección de participantes para aprobación y votación usa
+`users_with_permission(..., 'requests:approve')`. Por ello incluye Roles globales,
+Permisos propios de Roles agrupados y herencia de Grupos activos, siempre con
+Usuario/Rol/Grupo/Permiso activos. `ApprovalPolicy`, Cargo, `GroupMember`, nombres
+de Rol o reglas legacy por correo no agregan participantes.
+
 Para `system_accounts`, se aplica la política técnica del ambiente. En producción:
 
 ```text

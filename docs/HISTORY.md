@@ -1,5 +1,19 @@
 # Historia funcional
 
+## 2026-08-25 — aprobadores IAM y creación atómica
+
+- La Constitución evoluciona a 2.19.0.
+- Las solicitudes sencillas usan `requests:approve` efectivo aunque no exista
+  una política de monto y dejan de seleccionar reglas legacy por correo.
+- Permisos propios agrupados, herencia de Grupo y Roles globales participan de
+  forma equivalente.
+- Una solicitud nueva sin ronda iniciable ya no queda persistida; la carga de
+  soporte también elimina el archivo y la solicitud pendiente ante ese fallo.
+- Accesos separa visualmente código y origen del permiso efectivo.
+- El soporte para agentes registra `approver_profile_codes` como metadata legacy,
+  añade la matriz de impacto del flujo y evita reconstruir autoridad desde la
+  pantalla de Reglas.
+
 ## 2026-08-25 — instructivo para usuarios finales
 
 - Se incorpora una guía operativa separada de la documentación técnica para

@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from app.models.entities import (
     Approval,
     ApprovalPolicy,
-    ApprovalRule,
     ApprovalStatus,
     ApprovalStepEvent,
     Expense,
@@ -114,23 +113,22 @@ def _safe_email(callable_, *args) -> None:
         logger.exception('Email delivery failed; workflow state was still saved')
 
 
-def matching_rules(db: Session, expense: Expense) -> list[ApprovalRule]:
-    """Legacy sequential rules retained only during the IAM migration period."""
-    amount = Decimal(expense.amount)
-    stmt = (
-        select(ApprovalRule)
-        .where(
-            ApprovalRule.active.is_(True),
-            ApprovalRule.expense_type == expense.expense_type,
-            ApprovalRule.min_amount <= amount,
-            or_(ApprovalRule.max_amount.is_(None), ApprovalRule.max_amount >= amount),
-        )
-        .order_by(ApprovalRule.step.asc())
-    )
-    return list(db.scalars(stmt).all())
+def notify_approval_flow_started(approvals: list[Approval]) -> None:
+    """Send notifications only after the caller has committed the workflow."""
+    for approval in approvals:
+        try:
+            if approval.status == ApprovalStatus.PENDING:
+                send_approval_request(approval)
+        except Exception:
+            logger.exception('Approval notification failed; workflow state was already saved')
 
 
-def start_approval_flow(db: Session, expense: Expense) -> None:
+def start_approval_flow(
+    db: Session,
+    expense: Expense,
+    *,
+    commit: bool = True,
+) -> list[Approval]:
     amount = Decimal(expense.amount)
     policies = list(db.scalars(select(ApprovalPolicy).where(
         ApprovalPolicy.active.is_(True),
@@ -139,17 +137,16 @@ def start_approval_flow(db: Session, expense: Expense) -> None:
         or_(ApprovalPolicy.max_amount.is_(None), ApprovalPolicy.max_amount >= amount),
     ).order_by(ApprovalPolicy.expense_type.desc())).all())
 
-    if policies:
-        # Approval participation is now permission-driven. Policy profile names
-        # are legacy metadata and no longer authorize or select participants.
-        users = users_with_permission(
-            db,
-            'requests:approve',
-            exclude_email=expense.requested_by.lower(),
-        )
-        if not users:
-            raise ValueError('La política aplicable no tiene otro usuario activo con permiso de aprobación')
-
+    # Approval participation is permission-driven even when an installation has
+    # no amount policy yet. Policy profile names are legacy metadata and never
+    # authorize or select participants.
+    users = users_with_permission(
+        db,
+        'requests:approve',
+        exclude_email=expense.requested_by.lower(),
+    )
+    if users:
+        approval_mode = policies[0].approval_mode if policies else 'MAJORITY'
         approvals = [
             Approval(
                 expense_id=expense.id,
@@ -157,7 +154,7 @@ def start_approval_flow(db: Session, expense: Expense) -> None:
                 approver_email=user.email,
                 approver_role='requests:approve',
                 step=index,
-                approval_mode='MAJORITY',
+                approval_mode=approval_mode,
                 token=secrets.token_urlsafe(32),
                 status=ApprovalStatus.PENDING,
             )
@@ -168,46 +165,15 @@ def start_approval_flow(db: Session, expense: Expense) -> None:
         db.flush()
         for item in approvals:
             record_step_event(db, item, 'STEP_CREATED', None)
-        db.commit()
-        db.refresh(expense)
-        for item in approvals:
-            _safe_email(send_approval_request, item)
-        return
+        if commit:
+            db.commit()
+            db.refresh(expense)
+            notify_approval_flow_started(approvals)
+        return approvals
 
-    # Compatibility path for old databases that still use sequential rules by
-    # email. New policy configuration must use IAM-based participation.
-    rules = [
-        rule
-        for rule in matching_rules(db, expense)
-        if rule.approver_email.lower() != expense.requested_by.lower()
-    ]
-    if not rules:
-        raise ValueError('La regla aplicable no tiene otro usuario que pueda aprobar esta solicitud')
-
-    approvals: list[Approval] = []
-    for index, rule in enumerate(rules):
-        approvals.append(
-            Approval(
-                expense_id=expense.id,
-                flow_id=expense.flow_id,
-                approver_email=rule.approver_email,
-                approver_role=rule.approver_role,
-                step=rule.step,
-                token=secrets.token_urlsafe(32),
-                status=ApprovalStatus.PENDING if index == 0 else ApprovalStatus.WAITING,
-            )
-        )
-
-    expense.status = ExpenseStatus.PENDING_APPROVAL
-    db.add_all(approvals)
-    db.flush()
-    for approval in approvals:
-        record_step_event(db, approval, 'STEP_CREATED', None)
-    db.commit()
-    db.refresh(expense)
-
-    first = next(a for a in expense.approvals if a.status == ApprovalStatus.PENDING)
-    _safe_email(send_approval_request, first)
+    raise ValueError(
+        'No hay otro usuario activo con permiso efectivo requests:approve para iniciar esta solicitud'
+    )
 
 
 def apply_decision(

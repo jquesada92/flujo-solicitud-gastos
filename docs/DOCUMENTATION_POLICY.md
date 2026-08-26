@@ -46,6 +46,7 @@ Una estructura física de compatibilidad puede documentarse únicamente si todav
 | Tipo de cambio | Fuentes que deben revisarse | Evidencia mínima |
 | --- | --- | --- |
 | IAM, permisos o cardinalidades | Constitución, Spec/checklist/plan, Prompt, README, contrato, `IAM_MODEL.md`, `CONFIGURATION_ACCESS.md`, riesgos | suite backend, contrato documental y PostgreSQL local si cambia persistencia |
+| Flujo, aprobadores o atomicidad de solicitudes | Constitución, Spec/checklist/plan, Prompt, README, contrato, arquitectura, guía de usuario, validación local y riesgos | suite backend, casos sin participantes/soporte y prueba del endpoint canónico |
 | Seguridad, sesión o contraseña | Constitución, Spec, Prompt, contrato, arquitectura, correo, validación local y riesgos | casos adversos, auditoría sin secretos y flujo local completo |
 | Migración o schema | Constitución/cadena Alembic, README, Prompt, Neon, arquitectura y Spec | un solo head, `current=head` en PostgreSQL local y prueba de migración |
 | UX o responsive | Spec/checklist, Prompt, contrato, runtime frontend y guía de Accesos | build y navegador en los anchos exigidos |
@@ -128,6 +129,17 @@ frontend/src/home-dashboard.jsx
 frontend/src/user-tracking.jsx
 frontend/src/auth-route-guard.js
 frontend/src/request-governor.js
+```
+
+Para población de aprobadores y creación atómica:
+
+```text
+backend/app/services/approval_engine.py
+backend/app/services/iam_service.py
+backend/app/api/request_actions.py
+backend/app/api/document_actions.py
+backend/tests/test_request_flow_creation.py
+specs/019-iam-approval-flow-atomicity/
 ```
 
 Para gates y operación segura:

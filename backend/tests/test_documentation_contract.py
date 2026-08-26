@@ -129,6 +129,9 @@ class DocumentationContractTests(unittest.TestCase):
             '.github/workflows/deploy-production.yml',
             '.github/workflows/reusable-ci.yml',
             'backend/app/services/iam_service.py',
+            'backend/app/services/approval_engine.py',
+            'backend/app/api/request_actions.py',
+            'backend/app/api/document_actions.py',
             'backend/app/api/iam_users.py',
             'backend/app/api/iam_access_policy.py',
             'backend/app/core/security.py',
@@ -195,13 +198,49 @@ class DocumentationContractTests(unittest.TestCase):
             'Usuario activo no técnico',
             'no debe aplicar ni descartar el borrador IAM',
         )
-        for fragment in access_fragments + reset_fragments:
+        workflow_fragments = (
+            'requests:approve`, excluyendo al Solicitante',
+            'ausencia de política no desactiva IAM',
+            'ApprovalPolicy.approver_profile_codes',
+            'solicitud nueva sin ronda iniciable no se persiste',
+            'nunca dejar una fila `Expense` huérfana',
+        )
+        for fragment in access_fragments + reset_fragments + workflow_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, agents_compact)
 
         self.assertIn('Matriz mínima de impacto', policy)
         self.assertIn('test_documentation_contract.py', policy)
         self.assertIn('no puede omitir una fuente', policy)
+
+    def test_workflow_support_docs_cannot_restore_legacy_approver_authority(self):
+        required_fragments = {
+            REPO_ROOT / 'README.md': (
+                'la única autoridad es `requests:approve` efectivo',
+                'solicitud nueva sin ronda iniciable no queda persistida',
+            ),
+            REPO_ROOT / 'docs' / 'CONFIGURATION_ACCESS.md': (
+                '`approver_profile_codes`',
+                'metadata legacy y no selecciona, agrega ni autoriza participantes',
+            ),
+            REPO_ROOT / 'docs' / 'DOCUMENTATION_POLICY.md': (
+                'Flujo, aprobadores o atomicidad de solicitudes',
+                'backend/tests/test_request_flow_creation.py',
+            ),
+            REPO_ROOT / 'docs' / 'KNOWN_RISKS.md': (
+                'Perfiles legacy visibles en Reglas',
+                'no reintroducir filtros por nombre de perfil',
+            ),
+            REPO_ROOT / 'docs' / 'VALIDACION_LOCAL.md': (
+                '`SIMPLE` sin `ApprovalPolicy`',
+                'sin `Expense`, `ExpenseAttachment` ni archivo físico huérfano',
+            ),
+        }
+        for document, fragments in required_fragments.items():
+            source = re.sub(r'\s+', ' ', read(document))
+            for fragment in fragments:
+                with self.subTest(document=document.name, fragment=fragment):
+                    self.assertIn(fragment, source)
 
     def test_environment_examples_use_current_safe_defaults(self):
         backend_examples = (
