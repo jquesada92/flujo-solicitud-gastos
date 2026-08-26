@@ -4,7 +4,7 @@
 
 Aplicación web para registrar, evaluar, aprobar, votar, seguir, corregir, cancelar, cerrar y documentar solicitudes de gasto con trazabilidad. El producto es neutral respecto al tipo de organización: la estructura se configura como datos y los nombres organizacionales no forman parte de la lógica de autorización.
 
-> Revisión de soporte al desarrollo: **2026-08-25**. Antes de trabajar con una IA, leer [AGENTS.md](AGENTS.md). Los bloqueos que todavía no deben darse por resueltos están en [docs/KNOWN_RISKS.md](docs/KNOWN_RISKS.md).
+> Revisión de soporte al desarrollo: **2026-08-26**. Antes de trabajar con una IA, leer [AGENTS.md](AGENTS.md). Los bloqueos que todavía no deben darse por resueltos están en [docs/KNOWN_RISKS.md](docs/KNOWN_RISKS.md).
 
 ## Contrato actual en una página
 
@@ -210,6 +210,12 @@ can_delegate_close
 Cerrar/facturar depende de ser solicitante, Administrador del sistema o delegado activo de esa solicitud; no depende de un permiso global de cierre.
 
 ## Sesión y frontend
+
+Login y `GET /api/auth/me` incluyen `role_names` con todos los Roles IAM activos
+asignados. La cabecera muestra esos nombres —varios si corresponde— y nunca las
+etiquetas de capacidad del perfil técnico legacy como “Puede consultar”. Sin Rol
+ordinario muestra **Sin rol asignado**; una cuenta técnica sin Rol visible muestra
+**Administrador del sistema**.
 
 ### Layout móvil
 

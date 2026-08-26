@@ -8,3 +8,5 @@
 - [x] revocación/cambio conserva historial.
 - [x] reemplazar factura conserva versión/evento anterior.
 - [x] `requests:close` no autoriza estas operaciones.
+- [x] `MULTI_QUOTE` con ganador único provisional puede cerrar directamente desde `QUOTATION_VOTING`.
+- [x] votos pendientes o empate bloquean cierre y no persisten factura.

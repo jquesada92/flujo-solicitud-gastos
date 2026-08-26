@@ -10,13 +10,14 @@ Frontend:
 - `request-governor.js`: deduplicación/caché corta.
 - `access-navigation-bridge.js`: navegación del shell durante transición.
 - `config-readonly.js`: experiencia de lectura sin polling.
+- `main.jsx`: cabecera basada en `role_names`, con soporte para múltiples Roles y estados sin asignación.
 
 Backend:
 
 - `iam_users.py`: PATCH transaccional de Roles agrupados y globales.
 - `users.py`: emisión compatible del enlace de restablecimiento bajo protección
   canónica de `config:manage` y `system_accounts`.
-- `auth.py`: consumo público del token sin crear sesión.
+- `auth.py`/`security.py`: consumo público del token sin crear sesión y respuesta de sesión enriquecida con Roles IAM activos.
 - `iam_group_assignments.py`: Permisos y Roles opcionales del Grupo, preservando `RolePermission`, y reconstrucción de miembros derivados.
 - `iam_service.py`: unión de Permisos propios del Rol y heredados del Grupo activo, sin autoridad desde `GroupMember`.
 - `iam_access_policy.py`: rechazo de bypass.

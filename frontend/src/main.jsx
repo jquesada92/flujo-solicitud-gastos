@@ -27,13 +27,6 @@ const descriptor = (value) => String(value || "")
   .replaceAll("_", " ")
   .toLowerCase()
   .replace(/^./, (letter) => letter.toUpperCase());
-const roles = [
-  ["REQUESTER", "Puede solicitar"],
-  ["APPROVER", "Puede aprobar"],
-  ["VIEWER", "Puede consultar"],
-  ["ADMIN", "Administrador"],
-];
-const roleName = (role) => roles.find(([value]) => value === role)?.[1] || descriptor(role);
 const userTitles = [
   ["PRESIDENTE", "Presidente"],
   ["VICEPRESIDENTE", "Vicepresidente"],
@@ -3312,6 +3305,11 @@ function App() {
     localStorage.removeItem("access_token");
     setUser(null);
   };
+  const headerRoleLabel = user.role_names?.length
+    ? user.role_names.join(" · ")
+    : user.is_system_account
+      ? "Administrador del sistema"
+      : "Sin rol asignado";
   const navigateTo = (nextTab) => {
     if (nextTab === tab || !confirmDiscardChanges()) return;
     setTab(nextTab);
@@ -3363,8 +3361,8 @@ function App() {
           <div className="brand-mark">PH</div>
           <div>
             <strong>Gestión de Gastos</strong>
-            <span>
-              {user.name} · {roleName(user.role)}
+            <span className="session-role-summary">
+              {user.name} · {headerRoleLabel}
             </span>
           </div>
         </div>

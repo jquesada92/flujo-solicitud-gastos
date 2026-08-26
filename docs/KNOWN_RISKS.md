@@ -61,6 +61,15 @@ limpieza TTL evita crecimiento indefinido y el proxy local aporta la IP real,
 pero varias réplicas no comparten cuota. Un límite global requiere un almacén
 compartido y no debe darse por implementado.
 
+### Polling continuo en Seguimiento
+
+`ExpenseTable` en `frontend/src/main.jsx` vuelve a consultar
+`/api/expenses` cada cinco segundos. Esto contradice la política normativa de
+cargar al montar, después de mutaciones y mediante **Recargar** explícito, sin
+tráfico continuo por temporizadores. No documentar ese polling como
+comportamiento deseado; retirarlo y cubrir la regresión en una tarea funcional
+con alcance explícito.
+
 ### Transformaciones de Vite
 
 `frontend/vite.config.js` transforma fragmentos concretos de `main.jsx` y `iam-admin.jsx` durante el build. Una edición puede funcionar en el archivo fuente y romper la extracción. Todo cambio en esos puntos exige `npm run build`; consultar `FRONTEND_RUNTIME.md` antes de mover componentes o guards.

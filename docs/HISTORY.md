@@ -14,6 +14,8 @@
 - El monto operativo de solicitudes múltiples deja de aparecer como cero: usa
   máximo sin votos, monto del líder único y máximo ante empate, separado de la
   selección financiera final.
+- La sesión expone los nombres de Roles IAM activos y la cabecera sustituye las
+  etiquetas legacy de capacidad por el Rol o los Roles realmente asignados.
 - Interfaz, guía de usuario, arquitectura, contrato, Spec 013, pruebas y
   guardrails de agentes quedan sincronizados con la nueva regla.
 
