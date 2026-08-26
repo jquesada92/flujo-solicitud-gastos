@@ -35,6 +35,11 @@ from app.models.entities import (
 from app.schemas.expense import AttachmentOut, ExpenseCreate, ExpenseOut, InvoiceOut
 from app.services.approval_engine import expire_open_approvals, start_approval_flow
 from app.services.email_service import send_quotation_vote_request
+from app.services.quotation_service import (
+    cast_quotation_vote,
+    quotation_tracking_amount,
+    require_unique_winner_for_closure,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -138,6 +143,7 @@ def _present_expense(
             for item in output.quotation_votes
         ],
         'quotation_voter_count': quotation_voter_count,
+        'tracking_amount': quotation_tracking_amount(expense),
         'last_event_at': _as_utc(last_event.occurred_at) if last_event else _as_utc(expense.created_at),
         'last_event_type': last_event.event_type if last_event else 'REQUEST_CREATED',
     })
@@ -586,84 +592,8 @@ def vote_quotation(
     ))
     if not expense:
         raise HTTPException(status_code=404, detail='Solicitud no encontrada')
-    if expense.status != ExpenseStatus.QUOTATION_VOTING:
-        raise HTTPException(status_code=409, detail='La votación de cotizaciones ya no está abierta')
-    supported_option_ids = set(db.scalars(select(
-        ExpenseAttachment.quotation_option_id,
-    ).where(
-        ExpenseAttachment.expense_id == expense.id,
-        ExpenseAttachment.quotation_option_id.is_not(None),
-    )).all())
-    unsupported = [
-        item.option_number for item in expense.quotation_options
-        if not item.item_url and item.id not in supported_option_ids
-    ]
-    if unsupported:
-        raise HTTPException(
-            status_code=409,
-            detail=f'Falta soporte en las opciones: {", ".join(map(str, unsupported))}',
-        )
-    option = next((
-        item for item in expense.quotation_options
-        if item.id == payload.quotation_option_id
-    ), None)
-    if not option:
-        raise HTTPException(status_code=422, detail='La cotización no pertenece a esta solicitud')
-    vote = next((
-        item for item in expense.quotation_votes if item.voter_user_id == user.id
-    ), None)
-    previous = vote.quotation_option_id if vote else None
-    if vote:
-        vote.quotation_option_id = option.id
-    else:
-        vote = QuotationVote(
-            expense_id=expense.id,
-            quotation_option_id=option.id,
-            voter_user_id=user.id,
-            voter_email=user.email,
-            voter_role=user.title,
-        )
-        db.add(vote)
-    db.add(QuotationVoteEvent(
-        expense_id=expense.id,
-        flow_id=expense.flow_id,
-        voter_user_id=user.id,
-        voter_email=user.email,
-        voter_role=user.title,
-        previous_option_id=previous,
-        selected_option_id=option.id,
-    ))
-    db.commit()
-    eligible_count = db.scalar(select(func.count(User.id)).where(
-        User.active.is_(True),
-        User.can_approve.is_(True),
-        User.role != UserRole.ADMIN,
-    )) or 0
-    votes = list(db.scalars(select(QuotationVote).where(
-        QuotationVote.expense_id == expense.id,
-    )).all())
-    if eligible_count and len(votes) >= eligible_count:
-        counts = {}
-        for item in votes:
-            counts[item.quotation_option_id] = counts.get(item.quotation_option_id, 0) + 1
-        highest = max(counts.values())
-        winners = [option_id for option_id, count in counts.items() if count == highest]
-        if len(winners) == 1:
-            winner = db.get(QuotationOption, winners[0])
-            expense.selected_quotation_id = winner.id
-            expense.supplier = winner.supplier
-            expense.amount = winner.amount
-            expense.item_url = winner.item_url
-            expense.status = ExpenseStatus.APPROVED
-            db.commit()
-            db.refresh(expense)
-    stmt = select(Expense).where(Expense.id == expense.id).options(
-        selectinload(Expense.approvals),
-        selectinload(Expense.attachments),
-        selectinload(Expense.quotation_options),
-        selectinload(Expense.quotation_votes),
-    )
-    return db.scalars(stmt).one()
+    db.scalar(select(Expense.id).where(Expense.id == expense.id).with_for_update())
+    return cast_quotation_vote(db, expense, user, payload.quotation_option_id)
 
 
 @router.put('/{request_id}/resubmit', response_model=ExpenseOut)
@@ -874,7 +804,11 @@ async def close_expense(
     if not expense:
         raise HTTPException(status_code=404, detail='Solicitud no encontrada')
     db.refresh(expense)
-    if expense.status != ExpenseStatus.APPROVED:
+    if expense.request_type == 'MULTI_QUOTE':
+        if expense.status != ExpenseStatus.QUOTATION_VOTING:
+            raise HTTPException(status_code=409, detail='La votación de cotizaciones ya no está abierta')
+        require_unique_winner_for_closure(db, expense)
+    elif expense.status != ExpenseStatus.APPROVED:
         raise HTTPException(status_code=409, detail='Solo se pueden cerrar solicitudes aprobadas')
     documents = [('INVOICE', invoice)]
     prepared = []

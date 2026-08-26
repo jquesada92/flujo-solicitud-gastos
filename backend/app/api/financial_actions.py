@@ -16,6 +16,7 @@ from app.models.entities import (
 from app.schemas.expense import ExpenseOut
 from app.services.closure_service import can_manage_closure
 from app.services.document_service import read_upload, write_document
+from app.services.quotation_service import require_unique_winner_for_closure
 
 router = APIRouter()
 
@@ -59,7 +60,11 @@ def close_expense(
     )
     if not expense:
         raise HTTPException(status_code=404, detail='Solicitud no encontrada')
-    if expense.status != ExpenseStatus.APPROVED:
+    if expense.request_type == 'MULTI_QUOTE':
+        if expense.status != ExpenseStatus.QUOTATION_VOTING:
+            raise HTTPException(status_code=409, detail='La votación de cotizaciones ya no está abierta')
+        require_unique_winner_for_closure(db, expense)
+    elif expense.status != ExpenseStatus.APPROVED:
         raise HTTPException(status_code=409, detail='Solo se pueden cerrar solicitudes aprobadas')
     _require_closure_actor(db, expense, user)
 

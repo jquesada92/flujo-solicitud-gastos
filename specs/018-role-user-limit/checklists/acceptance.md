@@ -10,6 +10,6 @@
 - [x] Las filas de Rol se bloquean en orden estable antes de contar.
 - [x] La UI edita el límite solo con Guardar cambios y muestra ocupación/error.
 - [x] El selector marca como sin cupo un Rol lleno no asignado al Usuario.
-- [x] Alembic tiene un único head `20260825_0011` y conserva historial temporal.
+- [x] `20260825_0011` forma parte de la cadena Alembic lineal y conserva historial temporal.
 - [x] Validación visual local completada en 320, 390, 440, 640, 1024 y 1180 px.
 - [x] Suite completa, build, audit y Compose/PostgreSQL local verdes.

@@ -43,10 +43,13 @@ Schema:   administracion
 → 20260824_0009_group_permission_inheritance
 → 20260824_0010_password_reset_links
 → 20260825_0011_role_user_limit
+→ 20260825_0012_keep_quotation_voting_open
 ```
 
 `0010` agrega `users.password_reset_version` con valor inicial cero y mantiene
 la evolución física como una revisión nueva sobre `0009`.
+`0011` agrega el cupo opcional de Rol y `0012` normaliza solicitudes múltiples
+aprobadas sin factura; ambas preservan la cadena lineal y el schema configurado.
 
 ## Render
 

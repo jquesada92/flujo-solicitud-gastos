@@ -39,8 +39,8 @@ function replaceClosureVisibility(source) {
   );
   next = replaceRequired(
     next,
-    '{canClose && x.status === "APPROVED" && (',
-    '{x.can_close && x.status === "APPROVED" && (',
+    '{canClose && ["APPROVED", "QUOTATION_VOTING"].includes(x.status) && (',
+    '{x.can_close && ["APPROVED", "QUOTATION_VOTING"].includes(x.status) && (',
     "approved closure guard",
   );
   return next;

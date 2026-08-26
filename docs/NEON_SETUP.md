@@ -61,9 +61,10 @@ Antes de producción se debe ensayar el head completo sobre una rama Neon o un P
 → 20260824_0009_group_permission_inheritance
 → 20260824_0010_password_reset_links
 → 20260825_0011_role_user_limit
+→ 20260825_0012_keep_quotation_voting_open
 ```
 
-`alembic heads` debe devolver `20260825_0011`.
+`alembic heads` debe devolver `20260825_0012`.
 
 `0004` permite asignaciones de Roles globales (sin Grupo) y conserva el guard de máximo un Rol del mismo Grupo por Usuario.
 
@@ -73,6 +74,9 @@ Antes de producción se debe ensayar el head completo sobre una rama Neon o un P
 enlaces de restablecimiento anteriores sin almacenar tokens.
 `0011` agrega `roles.max_users` nullable con check positivo y actualiza las
 instantáneas temporales de Rol; los Roles existentes quedan ilimitados.
+
+`0012` normaliza a `QUOTATION_VOTING` las solicitudes `MULTI_QUOTE` que estaban
+en `APPROVED` sin factura, para conservar abierta la ronda hasta el cierre real.
 
 La baseline exige el schema de aplicación vacío en una instalación nueva. Una vez desplegada, no se reescribe; se agregan revisiones.
 

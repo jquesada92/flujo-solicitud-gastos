@@ -35,6 +35,7 @@ class FrontendMobileLayoutTests(unittest.TestCase):
         for fragment in required:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, source)
+        self.assertRegex(source, r"body\s*\{[^}]*min-width:\s*0")
 
     def test_component_overlays_share_mobile_height_contract(self):
         tracking = (FRONTEND / "user-tracking.css").read_text(encoding="utf-8")

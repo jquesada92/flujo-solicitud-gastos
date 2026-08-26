@@ -182,6 +182,7 @@ class ExpenseOut(BaseModel):
     )
     urgency: str = 'NORMAL'
     amount: Decimal | None = None
+    tracking_amount: Decimal | None = None
     supplier: str | None = None
     item_url: str | None = None
     requested_by: str

@@ -108,6 +108,7 @@ backend/app/models/iam.py
 backend/alembic/versions/20260824_0009_group_permission_inheritance.py
 backend/alembic/versions/20260824_0010_password_reset_links.py
 backend/alembic/versions/20260825_0011_role_user_limit.py
+backend/alembic/versions/20260825_0012_keep_quotation_voting_open.py
 ```
 
 Para persistencia:
@@ -141,6 +142,16 @@ backend/app/api/request_actions.py
 backend/app/api/document_actions.py
 backend/tests/test_request_flow_creation.py
 specs/019-iam-approval-flow-atomicity/
+```
+
+Para votación de cotizaciones y cierre:
+
+```text
+backend/app/services/quotation_service.py
+backend/app/api/quotation_actions.py
+backend/app/api/financial_actions.py
+backend/tests/test_multi_quote_open_voting.py
+specs/013-multi-quote-voting/
 ```
 
 Para gates y operación segura:

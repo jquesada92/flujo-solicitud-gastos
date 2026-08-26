@@ -111,7 +111,17 @@ La solicitud nueva, su soporte y su ronda constituyen una unidad de éxito. Si n
 puede prepararse el flujo, la API responde con error y no conserva la solicitud
 ni archivos huérfanos. Las notificaciones ocurren después del commit.
 
-`MULTI_QUOTE` congela por ronda a los usuarios activos con `requests:approve`, excluye al solicitante y requiere soporte en cada opción. Cada invitado tiene un voto activo; la ronda espera a todos y solo selecciona una cotización si existe ganador único. Los empates permanecen en `QUOTATION_VOTING`.
+`MULTI_QUOTE` congela por ronda a los usuarios activos con `requests:approve`,
+excluye al solicitante y requiere soporte en cada opción. Cada invitado tiene un
+voto activo que puede cambiar mientras la solicitud siga en
+`QUOTATION_VOTING`; cada cambio conserva evento. Cuando todos votan, un ganador
+único es provisional y no cambia el estado. Un empate limpia esa selección y
+bloquea la factura. Solo la factura, tras recalcular bajo bloqueo que la población
+está completa y no hay empate, lleva directamente a `CLOSED`.
+
+La tabla operativa expone `tracking_amount` sin alterar `Expense.amount`: máximo
+de opciones sin votos, monto del líder único cuando hay votos y máximo de todas
+las opciones cuando los líderes están empatados.
 
 Estados relevantes:
 
@@ -147,6 +157,9 @@ expense_category
 ## Responsabilidad por recurso
 
 El backend calcula `can_cancel`, `can_correct`, `can_close`, `can_delegate_close`. Estas capacidades dependen de estado y relación con la solicitud, no de un permiso IAM global.
+
+Para solicitudes múltiples, `can_close` solo es accionable con ganador
+provisional. Un 409 por empate o votos pendientes no persiste factura ni cierre.
 
 ## Seguridad de sesión
 
