@@ -7,6 +7,7 @@ from app.models.closure import ExpenseClosureDelegation
 from app.models.entities import Expense, ExpenseStatus, User
 from app.models.iam import SystemAccount
 from app.services.iam_service import is_system_account
+from app.services.quotation_service import can_requester_close_voting
 
 
 CLOSURE_ACTION_STATUSES = {
@@ -48,6 +49,8 @@ def can_manage_closure(
     Authority belongs to the original requester, the protected system account,
     or the active per-request delegate chosen by the requester.
     """
+    if expense.status == ExpenseStatus.QUOTATION_VOTING:
+        return can_requester_close_voting(db, expense, user)
     if expense.status not in CLOSURE_ACTION_STATUSES:
         return False
     if is_requester(expense, user):

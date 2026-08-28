@@ -19,6 +19,7 @@
 - [Runtime frontend](FRONTEND_RUNTIME.md)
 - [Correcciones](REQUEST_CORRECTIONS.md)
 - [Solicitudes múltiples y votación](MULTI_QUOTE_VOTING.md)
+- [Registro directo sin aprobación](DIRECT_EXPENSES.md)
 - [Delegación de cierre](CLOSURE_DELEGATION.md)
 - [Clasificación Área + Categoría](CLASSIFICATION_MODEL.md)
 

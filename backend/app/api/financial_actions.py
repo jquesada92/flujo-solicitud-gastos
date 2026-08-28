@@ -14,8 +14,12 @@ from app.models.entities import (
     User,
 )
 from app.schemas.expense import ExpenseOut
-from app.services.closure_service import can_manage_closure
+from app.services.closure_service import can_manage_closure, is_requester
 from app.services.document_service import read_upload, write_document
+from app.services.quotation_service import (
+    apply_current_quotation_leader,
+    can_requester_close_voting,
+)
 
 router = APIRouter()
 
@@ -59,9 +63,26 @@ def close_expense(
     )
     if not expense:
         raise HTTPException(status_code=404, detail='Solicitud no encontrada')
-    if expense.status != ExpenseStatus.APPROVED:
+    if expense.status not in (ExpenseStatus.APPROVED, ExpenseStatus.QUOTATION_VOTING):
         raise HTTPException(status_code=409, detail='Solo se pueden cerrar solicitudes aprobadas')
-    _require_closure_actor(db, expense, user)
+    if expense.status == ExpenseStatus.QUOTATION_VOTING:
+        if not is_requester(expense, user):
+            raise HTTPException(
+                status_code=403,
+                detail='Solo el solicitante original puede cerrar una votación al alcanzar el umbral',
+            )
+        if not can_requester_close_voting(db, expense, user):
+            raise HTTPException(
+                status_code=409,
+                detail='La votación todavía no alcanza el umbral requerido con un líder único',
+            )
+        if apply_current_quotation_leader(db, expense) is None:
+            raise HTTPException(
+                status_code=409,
+                detail='La votación no tiene un líder único para cerrar la solicitud',
+            )
+    else:
+        _require_closure_actor(db, expense, user)
 
     content, content_type, original, stored = read_upload(invoice, label='factura')
     path = None

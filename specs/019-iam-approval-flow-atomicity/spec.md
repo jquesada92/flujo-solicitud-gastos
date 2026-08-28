@@ -1,6 +1,6 @@
 # Spec 019 — Población IAM y creación atómica del flujo
 
-**Estado:** Implementada
+**Estado:** Implementada; scope de políticas ampliado por Spec 021
 
 **Constitución:** 2.19.0
 
@@ -13,13 +13,16 @@ el flujo no podía iniciarse, también podía quedar una solicitud sin ronda.
 
 ## Contrato
 
-1. La población de una ronda `SIMPLE` se resuelve desde todos los Usuarios
-   activos con permiso efectivo `requests:approve`, excluyendo al Solicitante.
+1. Sin política aplicable, la población de una ronda `SIMPLE` se resuelve desde
+   todos los Usuarios activos con permiso efectivo `requests:approve`, excluyendo
+   al Solicitante. Con política, la Spec 021 acota esa población por targets de
+   Rol/Grupo sin crear autoridad nueva.
 2. Son equivalentes como fuente de ese permiso: Permiso propio de Rol global,
    Permiso propio de Rol agrupado y Permiso heredado de su Grupo activo.
 3. La ausencia de `ApprovalPolicy` no deshabilita IAM ni obliga a usar una regla
    legacy. Sin política aplicable, la modalidad predeterminada es `MAJORITY`.
-4. Si existe una política aplicable, puede definir la modalidad, pero sus
+4. Si existe una política aplicable, define modalidad y scope por IDs de
+   Rol/Grupo. Los targets solo filtran Usuarios que ya tienen permiso efectivo;
    nombres de perfiles legacy no seleccionan ni autorizan participantes.
 5. Una solicitud nueva `SIMPLE` solo queda persistida cuando su soporte válido y
    su ronda de aprobación quedan confirmados. Si no puede crearse la ronda, la
@@ -32,6 +35,7 @@ el flujo no podía iniciarse, también podía quedar una solicitud sin ronda.
 
 ## Fuera de alcance
 
-- Rediseñar la configuración visual de reglas de monto.
+- El rediseño de reglas de monto dejó de estar fuera de alcance y se gobierna por
+  la Spec 021.
 - Implementar outbox transaccional para correo.
 - Eliminar las tablas físicas legacy en esta corrección.

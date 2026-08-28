@@ -16,8 +16,14 @@ from app.models.entities import (
 )
 from app.schemas.expense import ExpenseCreate, ExpenseOut
 from app.services.approval_engine import notify_approval_flow_started, start_approval_flow
+from app.services.approval_policy_service import (
+    DIRECT_EXPENSE_REQUIRED_DETAIL,
+    find_applicable_policy,
+    is_no_approval_policy,
+    participants_for_policy,
+    snapshot_policy_resolution,
+)
 from app.services.email_service import send_quotation_vote_request
-from app.services.iam_service import users_with_permission
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -39,6 +45,22 @@ def create_expense(
 
     quotation_pending = payload.quotation_pending
     quote_values = payload.quotation_options
+    evaluation_amount = (
+        max(option.amount for option in quote_values)
+        if payload.request_type == 'MULTI_QUOTE'
+        else payload.amount
+    )
+    try:
+        applicable_policy = find_applicable_policy(
+            db,
+            payload.expense_type,
+            evaluation_amount,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if applicable_policy is not None and is_no_approval_policy(applicable_policy):
+        raise HTTPException(status_code=422, detail=DIRECT_EXPENSE_REQUIRED_DETAIL)
+
     values = payload.model_dump(
         mode='json',
         exclude={'quotation_pending', 'quotation_options'},
@@ -69,9 +91,10 @@ def create_expense(
         ])
         db.flush()
 
-        voters = users_with_permission(
+        policy = applicable_policy
+        voters = participants_for_policy(
             db,
-            'requests:approve',
+            policy,
             exclude_email=user.email.lower(),
         )
         if not voters:
@@ -85,6 +108,13 @@ def create_expense(
                     'producción no participan en votaciones financieras.'
                 ),
             )
+        snapshot_policy_resolution(
+            expense,
+            policy,
+            evaluation_amount,
+            len(voters),
+            default_mode='ALL',
+        )
         invitations: list[tuple[User, QuotationVotingInvitation]] = []
         for voter in voters:
             invitation = QuotationVotingInvitation(

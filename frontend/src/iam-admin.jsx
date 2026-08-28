@@ -46,6 +46,13 @@ const sameIds = (left, right) => JSON.stringify(normalizeIds(left)) === JSON.str
 const normalizeCodes = (values) => [...new Set(values || [])].sort();
 const sameCodes = (left, right) => JSON.stringify(normalizeCodes(left)) === JSON.stringify(normalizeCodes(right));
 const SYSTEM_ONLY_PERMISSION_CODES = new Set(["config:manage"]);
+const emptyRoleForm = () => ({
+  name: "",
+  description: "",
+  permission_codes: [],
+  limit_users: false,
+  max_users: "",
+});
 
 function CheckList({ items, selected, onToggle, getValue = (item) => item.id, render, disabled = false, isItemDisabled = () => false }) {
   const values = new Set(selected || []);
@@ -77,7 +84,8 @@ function PermissionLabel({ permission }) {
 function RolesPanel({ permissions, roles, groups, onRoleSaved, setError }) {
   const [selectedId, setSelectedId] = useState(null);
   const [recovery, setRecovery] = useState(null);
-  const [form, setForm] = useState({ name: "", description: "", permission_codes: [], limit_users: false, max_users: "" });
+  const [form, setForm] = useState(emptyRoleForm);
+  const [savingRole, setSavingRole] = useState(false);
   const selected = roles.find((item) => item.id === selectedId) || null;
   const selectedGroup = selected
     ? groups.find((group) => (group.role_ids || []).includes(selected.id)) || null
@@ -128,7 +136,7 @@ function RolesPanel({ permissions, roles, groups, onRoleSaved, setError }) {
     if (!confirmDiscardRoleDraft("Hay cambios sin guardar en este rol. ¿Deseas descartarlos y crear otro rol?")) return;
     setSelectedId(null);
     setRecovery(null);
-    setForm({ name: "", description: "", permission_codes: [], limit_users: false, max_users: "" });
+    setForm(emptyRoleForm());
   };
 
   useEffect(() => {
@@ -138,7 +146,7 @@ function RolesPanel({ permissions, roles, groups, onRoleSaved, setError }) {
       permission_codes: selected.permission_codes || [],
       limit_users: selected.max_users !== null,
       max_users: selected.max_users ?? "",
-    } : { name: "", description: "", permission_codes: [], limit_users: false, max_users: "" });
+    } : emptyRoleForm());
   }, [selectedId, roles]);
 
   const togglePermission = (code, checked) => setForm((current) => ({
@@ -150,10 +158,12 @@ function RolesPanel({ permissions, roles, groups, onRoleSaved, setError }) {
 
   const save = async (event) => {
     event.preventDefault();
-    if (!canPersistRole) return;
+    if (!canPersistRole || savingRole) return;
     setError("");
+    const target = selected || recovery;
+    const creating = !target;
+    setSavingRole(true);
     try {
-      const target = selected || recovery;
       const saved = await iamApi(target ? `/api/iam/roles/${target.id}` : "/api/iam/roles", {
         method: target ? "PATCH" : "POST",
         body: JSON.stringify({
@@ -164,10 +174,20 @@ function RolesPanel({ permissions, roles, groups, onRoleSaved, setError }) {
           active: true,
         }),
       });
-      setRecovery(null);
       onRoleSaved(saved);
-      setSelectedId(saved.id);
-    } catch (error) { setError(error.message); }
+      if (creating) {
+        setSelectedId(null);
+        setRecovery(null);
+        setForm(emptyRoleForm());
+      } else {
+        setRecovery(null);
+        setSelectedId(saved.id);
+      }
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setSavingRole(false);
+    }
   };
 
   const findRecovery = async () => {
@@ -233,7 +253,7 @@ function RolesPanel({ permissions, roles, groups, onRoleSaved, setError }) {
           </>}
         />
         {selectedGroup && <div className="iam-effective-summary"><strong>Permisos aportados por este rol</strong><small>{contributedPermissionCodes.join(" · ") || "Sin permisos ordinarios"}</small>{reservedPermissionCodes.length > 0 && <small>Reservado sin efecto para usuarios ordinarios: {reservedPermissionCodes.join(" · ")}</small>}<small>{selectedGroup.active ? "La herencia no se copia al rol; si el rol sale del grupo, conserva solamente sus permisos propios." : "El grupo inactivo no aporta permisos hasta que vuelva a activarse."}</small></div>}
-        <button className={`iam-button primary iam-persist-action ${canPersistRole ? "pending" : ""}`} disabled={!canPersistRole}>{selected ? "Guardar cambios" : recovery ? "Reactivar rol" : "Crear rol"}</button>
+        <button className={`iam-button primary iam-persist-action ${canPersistRole ? "pending" : ""}`} disabled={!canPersistRole || savingRole}>{savingRole ? "Procesando…" : selected ? "Guardar cambios" : recovery ? "Reactivar rol" : "Crear rol"}</button>
       </form>}
     </section>
   </div>;

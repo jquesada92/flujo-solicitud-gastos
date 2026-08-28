@@ -1,7 +1,7 @@
 # Spec 011 — Consola de Accesos y runtime seguro
 
 **Estado:** Implementada con regresión abierta en la ficha de Usuario
-**Constitución:** 2.18.0
+**Constitución:** 2.24.0
 
 ## Objetivo
 
@@ -48,6 +48,12 @@ Puede definir un máximo opcional y positivo de Usuarios activos. La UI muestra
 ocupación/máximo, conserva ilimitado como valor predeterminado y marca Roles
 llenos en el selector. Usuarios inactivos conservan la asignación sin consumir
 cupo; FastAPI valida asignación, reactivación y reducción del máximo.
+
+Después de crear un Rol mediante `POST`, la lista incorpora la respuesta y el
+editor regresa a **Crear rol** completamente vacío, sin conservar selección,
+recuperación ni ID. Una segunda alta vuelve a usar `POST` y nunca sobrescribe el
+Rol anterior. Edición y reactivación continúan usando `PATCH`; un error conserva
+el borrador. El bloqueo transversal durante el request se rige por la Spec 023.
 
 ## Persistencia explícita
 

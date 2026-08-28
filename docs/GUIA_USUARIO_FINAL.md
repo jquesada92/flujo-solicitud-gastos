@@ -4,7 +4,7 @@
 
 **Dirigida a:** Solicitantes y miembros de Junta Directiva (JD)
 
-**Contrato vigente:** Constitución 2.20.0
+**Contrato vigente:** Constitución 2.24.0
 
 ## 1. ¿Para qué sirve la aplicación?
 
@@ -57,6 +57,7 @@ válido o ya venció”, pide uno nuevo.
 | --- | --- |
 | **Inicio** | Muestra lo que requiere tu atención, tus solicitudes abiertas y un resumen reciente. |
 | **Solicitudes** | Permite crear, buscar y consultar solicitudes, abrir soportes y revisar el avance del flujo. |
+| **Registro directo** | Registra un gasto con factura cuando una banda indica que no requiere aprobación. |
 | **Seguimiento** | Presenta la carga pendiente de los grupos y sus miembros. Es solo lectura. |
 | **Facturas** | Permite consultar facturas cerradas cuando esta opción está habilitada. |
 | **Configuración** | Solo aparece para personas con responsabilidades administrativas. |
@@ -70,6 +71,25 @@ deslízala para ver todas las opciones. Las Solicitudes se muestran como tarjeta
 con el nombre de cada dato; formularios, filtros y acciones se apilan para poder
 usarlos sin ampliar la pantalla. Los menús y ventanas pueden cerrarse desde su
 control visible y respetan el área segura del dispositivo.
+
+En **Registro directo**, teléfonos de 320 a 720 px muestran la introducción, los
+campos y las bandas en una columna; hasta 440 px cada banda apila también su
+rango. En tabletas de 768, 820 y 1024 px puede haber dos columnas legibles. Área,
+monto, proveedor, factura, ítem y botón permanecen visibles, y los controles
+táctiles miden al menos 44 px.
+
+### 3.1 Mientras se guarda un cambio
+
+Al crear, editar, aprobar, votar, cerrar o eliminar información aparece la
+pantalla **Procesando…**. Mientras esté visible no puedes interactuar con menús,
+formularios o botones. Espera a que desaparezca: la aplicación la retira tanto
+si el cambio se guardó como si debe mostrar un error. No recargues ni intentes
+enviar el mismo formulario otra vez.
+
+En **Configuración → Accesos → Roles**, después de crear un Rol correctamente,
+el registro aparece en la lista y **Crear rol** queda vacío y sin selección. Ese
+estado indica que la siguiente captura creará un Rol nuevo. Al editar o reactivar
+un Rol existente, en cambio, el editor conserva ese Rol seleccionado.
 
 ## 4. Instructivo para Solicitantes
 
@@ -117,10 +137,31 @@ Usa este tipo cuando la decisión debe tomarse comparando varias opciones.
 6. Revisa que cada proveedor tenga su soporte correcto.
 7. Pulsa **Crear solicitud**.
 
-La solicitud quedará en **Votación de cotizaciones**. Los participantes son
-definidos al abrir la ronda y el Solicitante no vota en su propia solicitud.
+La solicitud quedará en **Votación de cotizaciones**. El sistema compara el
+monto máximo de todas las opciones para elegir la regla. Los participantes son
+Usuarios con permiso de aprobación alcanzados por los Roles/Grupos de esa regla;
+seleccionar un Grupo incluye los Usuarios elegibles de todos sus Roles. El
+Solicitante no vota en su propia solicitud.
 
-### 4.3 Consultar el avance
+### 4.3 Registrar un gasto sin aprobación
+
+Usa esta pantalla solo cuando el Área y monto estén cubiertos por una banda que
+la administración marcó como **No requiere aprobación**.
+
+1. Entra a **Registro directo**.
+2. Selecciona el **Área** y revisa las bandas disponibles.
+3. Completa **Proveedor**, **Ítem / descripción** y **Monto**.
+4. Adjunta la factura en PDF, JPEG, PNG o WEBP, de máximo 10 MB.
+5. Pulsa **Registrar gasto y factura**.
+
+El sistema vuelve a verificar la regla al enviar. Un aviso de monto fuera de
+rango, Área sin banda o regla modificada significa que no se puede usar el
+registro directo; no intentes evitarlo creando datos incompletos. Un alta válida
+confirma un identificador de gasto directo y no crea una Solicitud, aprobación,
+votación o acción pendiente. El listado privado existe en el API, pero la
+pantalla actual no muestra un panel de historial.
+
+### 4.4 Consultar el avance
 
 Puedes revisar una solicitud desde **Inicio** o **Solicitudes**.
 
@@ -136,7 +177,7 @@ En **Solicitudes** puedes:
 No es necesario actualizar la página continuamente. Después de una acción, la
 aplicación recarga la información relacionada.
 
-### 4.4 Atender una solicitud devuelta a revisión
+### 4.5 Atender una solicitud devuelta a revisión
 
 Cuando JD selecciona **Enviar a revisión**, la solicitud cambia a **Corrección
 solicitada** y aparece **Corregir y reenviar** en Inicio.
@@ -152,7 +193,7 @@ Sencilla continúa siendo Sencilla y Múltiples cotizaciones continúa siendo
 Múltiples cotizaciones. En este último caso se abre una ronda nueva y los votos
 anteriores dejan de ser vigentes.
 
-### 4.5 Cancelar una solicitud
+### 4.6 Cancelar una solicitud
 
 Cuando el estado lo permita, la fila mostrará **Cancelar solicitud**.
 
@@ -163,7 +204,7 @@ Cuando el estado lo permita, la fila mostrará **Cancelar solicitud**.
 Una solicitud **Cancelada** no continúa el flujo ni puede cerrarse. Si el botón
 no aparece, el estado o tu relación con la solicitud no permiten cancelarla.
 
-### 4.6 Registrar la factura y cerrar
+### 4.7 Registrar la factura y cerrar
 
 Cuando una solicitud esté **Aprobada**, el Solicitante verá **Subir factura y
 cerrar** en Inicio o **Registrar factura y cerrar** en Solicitudes.
@@ -177,7 +218,12 @@ Después del cierre, la factura queda disponible en la solicitud. Si es necesari
 reemplazarla, usa **Corregir factura** cuando esa opción esté disponible; la
 aplicación conserva la evidencia anterior.
 
-### 4.7 Delegar el cierre o la factura
+En una Solicitud de múltiples cotizaciones con regla, el Solicitante puede ver
+el cierre antes de que voten todos si ya se alcanzó el mínimo y existe un líder
+único. Cargar la factura cierra la votación. Sin regla, debe esperar todos los
+votos y el estado **Aprobada**; no existe cierre anticipado.
+
+### 4.8 Delegar el cierre o la factura
 
 El Solicitante puede delegar el cierre de una solicitud cuando aparezca
 **Delegar cierre/factura**.
@@ -227,16 +273,16 @@ En una acción **Votar cotización**:
 2. selecciona **Votar por esta opción** en la alternativa elegida;
 3. confirma que la acción se registró correctamente.
 
-La ronda espera a todas las personas invitadas. Cuando todos votan:
+Con una regla configurada, la pantalla muestra el mínimo de votos requerido. Al
+alcanzarlo con un líder único, el Solicitante puede cerrar con factura, pero la
+ronda sigue abierta: las demás personas invitadas pueden votar y quienes ya
+votaron pueden cambiar su opción hasta que se cargue la factura. Un empate
+mantiene la Solicitud abierta y deshabilita el cierre.
 
-- una opción con la mayor cantidad de votos, sin empate, queda seleccionada y la
-  solicitud pasa a **Aprobada**;
-- un empate mantiene la solicitud en **Votación de cotizaciones** hasta que un
-  participante cambie su voto;
-- cada participante conserva un único voto vigente.
-
-Después de votar, la acción personal puede desaparecer aunque la ronda continúe
-esperando a otros miembros.
+Sin una regla aplicable se requieren todos los votos. Entonces una opción con la
+mayor cantidad de votos, sin empate, queda seleccionada y la Solicitud pasa a
+**Aprobada**; el Solicitante no puede cerrarla anticipadamente. Cada participante
+conserva un único voto vigente.
 
 ### 5.4 Usar Seguimiento
 
@@ -295,8 +341,16 @@ reemplazada por una corrección o no haber sido asignada a tu usuario.
 
 ### La solicitud continúa en votación después de mi voto
 
-Es normal si faltan participantes o existe empate. Tu acción personal puede
-desaparecer mientras el proceso general continúa abierto.
+Es normal. Con regla, alcanzar el mínimo no termina la ronda: continúa hasta que
+el Solicitante adjunte la factura, y puedes cambiar tu voto mientras siga
+abierta. Sin regla, deben votar todos. Un empate tampoco permite cerrar.
+
+### No veo “Registro directo” o el monto se rechaza
+
+La pantalla requiere `requests:create`. Además, Área y monto deben pertenecer a
+una banda activa **No requiere aprobación**. La banda usa mínimo excluyente y
+máximo inclusivo; la administración puede haberla modificado desde que abriste
+la pantalla. El mensaje del servidor es la decisión vigente.
 
 ### No puedo abrir un soporte
 
@@ -343,5 +397,9 @@ Revisar pendiente → Aprobar / Rechazar / Enviar a revisión
                   → o votar una cotización cuando corresponda
 
 Solicitud con varias cotizaciones
-Crear opciones → Votan todos los invitados → Ganador único → Aprobada
+Crear opciones → Regla: quórum + líder → Solicitante factura y cierra
+               → Sin regla: votan todos → Ganador único → Aprobada
+
+Gasto sin aprobación
+Registro directo → Área + proveedor + ítem + monto + factura → Registrado
 ```

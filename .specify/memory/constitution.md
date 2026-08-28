@@ -1,8 +1,8 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.20.0
-**Vigente desde:** 2026-08-25
+**Versión:** 2.24.0
+**Vigente desde:** 2026-08-28
 
 ## 1. Propósito
 
@@ -41,6 +41,10 @@ Un cambio funcional, de seguridad, persistencia, UX o arquitectura no está term
 - **Enviar a revisión**: decisión del aprobador que interrumpe la ronda y devuelve la solicitud al solicitante.
 - **Corregir / reenviar**: edición por solicitante original o Administrador del sistema cuando el estado lo permite.
 - **Delegación de cierre/factura**: autoridad por solicitud, explícita y revocable.
+- **Regla de aprobación**: política activa de un Área y un rango de monto que acota una ronda a Roles/Grupos aprobadores y define su umbral.
+- **Quórum de votación**: cantidad mínima de votos distintos calculada al abrir la ronda desde `approval_mode` y su población congelada.
+- **Gasto directo**: registro final de proveedor, ítem, monto y factura amparado por una banda `NO_APPROVAL`; no es una Solicitud ni crea `Expense` o ronda.
+- **Bloqueo de procesamiento**: pantalla global no descartable que vuelve inerte la aplicación mientras una o más mutaciones iniciadas por la UI están pendientes.
 
 No se crearán sinónimos funcionales para estos conceptos.
 
@@ -131,7 +135,12 @@ inmediata e independiente de las ediciones staged de IAM. Requiere confirmación
 explícita, `config:manage` efectivo y un Usuario destino activo que no pertenezca
 a `system_accounts`; no espera ni queda incluido en **Guardar cambios**.
 
-La edición de un Rol puede actualizar el estado local con la respuesta del `PATCH`; no requiere un GET adicional para reflejar su nombre o estado.
+La edición de un Rol puede actualizar el estado local con la respuesta del
+`PATCH`; no requiere un GET adicional para reflejar su nombre o estado. Después
+de un `POST` exitoso de creación, la lista incorpora el Rol y el editor vuelve a
+**Crear rol** sin selección, recuperación, ID ni valores del registro creado. El
+siguiente envío debe ser otro `POST`; edición y reactivación continúan como
+`PATCH`. Un error conserva íntegro el borrador.
 
 Mover un Rol entre “global” y un Grupo no elimina sus asignaciones de Usuario ni sus `RolePermission`. La aplicación debe recalcular la membresía derivada y rechazar el cambio si produciría dos Roles del mismo Grupo para un mismo Usuario. Al quedar global, el Rol deja de recibir `GroupPermission`; al vincularse a otro Grupo, suma la herencia de ese Grupo a sus Permisos propios.
 
@@ -194,6 +203,16 @@ Reglas:
 - una acción humana explícita puede solicitar datos frescos;
 - autenticación, archivos y URLs tokenizadas no se cachean con el gobernador general.
 
+Toda mutación `/api/*` iniciada por la interfaz mediante
+`POST`/`PUT`/`PATCH`/`DELETE` activa antes del envío el **Bloqueo de
+procesamiento** con el mensaje **Procesando…**. La capa permanece por encima de
+la topbar, Accesos y cualquier modal; el resto del documento queda `inert` para
+mouse, touch y teclado. Un contador mantiene el bloqueo hasta que termine la
+última mutación concurrente y un `finally` lo retira en éxito, error HTTP, aborto
+o fallo de red. Las lecturas no lo activan y la sincronización silenciosa de
+actividad de sesión queda excluida. Un error nunca descarta el borrador del
+formulario.
+
 Si una feature futura necesita polling, debe documentar propósito y frecuencia y no puede usar un intervalo agresivo por defecto.
 
 ## 11. Solicitudes y clasificación
@@ -223,22 +242,85 @@ SIMPLE      → SIMPLE
 MULTI_QUOTE → MULTI_QUOTE
 ```
 
-Una ronda `MULTI_QUOTE` congela como participantes a usuarios activos con permiso efectivo `requests:approve`, excluye al solicitante y exige soporte válido en cada opción. Cada invitado mantiene un voto activo y todo cambio conserva evento. La ronda espera a todos los invitados: un ganador único lleva a `APPROVED`; un empate permanece en `QUOTATION_VOTING`.
+Las reglas de aprobación activas se definen para un Área concreta o para el scope
+fallback `ALL`, y por bandas `(min_amount, max_amount]`; `max_amount=NULL`
+significa sin límite superior. Dos reglas activas del mismo scope no pueden
+superponerse, aunque sí pueden ser adyacentes. Un monto igual al límite compartido
+pertenece únicamente a la banda que lo usa como máximo. La regla específica del
+Área precede a `ALL`; `ALL` solo se consulta cuando ninguna banda específica
+contiene el monto. Los huecos son válidos y, si tampoco coinciden con `ALL`,
+activan el fallback sin regla. FastAPI valida la misma semántica al crear, editar,
+activar y resolver una regla.
 
-Una ronda `SIMPLE` también resuelve sus participantes desde todos los Usuarios
-activos con permiso efectivo `requests:approve`, excluyendo al Solicitante. El
-Permiso puede provenir de un Rol global, ser propio de un Rol agrupado o heredarse
-de su Grupo activo. Una `ApprovalPolicy` aplicable puede determinar la modalidad,
-pero su ausencia no desactiva IAM; se usa `MAJORITY`. Reglas legacy por correo y
-nombres de perfiles no autorizan ni seleccionan aprobadores.
-`ApprovalPolicy.approver_profile_codes` permanece únicamente como metadata de
-compatibilidad hasta retirar esa estructura física.
+`approval_mode` admite `ANY`, `MAJORITY` y `ALL` para bandas que crean rondas,
+y `NO_APPROVAL` para bandas de registro directo. Una regla `NO_APPROVAL` no
+lleva targets de Rol/Grupo: no selecciona aprobadores, no concede Permisos y no
+puede abrir una ronda. La prohibición de overlap se aplica entre todas las reglas
+activas del mismo scope, también cuando sus modalidades son distintas.
+
+El monto de evaluación de una solicitud `SIMPLE` es su `amount`. Para
+`MULTI_QUOTE` es el máximo de los montos de todas sus opciones, calculado por el
+backend antes de congelar participantes. La regla, su modalidad, ese monto y el
+quórum calculado se conservan como instantánea de la ronda; editar o eliminar la
+regla después no modifica un flujo ya abierto.
+
+Una regla selecciona Roles y/o Grupos por identidad persistente, pero no concede
+`requests:approve`. La población es la intersección entre sus targets y los
+Usuarios activos con permiso efectivo `requests:approve`, excluyendo al
+Solicitante. Seleccionar un Rol incluye a sus Usuarios activos asignados.
+Seleccionar un Grupo expande los Usuarios activos asignados a cualquiera de sus
+Roles activos; `GroupMember` aislado no participa. Un Usuario alcanzado por más
+de un target aparece una sola vez. Cargo, nombres organizacionales,
+`ApprovalPolicy.approver_profile_codes` y reglas legacy por correo no autorizan
+ni seleccionan participantes.
+
+El umbral de una regla se calcula sobre sus `N` invitados congelados:
+
+```text
+ANY      → 1
+MAJORITY → floor(N / 2) + 1
+ALL      → N
+```
+
+Una ronda `MULTI_QUOTE` con regla exige soporte válido en cada opción y permanece
+en `QUOTATION_VOTING` aun después de alcanzar el umbral. Solo con el quórum
+completo y un líder único el Solicitante original obtiene cierre anticipado; los
+demás invitados pueden votar o cambiar su voto mientras no exista factura y la
+solicitud no esté `CLOSED`. Un empate nunca habilita ese cierre.
+
+Sin regla aplicable, `MULTI_QUOTE` congela a todos los Usuarios activos con
+`requests:approve`, excluye al Solicitante y requiere el voto de toda la
+población. Con todos los votos y un ganador único pasa a `APPROVED`; un empate
+permanece en `QUOTATION_VOTING`. El Solicitante no puede cerrar anticipadamente
+este fallback: cualquier `POST` de cierre mientras continúe en
+`QUOTATION_VOTING` responde `409` sin guardar factura ni fijar ganador.
+
+Una ronda `SIMPLE` usa la misma resolución de targets cuando existe regla. Sin
+regla, incluye a todos los Usuarios activos con permiso efectivo
+`requests:approve`, excluyendo al Solicitante, y usa `MAJORITY`. El Permiso puede
+provenir de un Rol global, ser propio de un Rol agrupado o heredarse de su Grupo
+activo; la ausencia de política nunca desactiva IAM.
 
 Una solicitud nueva solo se confirma cuando puede iniciar su ronda con soporte
 válido y al menos otro participante elegible. Si el flujo no puede prepararse,
 FastAPI revierte la creación y no deja una solicitud ni un soporte huérfanos. Las
 notificaciones se intentan después del commit y no sustituyen la creación
 transaccional de la ronda.
+
+Cuando una banda `NO_APPROVAL` aplicable cubre el Área y monto, un Usuario con
+`requests:create` usa **Registro directo → Gasto sin aprobación**. FastAPI vuelve
+a resolver la banda con precedencia de Área sobre `ALL` y exige Área activa,
+proveedor, descripción del ítem, monto positivo y factura válida. El resultado
+se persiste en `direct_expenses` con identidad propia, autor y referencia
+histórica de la política; no inserta `Expense`, aprobación, invitación, voto,
+acción pendiente ni estado de Solicitud. El selector del frontend y su validación
+de rango son asistencia: el `POST` es la autoridad final.
+
+La factura y el registro directo forman una sola unidad de éxito. Si falla la
+validación, la escritura del archivo o el commit, no queda fila ni archivo
+huérfano. El listado ordinario y la descarga de factura se limitan al autor del
+registro; `system_accounts` puede consultar todos. Un gasto directo no entra en
+corrección, delegación ni cierre de Solicitudes.
 
 ## 12. Acciones pendientes
 
@@ -279,7 +361,8 @@ can_close
 can_delegate_close
 ```
 
-Cerrar/facturar requiere estado compatible y una de estas relaciones:
+El cierre ordinario desde `APPROVED` y la corrección de factura desde `CLOSED`
+requieren una de estas relaciones:
 
 ```text
 solicitante original
@@ -288,6 +371,13 @@ OR delegado activo de esa solicitud
 ```
 
 `requests:close` no participa.
+
+La única excepción de estado es una ronda `MULTI_QUOTE` con regla aplicable,
+quórum alcanzado y líder único: mientras siga en `QUOTATION_VOTING`, solo el
+Solicitante original puede adjuntar la factura y cerrarla. La cuenta técnica y un
+delegado no reciben esa capacidad anticipada; conservan el cierre ordinario desde
+`APPROVED`/`CLOSED`. El cierre y el archivo forman una sola unidad de éxito,
+congelan el resultado final y hacen que cualquier voto posterior reciba `409`.
 
 ## 15. Cuenta técnica
 
@@ -341,6 +431,8 @@ Cadena Alembic vigente:
 → 20260824_0009_group_permission_inheritance
 → 20260824_0010_password_reset_links
 → 20260825_0011_role_user_limit
+→ 20260827_0012_scoped_approval_policies
+→ 20260828_0013_direct_expenses
 ```
 
 `20260824_0009_group_permission_inheritance` agrega `group_permissions` vacía para no alterar accesos existentes durante la migración. La tabla relaciona Grupo y Permiso de forma única; no introduce denegaciones ni modifica `role_permissions`.
@@ -354,6 +446,17 @@ emisión por sí sola no modifica la contraseña, `must_change_password` ni
 `20260825_0011_role_user_limit` agrega `roles.max_users` nullable con un check
 positivo y normaliza las instantáneas temporales de Rol. No asigna límites a
 Roles existentes: todos migran como ilimitados.
+
+`20260827_0012_scoped_approval_policies` agrega targets de Rol/Grupo a las
+políticas y conserva en cada solicitud la identidad de la regla, su modalidad,
+el monto evaluado y el quórum calculado. No convierte targets en grants; las
+políticas legacy activas quedan desactivadas porque sus nuevos targets nacen
+vacíos, sin modificar las rondas históricas ya abiertas.
+
+`20260828_0013_direct_expenses` agrega el registro independiente
+`direct_expenses` y habilita la modalidad `NO_APPROVAL` sin alterar el enum de
+tipos o estados de `Expense`. La referencia a la política es histórica y no
+introduce una FK destructiva.
 
 Usuarios, Áreas, Roles y Grupos mantienen historial temporal versionado. Cada
 alta crea una fila cuyo `active_from` coincide con `created_at`; toda modificación
@@ -437,9 +540,21 @@ foco visible. En pantallas estrechas:
   forma visible de cerrar;
 - los objetivos táctiles principales miden al menos 44 px.
 
+El Bloqueo de procesamiento cubre todo el viewport también desde 320 px, respeta
+`safe-area`, no produce overflow y conserva el foco dentro de su mensaje mientras
+la aplicación permanece inerte. No tiene acción de cierre o cancelación.
+
 El escritorio conserva su densidad y estructura. Todo cambio visual transversal
 se valida en navegador a 1180, 1024, 640, 440, 390 y 320 px; el build por sí solo
 no acredita el contrato responsive.
+
+**Registro directo** conserva Área, monto, proveedor, factura, ítem, bandas y
+acción principal en teléfonos y tabletas. Hasta 720 px apila introducción,
+campos y bandas en una columna; sobre ese ancho puede usar dos columnas si cada
+control conserva espacio legible. Hasta 440 px, cada banda también apila su
+descripción y rango. Ningún control táctil puede medir menos de 44 px ni causar
+overflow horizontal. Su validación específica cubre 320, 360, 390, 412, 440,
+600, 640, 768, 820 y 1024 px.
 
 ## 19. Definition of Done
 
@@ -462,7 +577,7 @@ Validaciones mínimas:
 ```text
 docker compose up -d --build
 docker compose exec -T backend alembic heads
-# esperado: 20260825_0011
+# esperado: 20260828_0013
 
 cd backend
 .\.venv\Scripts\python.exe -m scripts.run_tests
@@ -475,6 +590,26 @@ npm run build
 Los sembradores `app.demo_monitoring`/`app.live_demo` no son gates universales: mutan datos y solo pueden ejecutarse cuando la validación funcional lo requiera, dentro del PostgreSQL local aislado de Compose.
 
 Para cambios IAM, la aceptación debe cubrir además la unión aditiva Rol ∪ Grupo, ausencia de `DENY`, conservación de `RolePermission` al editar o desvincular, ausencia de autoridad por `GroupMember` aislado, exclusión de `config:manage` para usuarios ordinarios y, cuando aplique, cupo del Rol ante asignación, reactivación y concurrencia.
+
+Para mutaciones de frontend, la aceptación debe cubrir overlay global,
+inertización por mouse/touch/teclado, concurrencia, liberación ante éxito/error y
+exclusión del sync de actividad. Para Roles debe demostrar dos altas consecutivas
+por `POST` con formulario vacío entre ambas, sin convertir la segunda en `PATCH`;
+edición y reactivación conservan su ID y un fallo conserva el borrador.
+
+Para reglas de aprobación y `MULTI_QUOTE`, la aceptación debe cubrir bandas
+`(min,max]` sin superposición por Área, evaluación por el máximo de las opciones,
+targets de Rol/Grupo sin crear autoridad, expansión y deduplicación de Usuarios,
+quórum `ANY`/`MAJORITY`/`ALL`, líder único, votos restantes hasta factura/cierre
+y el fallback sin regla que espera a toda la población y no habilita cierre
+anticipado al Solicitante.
+
+Para `NO_APPROVAL` y gastos directos, la aceptación debe cubrir regla sin
+targets, resolución `(min,max]` con precedencia de Área, permiso
+`requests:create`, revalidación backend, ausencia total de `Expense`/ronda,
+atomicidad de fila + factura, aislamiento autor/`system_accounts`, migración
+PostgreSQL local y pantalla responsive en teléfonos/tabletas, sin overflow,
+recortes o controles táctiles menores de 44 px.
 
 Para restablecimiento de contraseña, la aceptación debe cubrir autorización y
 destinos protegidos, expiración y uso único, invalidación del enlace anterior,

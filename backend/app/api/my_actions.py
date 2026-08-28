@@ -15,6 +15,7 @@ from app.services.pending_action_service import (
     QUOTATION_VOTE,
     pending_actions_by_expense,
 )
+from app.services.quotation_service import quotation_quorum_reached, quotation_tally
 
 router = APIRouter()
 
@@ -53,7 +54,8 @@ def _attachment(item) -> dict:
     }
 
 
-def _request_payload(expense: Expense, user: User) -> dict:
+def _request_payload(db: Session, expense: Expense, user: User) -> dict:
+    quotation_voter_count, quotation_vote_count, _ = quotation_tally(db, expense.id)
     general_supports = [
         _attachment(item)
         for item in expense.attachments
@@ -73,6 +75,16 @@ def _request_payload(expense: Expense, user: User) -> dict:
         'supplier': expense.supplier,
         'item_url': expense.item_url,
         'status': expense.status.value,
+        'approval_policy_id': expense.approval_policy_id,
+        'approval_policy_mode': expense.approval_policy_mode,
+        'policy_evaluation_amount': (
+            str(expense.policy_evaluation_amount)
+            if expense.policy_evaluation_amount is not None else None
+        ),
+        'minimum_votes_required': expense.minimum_votes_required,
+        'quotation_voter_count': quotation_voter_count,
+        'quotation_vote_count': quotation_vote_count,
+        'quotation_quorum_reached': quotation_quorum_reached(db, expense),
         'can_delegate_close': can_delegate_closure(expense, user),
         'supports': general_supports,
         'quotation_options': [
@@ -105,7 +117,7 @@ def get_my_request_actions(
     expense = _expense(db, request_id)
     action_codes = pending_actions_by_expense(db, user, expense_ids=[expense.id]).get(expense.id, [])
     return {
-        'request': _request_payload(expense, user),
+        'request': _request_payload(db, expense, user),
         'actions': [
             {'code': code, 'label': ACTION_LABELS[code]}
             for code in action_codes

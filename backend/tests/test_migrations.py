@@ -42,8 +42,10 @@ class MigrationTopologyTests(unittest.TestCase):
         config.set_main_option('script_location', str(backend_dir / 'alembic'))
         script = ScriptDirectory.from_config(config)
 
-        self.assertEqual(script.get_heads(), ['20260825_0011'])
+        self.assertEqual(script.get_heads(), ['20260828_0013'])
         revisions = {revision.revision: revision.down_revision for revision in script.walk_revisions()}
+        self.assertEqual(revisions['20260828_0013'], '20260827_0012')
+        self.assertEqual(revisions['20260827_0012'], '20260825_0011')
         self.assertEqual(revisions['20260825_0011'], '20260824_0010')
         self.assertEqual(revisions['20260824_0010'], '20260824_0009')
         self.assertEqual(revisions['20260824_0009'], '20260821_0008')

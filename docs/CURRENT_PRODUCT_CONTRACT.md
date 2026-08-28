@@ -58,6 +58,7 @@ Los permisos efectivos ordinarios pueden venir de Permisos propios de Roles glob
 ```text
 Inicio        → mis acciones + mis solicitudes
 Solicitudes   → consulta de procesos; crear solo con requests:create
+Registro directo → gastos sin aprobación; crear solo con requests:create
 Seguimiento   → carga de equipo, solo lectura
 Configuración → Accesos / Áreas / Reglas / Auditoría según permisos
 ```
@@ -75,6 +76,11 @@ El Rol global técnico `Administrador del sistema` no pertenece a ningún Grupo.
 
 Un Rol puede limitar opcionalmente su cantidad de Usuarios activos. Los Usuarios inactivos conservan su asignación sin consumir cupo; asignar a otro Usuario activo o reactivar uno que conserva el Rol se rechaza si está lleno. El máximo no puede bajarse de la ocupación activa y FastAPI serializa la comprobación sobre la fila del Rol.
 
+Crear un Rol correctamente lo agrega a la lista y restablece **Crear rol** sin
+selección, recuperación, ID o valores anteriores. El siguiente registro vuelve a
+usar `POST` y no puede sobrescribir el recién creado. Editar o reactivar conserva
+`PATCH`; un fallo conserva el borrador.
+
 Contrato responsive global:
 
 - funciona desde 320 px de ancho CSS sin overflow horizontal de página;
@@ -87,6 +93,13 @@ Contrato responsive global:
 - los controles táctiles principales miden al menos 44 px;
 - la validación visual mínima cubre 1180, 1024, 640, 440, 390 y 320 px.
 
+Toda mutación `/api/*` iniciada por la UI muestra **Procesando…** antes del envío.
+El overlay cubre el viewport, queda por encima de cualquier root/modal y vuelve
+`inert` el resto de la aplicación para mouse, touch y teclado. Un contador lo
+mantiene hasta terminar la última mutación concurrente; `finally` lo retira en
+éxito, error HTTP, aborto o red. Las lecturas y `/api/auth/activity` no lo
+activan. Desde 320 px respeta `safe-area`, no crea overflow y no es descartable.
+
 **Divergencia conocida:** el contrato anterior sigue exigiendo un selector por Grupo y selección múltiple de Roles globales. La ficha actual de `iam-admin.jsx` expone temporalmente un único selector total y reduce el borrador a `role_ids[0]`. Esto no modifica la cardinalidad normativa y no debe copiarse en una reconstrucción; la corrección debe representar y preservar todos los Roles ya asignados antes de guardar.
 
 ## Flujo
@@ -98,20 +111,57 @@ SIMPLE
 MULTI_QUOTE
 ```
 
-`SIMPLE` crea su ronda con todos los Usuarios activos que tengan permiso efectivo
-`requests:approve`, excluyendo al Solicitante. Participan por igual el Permiso
-propio de un Rol global, el propio de un Rol agrupado y el heredado de su Grupo
-activo. Una regla de monto puede definir la modalidad; si no existe una aplicable,
-IAM sigue activo y se usa `MAJORITY`. Cargo, `GroupMember`, nombres de perfiles y
-reglas legacy por correo no seleccionan aprobadores.
-`ApprovalPolicy.approver_profile_codes` es metadata física legacy y tampoco
-participa en la población.
+Las políticas activas usan bandas `(min_amount,max_amount]` sin overlap dentro
+del mismo Área/scope. El Área concreta precede a `ALL`. `SIMPLE` se evalúa por su
+monto y `MULTI_QUOTE` por el máximo de todas sus opciones.
+
+`ANY`, `MAJORITY` y `ALL` son modalidades con ronda y targets obligatorios.
+`NO_APPROVAL` es una modalidad sin ronda, no admite targets y comparte la misma
+protección de overlap con el resto de políticas del scope.
+
+Una política acota por IDs de Roles/Grupos a Usuarios activos que ya tienen
+`requests:approve` efectivo, siempre excluyendo al Solicitante. Un Grupo expande
+los Usuarios asignados a sus Roles activos y el resultado se deduplica. Cargo,
+`GroupMember`, nombres, reglas legacy y `approver_profile_codes` no conceden ni
+sustituyen autoridad. Sin política, `SIMPLE` incluye toda la población IAM y usa
+`MAJORITY`.
 
 La solicitud nueva, su soporte y su ronda constituyen una unidad de éxito. Si no
 puede prepararse el flujo, la API responde con error y no conserva la solicitud
 ni archivos huérfanos. Las notificaciones ocurren después del commit.
 
-`MULTI_QUOTE` congela por ronda a los usuarios activos con `requests:approve`, excluye al solicitante y requiere soporte en cada opción. Cada invitado tiene un voto activo; la ronda espera a todos y solo selecciona una cotización si existe ganador único. Los empates permanecen en `QUOTATION_VOTING`.
+La política, modalidad, monto evaluado y quórum quedan congelados por ronda. En
+`MULTI_QUOTE`, `ANY=1`, `MAJORITY=floor(N/2)+1` y `ALL=N`. Con política, alcanzar
+quórum y líder único habilita cierre anticipado solo al Solicitante sin cerrar la
+votación: todos los invitados pueden votar/cambiar hasta factura + `CLOSED`. Sin
+política se invita a todos los usuarios IAM elegibles, se requieren los `N` votos
+y el Solicitante no puede cerrar anticipadamente; un ganador único pasa a
+`APPROVED`. Los empates permanecen en `QUOTATION_VOTING`. Mientras el fallback
+siga en ese estado, un `POST` de cierre responde `409` sin guardar factura ni
+fijar ganador, incluso cuando lo envía el Solicitante.
+
+## Gasto directo sin aprobación
+
+Cuando Área y monto coinciden con una banda `NO_APPROVAL`, un Usuario con
+`requests:create` registra Área, proveedor, ítem/descripción, monto positivo y
+factura desde **Registro directo → Gasto sin aprobación**. El backend revalida la
+política con fronteras `(min,max]` y precedencia del Área concreta sobre `ALL`;
+la lista y validación frontend de bandas no autorizan.
+
+El resultado es un `DirectExpense` privado con identidad propia, autor, metadata
+de factura y referencia histórica a la política. No crea `Expense`, Solicitud,
+ronda, voto, acción pendiente ni estado. La factura y la fila son atómicas. Un
+Usuario ordinario lista/descarga solo sus registros; `system_accounts` puede
+consultar todos. No se aplican corrección, cancelación, delegación o cierre de
+Solicitudes.
+
+La pantalla conserva Área, monto, proveedor, factura, ítem, bandas y acción en
+teléfonos y tabletas. De 320 a 720 px apila introducción, campos y bandas en una
+columna; hasta 440 px apila también la descripción y el rango de cada banda. En
+768, 820 y 1024 px puede usar dos columnas si siguen legibles. Inputs, selects y
+botones miden al menos 44 px, el foco permanece visible y no hay overflow ni
+recortes. La matriz específica de aceptación es 320, 360, 390, 412, 440, 600,
+640, 768, 820 y 1024 px.
 
 Estados relevantes:
 
@@ -211,6 +261,8 @@ Alembic:
 → 0009 group_permission_inheritance
 → 0010 password_reset_links
 → 0011 role_user_limit
+→ 0012 scoped_approval_policies
+→ 0013 direct_expenses
 ```
 
 `0004` permite Roles globales manteniendo la protección de máximo un Rol por Usuario/Grupo.
@@ -225,6 +277,10 @@ procesos internos quedan marcados como `SYSTEM:*`.
 `0009` agrega `group_permissions` vacía y no altera `role_permissions` ni accesos preexistentes.
 `0010` agrega `users.password_reset_version` para invalidar enlaces de restablecimiento sin almacenar tokens ni rotar la contraseña durante la emisión.
 `0011` agrega `roles.max_users` nullable, exige valores positivos y añade el campo a las instantáneas temporales de Rol sin limitar Roles existentes.
+`0012` agrega targets de Rol/Grupo a las políticas, conserva regla, modalidad,
+monto evaluado y quórum por ronda, y desactiva las políticas legacy activas cuyos
+nuevos targets nacen vacíos. `0013` crea `direct_expenses` como registro
+independiente y no modifica el enum ni la tabla `expenses`.
 
 ## Recuperación de entidades inactivas
 
@@ -249,6 +305,8 @@ app/api/users.py
 app/api/auth.py
 app/core/security.py
 app/services/email_service.py
+app/services/approval_policy_service.py
+app/api/direct_expenses.py
 app/api/organization_overview.py
 ```
 
@@ -261,4 +319,5 @@ user-tracking.jsx
 auth-route-guard.js
 request-governor.js
 expense-form.jsx
+direct-expense-form.jsx
 ```

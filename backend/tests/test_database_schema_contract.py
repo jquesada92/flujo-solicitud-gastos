@@ -50,6 +50,8 @@ class DatabaseSchemaContractTests(unittest.TestCase):
                 '20260824_0009_group_permission_inheritance.py',
                 '20260824_0010_password_reset_links.py',
                 '20260825_0011_role_user_limit.py',
+                '20260827_0012_scoped_approval_policies.py',
+                '20260828_0013_direct_expenses.py',
             ],
         )
 
@@ -92,6 +94,16 @@ class DatabaseSchemaContractTests(unittest.TestCase):
         self.assertIn("revision = '20260825_0011'", role_limit)
         self.assertIn("down_revision = '20260824_0010'", role_limit)
         self.assertIn("'ck_roles_max_users_positive'", role_limit)
+        scoped_policies = (
+            VERSIONS_DIR / '20260827_0012_scoped_approval_policies.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("revision = '20260827_0012'", scoped_policies)
+        self.assertIn("down_revision = '20260825_0011'", scoped_policies)
+        direct_expenses = (
+            VERSIONS_DIR / '20260828_0013_direct_expenses.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("revision = '20260828_0013'", direct_expenses)
+        self.assertIn("down_revision = '20260827_0012'", direct_expenses)
         self.assertIn("down_revision = '20260820_0002'", single_position)
 
         global_roles = (VERSIONS_DIR / '20260821_0004_allow_global_roles.py').read_text(encoding='utf-8')

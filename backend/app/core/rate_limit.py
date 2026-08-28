@@ -59,7 +59,12 @@ def policy_for_request(method: str, path: str) -> RatePolicy:
         return READ_POLICY
     if path == '/api/auth/reset-password':
         return PASSWORD_RESET_POLICY
-    if '/attachments' in path or path.endswith('/close') or path.endswith('/invoice'):
+    if (
+        '/attachments' in path
+        or path.endswith('/close')
+        or path.endswith('/invoice')
+        or path == '/api/direct-expenses'
+    ):
         return UPLOAD_POLICY
     sensitive = (
         path.startswith('/api/approvals/'),

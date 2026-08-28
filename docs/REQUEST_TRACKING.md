@@ -32,7 +32,11 @@ Una acción existe solo si el backend confirma que sigue vigente.
 ### QUOTATION_VOTE
 `requests:approve` + invitación vigente + solicitud en `QUOTATION_VOTING` + voto aún pendiente.
 
-La invitación es una instantánea de la ronda. Después de votar desaparece la acción personal, aunque la solicitud continúa visible hasta que todos voten y exista ganador único.
+La invitación es una instantánea de la ronda. Después de votar desaparece la
+acción personal. Con regla, el detalle permite cambiar el voto mientras no exista
+factura y la Solicitud siga en `QUOTATION_VOTING`; sin regla, la ronda espera a
+todos y un ganador único. Un gasto directo nunca crea `QUOTATION_VOTE` ni otra
+acción pendiente.
 
 ### CORRECT_REQUEST
 Solicitud propia en `NEEDS_REVISION`.
@@ -69,3 +73,8 @@ Seguimiento requiere sesión. No contiene controles de edición y no sustituye A
 ## Refresco
 
 Inicio carga al montar/cambiar `refreshKey`. Seguimiento carga al montar y cuando el usuario pulsa Recargar. Ninguna vista usa polling continuo.
+
+Los gastos directos no forman parte de las métricas, estados o pendientes de
+Solicitudes. Su listado privado existe en `GET /api/direct-expenses`; la pantalla
+actual de **Registro directo** confirma el ID creado, pero no renderiza ese
+listado.

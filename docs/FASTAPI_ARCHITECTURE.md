@@ -71,18 +71,36 @@ no consumen cupo.
 
 ## Inicio de flujos
 
-`approval_engine.start_approval_flow()` selecciona participantes exclusivamente
-mediante `users_with_permission(..., 'requests:approve')` y excluye al
-Solicitante. Una `ApprovalPolicy` aplicable define la modalidad; sin política se
-usa `MAJORITY`. Las tablas legacy de reglas por correo no autorizan.
-`ApprovalPolicy.approver_profile_codes` se conserva como metadata compatible y
-no entra en la consulta de participantes.
+`approval_policy_service` resuelve bandas `(min,max]` con precedencia del Área
+concreta sobre `ALL`. `approval_engine.start_approval_flow()` intersecta los
+targets de Rol/Grupo de una política con Usuarios activos que tienen
+`requests:approve` efectivo y excluye al Solicitante. Un Grupo expande sus Roles
+activos y se deduplican Usuarios. Sin política, `SIMPLE` usa toda la población
+IAM y `MAJORITY`; `MULTI_QUOTE` usa toda la población y exige todos los votos.
+Cargo, `GroupMember`, reglas legacy y `approver_profile_codes` no autorizan.
+
+El cierre desde `QUOTATION_VOTING` requiere la identidad de una política
+congelada, quórum alcanzado y líder único. El fallback sin política no satisface
+esa condición: el `POST` de cierre responde `409` sin guardar factura ni fijar
+ganador, aunque lo envíe el Solicitante. Solo después de todos los votos y un
+ganador único pasa a `APPROVED` y usa el cierre ordinario.
+
+`MULTI_QUOTE` evalúa el máximo de sus opciones antes de congelar regla,
+modalidad, monto y quórum. Con regla, alcanzar el umbral y líder único habilita
+cierre con factura solo al Solicitante sin terminar la votación; votar continúa
+permitido a cada invitado hasta `CLOSED`.
 
 Las rutas canónicas pueden preparar aprobaciones con `commit=False` para incluir
 la solicitud, el soporte y la ronda en una misma transacción. El endpoint de
 adjuntos compensa además la solicitud `SIMPLE` pendiente creada en la llamada
 anterior si no puede iniciar su primera ronda. Las notificaciones se despachan
 solo después del commit mediante `notify_approval_flow_started()`.
+
+`direct_expenses` atiende `NO_APPROVAL` fuera de ese motor. El `POST` multipart
+requiere `requests:create`, vuelve a resolver Área/monto, valida una factura
+privada y confirma `DirectExpense` + archivo como una unidad. No llama
+`start_approval_flow()` ni crea `Expense`. El listado y la descarga filtran por
+autor, salvo `system_accounts`.
 
 ## Middlewares
 
@@ -96,6 +114,7 @@ solo después del commit mediante `notify_approval_flow_started()`.
 /api/auth
 /api/auth/reset-password
 /api/expenses
+/api/direct-expenses
 /api/approvals
 /api/areas
 /api/iam
@@ -119,6 +138,8 @@ Los contratos críticos deben tener pruebas HTTP/modelo para:
 - cupo de Rol en asignación, reactivación y reducción del máximo;
 - workflow/capacidades;
 - población IAM y ausencia de solicitudes huérfanas cuando el flujo no inicia;
+- bandas/targets/quórum, cierre anticipado y votos posteriores hasta `CLOSED`;
+- `NO_APPROVAL` sin `Expense`, atomicidad de factura y aislamiento por autor;
 - schema PostgreSQL;
 - frontend contracts cuando haya bridges transitorios.
 - emisión/consumo de restablecimiento: autorización, expiración, uso único,

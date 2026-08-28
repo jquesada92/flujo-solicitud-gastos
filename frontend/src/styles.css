@@ -432,6 +432,11 @@ td {
 .flow-summary { display: grid; gap: 8px; margin: 8px 0 20px; padding: 16px; border-radius: 12px; background: #f5f7fa; }
 .flow-summary strong { font-size: 22px; }
 .flow-summary > span { color: #697386; font-size: 12px; }
+.quotation-policy-status { display: grid; gap: 5px; margin: 0 0 18px; padding: 12px 14px; border: 1px solid #d8dee8; border-radius: 10px; background: #fbfcfd; }
+.quotation-policy-status strong { color: #273246; font-size: 13px; }
+.quotation-policy-status span { color: #697386; font-size: 12px; overflow-wrap: anywhere; }
+.quotation-policy-status.reached { border-color: #9fd7b3; background: #f0faf4; }
+.closure-ready { display: block; color: #17653a; font-size: 12px; font-weight: 800; overflow-wrap: anywhere; }
 .flow-response-list { display: grid; gap: 12px; }
 .flow-response-card { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px 18px; padding: 15px; border: 1px solid #e3e7ee; border-radius: 12px; }
 .flow-response-card > div:first-child { min-width: 0; }
@@ -942,9 +947,9 @@ td {
   border: 1px solid #d8dee8;
   border-radius: 10px;
   padding: 14px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 22px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
 }
 
 .rule-profiles legend {
@@ -968,13 +973,77 @@ td {
   height: 17px;
 }
 
-.rules-form-card .card-heading .muted {
-  font-size: 0;
+.field-help {
+  color: #697386;
+  font-size: 12px;
+  font-weight: 500;
 }
 
-.rules-form-card .card-heading .muted::after {
-  content: 'Define el rango, los cargos participantes y si basta una aprobación o deben aprobar todos. El límite inferior es excluyente y el superior es inclusivo.';
+.rule-target-section {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rule-target-section > strong {
+  color: #596579;
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.rule-target-section label {
+  min-height: 48px;
+  padding: 9px 10px;
+  border: 1px solid #e3e7ee;
+  border-radius: 9px;
+  background: #fbfcfd;
+}
+
+.rule-target-section label > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rule-target-section label small {
+  color: #717b8d;
+  font-size: 11px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.rule-target-help {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #697386;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.rule-target-help code {
+  overflow-wrap: anywhere;
+}
+
+.no-approval-rule-note {
+  display: grid;
+  gap: 5px;
+  padding: 14px 16px;
+  border: 1px solid #b9dec6;
+  border-radius: 10px;
+  background: #f1faf4;
+}
+
+.no-approval-rule-note strong {
+  color: #17653a;
   font-size: 13px;
+}
+
+.no-approval-rule-note span {
+  color: #557060;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .closure-panel {
@@ -1374,17 +1443,16 @@ dd {
   .rule-profiles {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 0;
-    padding: 7px 12px;
+    gap: 14px;
+    padding: 12px;
   }
 
-  .rule-profiles label {
-    min-height: 48px;
-    border-bottom: 1px solid #edf0f4;
+  .rule-target-section {
+    gap: 8px;
   }
 
-  .rule-profiles label:last-child {
-    border-bottom: 0;
+  .rule-target-section label {
+    min-height: 52px;
   }
 
   .rule-profiles input {
@@ -1456,7 +1524,7 @@ dd {
   }
 
   .rules-table td:nth-child(2)::before {
-    content: 'Categoría';
+    content: 'Área';
   }
 
   .rules-table td:nth-child(3)::before {
@@ -1464,11 +1532,11 @@ dd {
   }
 
   .rules-table td:nth-child(4)::before {
-    content: 'Aprobación';
+    content: 'Modalidad';
   }
 
   .rules-table td:nth-child(5)::before {
-    content: 'Cargos';
+    content: 'Audiencia';
   }
 
   .rules-table td:nth-child(6)::before {

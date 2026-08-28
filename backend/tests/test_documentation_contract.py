@@ -71,6 +71,8 @@ class DocumentationContractTests(unittest.TestCase):
         readme = read(REPO_ROOT / 'README.md')
         prompt = read(REPO_ROOT / 'PROMPT_RECONSTRUCCION.md')
         changelog = read(REPO_ROOT / 'CHANGELOG.md')
+        history = read(REPO_ROOT / 'docs' / 'HISTORY.md')
+        guide = read(REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md')
 
         constitution_match = re.search(r'\*\*Versión:\*\*\s*(\d+\.\d+\.\d+)', constitution)
         self.assertIsNotNone(constitution_match)
@@ -79,6 +81,15 @@ class DocumentationContractTests(unittest.TestCase):
             with self.subTest(document=name):
                 self.assertIn(f'Constitución vigente: **{version}**', source)
         self.assertRegex(changelog, rf'(?m)^## {re.escape(version)}\s+—')
+        self.assertIn(f'Constitución {version}', guide)
+        self.assertIn(f'La Constitución evoluciona a {version}', history)
+        for spec_path in (
+            REPO_ROOT / 'specs' / '020-mobile-layout' / 'spec.md',
+            REPO_ROOT / 'specs' / '021-scoped-approval-rules' / 'spec.md',
+            REPO_ROOT / 'specs' / '022-direct-expense-registration' / 'spec.md',
+        ):
+            with self.subTest(document=spec_path.name, spec=spec_path.parent.name):
+                self.assertIn(f'**Constitución:** {version}', read(spec_path))
 
     def test_alembic_chain_has_one_documented_head(self):
         migrations: dict[str, tuple[str | None, Path]] = {}
@@ -130,14 +141,17 @@ class DocumentationContractTests(unittest.TestCase):
             '.github/workflows/reusable-ci.yml',
             'backend/app/services/iam_service.py',
             'backend/app/services/approval_engine.py',
+            'backend/app/services/approval_policy_service.py',
             'backend/app/api/request_actions.py',
             'backend/app/api/document_actions.py',
+            'backend/app/api/direct_expenses.py',
             'backend/app/api/iam_users.py',
             'backend/app/api/iam_access_policy.py',
             'backend/app/core/security.py',
             'backend/scripts/run_tests.py',
             'frontend/src/main.jsx',
             'frontend/src/expense-form.jsx',
+            'frontend/src/direct-expense-form.jsx',
             'frontend/src/home-dashboard.jsx',
             'frontend/src/iam-admin.jsx',
             'frontend/src/iam-responsive.css',
@@ -146,11 +160,14 @@ class DocumentationContractTests(unittest.TestCase):
             'frontend/src/request-governor.js',
             'frontend/vite.config.js',
             'docs/CURRENT_PRODUCT_CONTRACT.md',
+            'docs/DIRECT_EXPENSES.md',
             'docs/DOCUMENTATION_POLICY.md',
             'docs/GUIA_USUARIO_FINAL.md',
             'docs/KNOWN_RISKS.md',
             'docs/VALIDACION_LOCAL.md',
             'docs/VALIDACION_PRODUCCION.md',
+            'specs/021-scoped-approval-rules/spec.md',
+            'specs/022-direct-expense-registration/spec.md',
         )
         missing = [path for path in required_paths if not (REPO_ROOT / path).exists()]
         self.assertEqual(missing, [], f'Rutas de soporte inexistentes: {missing}')
@@ -201,10 +218,12 @@ class DocumentationContractTests(unittest.TestCase):
         )
         workflow_fragments = (
             'requests:approve`, excluyendo al Solicitante',
-            'ausencia de política no desactiva IAM',
-            'ApprovalPolicy.approver_profile_codes',
+            'Sin política aplicable se conserva el fallback IAM global',
+            '`approver_profile_codes` no autorizan',
             'solicitud nueva sin ronda iniciable no se persiste',
             'nunca dejar una fila `Expense` huérfana',
+            '`NO_APPROVAL` es una modalidad de política',
+            'sin crear `Expense`, ronda, voto ni acción pendiente',
         )
         for fragment in access_fragments + reset_fragments + workflow_fragments:
             with self.subTest(fragment=fragment):
@@ -220,18 +239,60 @@ class DocumentationContractTests(unittest.TestCase):
                 '## 18. Experiencia móvil',
                 'desde 320 px',
                 '1180, 1024, 640, 440, 390 y 320 px',
+                '**Registro directo** conserva Área, monto, proveedor, factura, ítem, bandas',
+                '320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
             ),
             REPO_ROOT / 'README.md': (
                 '### Layout móvil',
                 'frontend/src/mobile-layout.css',
+                'frontend/src/direct-expense-form.css',
+                'La matriz específica es 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
             ),
             REPO_ROOT / 'PROMPT_RECONSTRUCCION.md': (
                 'tabla operativa de Solicitudes como tarjetas etiquetadas',
                 'objetivos táctiles de al menos 44 px',
+                'frontend/src/direct-expense-form.css',
+                'Valida en Chrome a 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
             ),
             REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
                 'Contrato responsive global',
                 'sin overflow horizontal de página',
+                'La matriz específica de aceptación es 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+            ),
+            REPO_ROOT / 'docs' / 'FRONTEND_RUNTIME.md': (
+                '`direct-expense-form.css`',
+                'De 320 a 720 px, introducción, formulario y resumen de bandas se apilan',
+                'La matriz específica cubre 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+                'la pantalla actual no renderiza un panel de historial',
+            ),
+            REPO_ROOT / 'docs' / 'DIRECT_EXPENSES.md': (
+                '## Layout para teléfonos y tabletas',
+                'inputs, selects y botones miden al menos 44 px',
+                '320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+            ),
+            REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md': (
+                'teléfonos de 320 a 720 px',
+                'tabletas de 768, 820 y 1024 px',
+                'controles táctiles miden al menos 44 px',
+            ),
+            REPO_ROOT / 'docs' / 'DOCUMENTATION_POLICY.md': (
+                'runtime frontend y guía de usuario aplicable',
+                'frontend/src/direct-expense-form.css',
+            ),
+            REPO_ROOT / 'specs' / '020-mobile-layout' / 'spec.md': (
+                '### Registro directo en teléfonos y tabletas',
+                'en tabletas de 768, 820 y 1024 px',
+            ),
+            REPO_ROOT / 'specs' / '020-mobile-layout' / 'plan.md': (
+                'para Registro directo ampliar la matriz a 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+            ),
+            REPO_ROOT / 'specs' / '020-mobile-layout' / 'checklists' / 'acceptance.md': (
+                'Registro directo no tiene overflow ni recortes',
+                '320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+            ),
+            REPO_ROOT / 'specs' / '022-direct-expense-registration' / 'spec.md': (
+                '### Layout para teléfonos y tabletas',
+                'La aceptación visual específica se ejecuta en 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
             ),
             REPO_ROOT / 'AGENTS.md': (
                 '`mobile-layout.css` es la capa responsive transversal',
@@ -244,27 +305,93 @@ class DocumentationContractTests(unittest.TestCase):
                 with self.subTest(document=document.name, fragment=fragment):
                     self.assertIn(fragment, source)
 
-    def test_workflow_support_docs_cannot_restore_legacy_approver_authority(self):
+    def test_scoped_rules_and_direct_expenses_are_synchronized(self):
         required_fragments = {
+            REPO_ROOT / '.specify' / 'memory' / 'constitution.md': (
+                'El Solicitante no puede cerrar anticipadamente este fallback',
+                'responde `409` sin guardar factura ni fijar ganador',
+                'no inserta `Expense`, aprobación, invitación, voto, acción pendiente ni estado de Solicitud',
+            ),
             REPO_ROOT / 'README.md': (
-                'la única autoridad es `requests:approve` efectivo',
+                'targets solo acotan Usuarios que ya tienen `requests:approve` efectivo',
+                '`MULTI_QUOTE` evalúa el máximo de todas sus opciones',
                 'solicitud nueva sin ronda iniciable no queda persistida',
+                '`NO_APPROVAL` no admite targets ni abre una ronda',
+                'nunca crea `Expense`, Solicitud, aprobación, voto o acción pendiente',
+                'un `POST` de cierre del Solicitante responde `409` sin guardar factura ni fijar ganador',
+            ),
+            REPO_ROOT / 'PROMPT_RECONSTRUCCION.md': (
+                'un `POST` de cierre debe responder `409` sin guardar factura ni fijar ganador',
+                'No crees `Expense`, aprobación, invitación, voto, acción pendiente, `flow_id` ni estado',
+            ),
+            REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
+                'un `POST` de cierre responde `409` sin guardar factura ni fijar ganador',
+                'No crea `Expense`, Solicitud, ronda, voto, acción pendiente ni estado',
             ),
             REPO_ROOT / 'docs' / 'CONFIGURATION_ACCESS.md': (
                 '`approver_profile_codes`',
-                'metadata legacy y no selecciona, agrega ni autoriza participantes',
+                'únicamente como metadata física legacy',
+                'Un Grupo incluye Usuarios asignados a cualquiera de sus Roles activos',
+                '`NO_APPROVAL` se muestra como **No requiere aprobación**',
             ),
             REPO_ROOT / 'docs' / 'DOCUMENTATION_POLICY.md': (
                 'Flujo, aprobadores o atomicidad de solicitudes',
                 'backend/tests/test_request_flow_creation.py',
-            ),
-            REPO_ROOT / 'docs' / 'KNOWN_RISKS.md': (
-                'Perfiles legacy visibles en Reglas',
-                'no reintroducir filtros por nombre de perfil',
+                'backend/tests/test_direct_expenses.py',
             ),
             REPO_ROOT / 'docs' / 'VALIDACION_LOCAL.md': (
                 '`SIMPLE` sin `ApprovalPolicy`',
                 'sin `Expense`, `ExpenseAttachment` ni archivo físico huérfano',
+                '`NO_APPROVAL` fuera de banda',
+                'otro Usuario no puede listar/descargarlo',
+                'el `POST` de cierre del Solicitante antes de `APPROVED` responde `409` sin factura ni ganador',
+                '320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+            ),
+            REPO_ROOT / 'docs' / 'DIRECT_EXPENSES.md': (
+                '`NO_APPROVAL` no es un tipo ni un estado de Solicitud',
+                'nunca crea `Expense`, aprobación, invitación, voto, acción pendiente o `flow_id`',
+                'La fila y la factura forman una unidad',
+                '## Layout para teléfonos y tabletas',
+                'la pantalla actual no renderiza un panel de historial',
+            ),
+            REPO_ROOT / 'docs' / 'MULTI_QUOTE_VOTING.md': (
+                'cualquier `POST` de cierre responde `409` sin guardar factura ni fijar `selected_quotation_id`',
+            ),
+            REPO_ROOT / 'docs' / 'FASTAPI_ARCHITECTURE.md': (
+                'El fallback sin política no satisface esa condición',
+                'el `POST` de cierre responde `409` sin guardar factura ni fijar ganador',
+            ),
+            REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md': (
+                'Pulsa **Registrar gasto y factura**',
+                'la pantalla actual no muestra un panel de historial',
+            ),
+            REPO_ROOT / 'docs' / 'REQUEST_TRACKING.md': (
+                'la pantalla actual de **Registro directo** confirma el ID creado, pero no renderiza ese listado',
+            ),
+            REPO_ROOT / 'specs' / '021-scoped-approval-rules' / 'spec.md': (
+                '`max(QuotationOption.amount)`',
+                'Seleccionar un Grupo expande todos sus Roles activos',
+                'Sin política aplicable se invita a todos los Usuarios activos',
+                'Se exige el voto de los `N` invitados',
+                'el Solicitante no puede cerrar desde `QUOTATION_VOTING`',
+            ),
+            REPO_ROOT / 'specs' / '021-scoped-approval-rules' / 'plan.md': (
+                'cubrir por HTTP que el Solicitante recibe `409`',
+            ),
+            REPO_ROOT / 'specs' / '021-scoped-approval-rules' / 'checklists' / 'acceptance.md': (
+                'un `POST` de cierre del Solicitante desde `QUOTATION_VOTING` responde 409 sin factura ni ganador seleccionado',
+            ),
+            REPO_ROOT / 'specs' / '022-direct-expense-registration' / 'spec.md': (
+                '`requests:create`',
+                'no crea `Expense`, `Approval`, `QuotationVotingInvitation`, voto, acción',
+                'un Usuario ordinario lista únicamente sus propios registros',
+            ),
+            REPO_ROOT / 'specs' / '022-direct-expense-registration' / 'plan.md': (
+                'Validar el navegador en 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+            ),
+            REPO_ROOT / 'specs' / '022-direct-expense-registration' / 'checklists' / 'acceptance.md': (
+                'no crea `Expense`, aprobación, invitación, voto, acción pendiente ni estado de Solicitud',
+                'navegador a 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
             ),
         }
         for document, fragments in required_fragments.items():
@@ -272,6 +399,15 @@ class DocumentationContractTests(unittest.TestCase):
             for fragment in fragments:
                 with self.subTest(document=document.name, fragment=fragment):
                     self.assertIn(fragment, source)
+
+        stale_history_claims = {
+            REPO_ROOT / 'docs' / 'FRONTEND_RUNTIME.md': 'formulario, resumen de bandas e historial',
+            REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md': 'queda en el historial de esta pantalla',
+            REPO_ROOT / 'docs' / 'REQUEST_TRACKING.md': 'Los gastos directos se consultan en **Registro directo**',
+        }
+        for document, stale_fragment in stale_history_claims.items():
+            with self.subTest(document=document.name, stale_fragment=stale_fragment):
+                self.assertNotIn(stale_fragment, read(document))
 
     def test_environment_examples_use_current_safe_defaults(self):
         backend_examples = (

@@ -1,5 +1,55 @@
 # Historia funcional
 
+## 2026-08-28 — bloqueo global de guardado y alta segura de Roles
+
+- La Constitución evoluciona a 2.24.0 y define el Bloqueo global de
+  procesamiento para toda mutación iniciada por la interfaz.
+- **Procesando…** vuelve inerte la aplicación hasta completar la última mutación
+  concurrente y se libera también ante errores.
+- Crear un Rol deja el editor vacío y sin selección; una segunda alta vuelve a
+  usar `POST` en lugar de sobrescribir el primer registro mediante `PATCH`.
+- La Spec 023, los contratos frontend y la matriz responsive protegen este
+  comportamiento sin cambiar endpoints, IAM o persistencia física.
+
+## 2026-08-28 — validación teléfono/tableta del registro directo
+
+- La Constitución evoluciona a 2.23.0 y fija el comportamiento responsive de
+  **Registro directo** en teléfonos y tabletas.
+- El formulario, las bandas y la acción principal se conservan sin overflow ni
+  recortes, con objetivos táctiles de al menos 44 px.
+- El fallback `MULTI_QUOTE` sin regla queda protegido por una prueba HTTP de
+  cierre prematuro: espera los `N` votos y rechaza el intento del Solicitante.
+- Se eliminó de la guía la mención incorrecta a un historial renderizado en esa
+  pantalla; el listado privado existe como API, no como panel visible actual.
+
+## 2026-08-28 — gasto directo sin aprobación
+
+- La Constitución evoluciona a 2.22.0 y distingue un gasto directo de una
+  Solicitud.
+- Una banda `NO_APPROVAL` sin targets habilita el registro de Área, proveedor,
+  ítem, monto y factura para Usuarios con `requests:create`.
+- `DirectExpense` conserva identidad, autor, metadata privada de factura y la
+  política histórica sin crear `Expense` o workflow.
+- FastAPI revalida `(min,max]` y confirma fila + archivo como una unidad; el
+  autor consulta sus registros y `system_accounts` puede consultar todos.
+- La Spec 022 y Alembic `20260828_0013` separan esta modalidad de los tipos y
+  estados de Solicitud.
+
+## 2026-08-27 — reglas por Área, targets y quórum
+
+- La Constitución evoluciona a 2.21.0.
+- Las bandas activas usan `(min,max]`, evitan overlap por scope y dan prioridad
+  al Área concreta sobre `ALL`.
+- Roles/Grupos acotan Usuarios con `requests:approve` efectivo; seleccionar un
+  Grupo expande sus Roles activos y deduplica participantes.
+- `MULTI_QUOTE` evalúa el máximo de sus opciones y congela la regla, modalidad,
+  monto y quórum.
+- Con regla, un líder único al alcanzar el umbral permite al Solicitante cerrar
+  con factura mientras el resto puede votar hasta `CLOSED`; sin regla se esperan
+  todos los votos y no existe cierre anticipado.
+- La Spec 021 y Alembic `20260827_0012` incorporan el contrato sin convertir
+  targets en autoridad IAM.
+
 ## 2026-08-25 — layout móvil transversal
 
 - La Constitución evoluciona a 2.20.0 y extiende el contrato responsive a toda

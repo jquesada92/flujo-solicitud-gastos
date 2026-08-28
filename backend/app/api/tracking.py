@@ -22,6 +22,11 @@ from app.schemas.expense import ExpenseOut
 from app.services.closure_service import can_delegate_closure, can_manage_closure
 from app.services.iam_service import is_system_account
 from app.services.pending_action_service import pending_actions_by_expense
+from app.services.quotation_service import (
+    can_vote_on_quotation,
+    quotation_quorum_reached,
+    quotation_tally,
+)
 
 router = APIRouter()
 
@@ -100,6 +105,7 @@ def list_trackable_expenses(
 
     output: list[ExpenseOut] = []
     for expense in expenses:
+        _, quotation_vote_count, _ = quotation_tally(db, expense.id)
         event = latest_events.get(expense.id)
         lifecycle = [
             (expense.closed_at, 'REQUEST_CLOSED'),
@@ -135,6 +141,9 @@ def list_trackable_expenses(
                 system_admin=system_admin,
             ),
             'can_delegate_close': can_delegate_closure(expense, user),
+            'can_vote': can_vote_on_quotation(db, expense, user),
+            'quotation_vote_count': quotation_vote_count,
+            'quotation_quorum_reached': quotation_quorum_reached(db, expense),
         })
         if lifecycle_at and (
             not event or lifecycle_at.replace(tzinfo=None) > event.occurred_at.replace(tzinfo=None)

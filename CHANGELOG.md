@@ -1,5 +1,55 @@
 # Changelog
 
+## 2.24.0 — 2026-08-28
+
+- pantalla global **Procesando…** para mutaciones `POST`/`PUT`/`PATCH`/`DELETE`,
+  con aplicación inerte, contador concurrente y liberación garantizada ante
+  éxito o error;
+- exclusión del sync silencioso de actividad para no interrumpir el uso normal;
+- alta de Rol corregida para actualizar la lista y limpiar formulario, selección
+  e ID después del `POST`, evitando que la siguiente captura sobrescriba el Rol;
+- contrato responsive y accesible del overlay desde 320 px, con `safe-area`,
+  foco modal y reducción de movimiento;
+- nueva Spec 023 y regresiones frontend/documentales asociadas.
+
+## 2.23.0 — 2026-08-28
+
+- contrato reconstruible de **Registro directo** sincronizado para teléfonos y
+  tabletas: una columna hasta 720 px, bandas apiladas hasta 440 px, controles
+  táctiles de al menos 44 px y ausencia de overflow o recortes;
+- validación de navegador ampliada a 320, 360, 390, 412, 440, 600, 640, 768, 820
+  y 1024 px;
+- regresión explícita que intenta cerrar un `MULTI_QUOTE` sin regla antes del
+  voto de toda la población y exige rechazo `409` sin factura ni ganador;
+- documentación depurada para no prometer un historial visual que la pantalla
+  de registro directo no implementa.
+
+## 2.22.0 — 2026-08-28
+
+- modalidad `NO_APPROVAL` para bandas sin targets de Rol/Grupo;
+- nueva pantalla **Registro directo → Gasto sin aprobación** con Área,
+  proveedor, ítem, monto y factura, protegida por `requests:create`;
+- `DirectExpense` y tabla `direct_expenses` independientes de `Expense`, sin
+  solicitud, ronda, voto, acción pendiente o estado;
+- validación backend de banda `(min,max]`, precedencia Área/`ALL`, archivo
+  privado y atomicidad entre factura y fila;
+- consulta limitada al autor, con alcance global reservado a `system_accounts`;
+- Spec 022 y migración `20260828_0013_direct_expenses` sobre el head anterior.
+
+## 2.21.0 — 2026-08-27
+
+- reglas activas por Área/`ALL` y bandas `(min,max]` sin overlap dentro del
+  scope, con precedencia del Área concreta;
+- targets persistentes de Roles/Grupos que acotan Usuarios con
+  `requests:approve` efectivo; un Grupo expande sus Roles activos y deduplica;
+- `MULTI_QUOTE` evalúa el máximo de todas sus opciones y congela regla,
+  modalidad, monto y quórum por ronda;
+- `ANY`, `MAJORITY` y `ALL` calculan 1, `floor(N/2)+1` y `N` votos;
+- con regla, quórum y líder único habilitan cierre con factura solo al
+  Solicitante sin impedir votos/cambios restantes hasta `CLOSED`;
+- sin regla, la votación exige a toda la población y no admite cierre anticipado;
+- Spec 021 y migración `20260827_0012_scoped_approval_policies`.
+
 ## 2.20.0 — 2026-08-25
 
 - layout móvil transversal desde 320 px, con navegación táctil desplazable y

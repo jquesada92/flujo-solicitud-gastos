@@ -8,6 +8,8 @@ Frontend:
 - `iam-responsive.css`: layout apilable, wrap y protección contra overflow desde 320 px.
 - `auth-route-guard.js`: rutas privadas.
 - `request-governor.js`: deduplicación/caché corta.
+- `request-governor.js`: bloqueo global descrito por la Spec 023 durante cada
+  mutación, con exclusión del sync silencioso de actividad.
 - `access-navigation-bridge.js`: navegación del shell durante transición.
 - `config-readonly.js`: experiencia de lectura sin polling.
 
@@ -27,5 +29,9 @@ Validar Network: una pantalla quieta no debe emitir llamadas por segundo.
 
 Validar que cada click confirmado emite como máximo una solicitud, que un error
 no altera el borrador IAM y que el éxito no expone el token.
+
+Validar que dos altas consecutivas de Rol emiten dos `POST`: después de la
+primera, la lista se actualiza y el editor queda vacío/sin selección. Edición y
+recuperación deben permanecer como `PATCH` sobre su ID original.
 
 Pendiente bloqueante: restaurar en `UsersPanel` un selector independiente por Grupo y multiselección de Roles globales, preservar todos los `role_ids` no editados y sustituir las pruebas estáticas que hoy fijan un único Rol total.

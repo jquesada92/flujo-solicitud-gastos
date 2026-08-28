@@ -143,10 +143,28 @@ una tarea con alcance explícito.
   no sustituyen la comprobación de servidor.
 - Las rondas `SIMPLE` y `MULTI_QUOTE` seleccionan participantes únicamente desde
   Usuarios activos con permiso efectivo `requests:approve`, excluyendo al
-  Solicitante. Un `ApprovalPolicy`, nombre de perfil, Cargo, `GroupMember` o regla
-  legacy por correo no crea autoridad; la ausencia de política no desactiva IAM.
-  En particular, `ApprovalPolicy.approver_profile_codes` es metadata física de
-  compatibilidad: nunca usarla para filtrar, agregar o autorizar participantes.
+  Solicitante. Una `ApprovalPolicy` aplicable puede acotar esa población por IDs
+  de Roles/Grupos: un Grupo expande Usuarios asignados a sus Roles activos y la
+  población se deduplica. El target nunca concede el Permiso; Cargo,
+  `GroupMember`, nombres, reglas legacy y `approver_profile_codes` no autorizan.
+  Sin política aplicable se conserva el fallback IAM global.
+- Las bandas de política son `(min_amount,max_amount]`, sin superposición dentro
+  del mismo Área/scope; una regla de Área precede a `ALL`. `SIMPLE` evalúa su
+  monto y `MULTI_QUOTE` el máximo de todas sus opciones. La regla, modalidad,
+  monto evaluado y quórum se congelan por ronda.
+- En `MULTI_QUOTE`, `ANY`, `MAJORITY` y `ALL` requieren respectivamente 1,
+  `floor(N/2)+1` y `N` votos. Con política, quórum y líder único habilitan cierre
+  anticipado solo al Solicitante; la ronda permanece abierta para votos/cambios
+  hasta factura + `CLOSED`. Sin política se requieren todos los votos, no hay
+  cierre anticipado y un ganador único lleva a `APPROVED`.
+- `NO_APPROVAL` es una modalidad de política, no un tipo o estado de Solicitud.
+  Sus reglas no tienen targets y solo habilitan **Registro directo** para un
+  Usuario con `requests:create` cuando Área y monto pertenecen a su banda
+  `(min,max]`. FastAPI debe revalidar la política; la UI no decide elegibilidad.
+- Un gasto directo guarda proveedor, ítem, monto y factura en `direct_expenses`
+  sin crear `Expense`, ronda, voto ni acción pendiente. Fila y archivo son una
+  unidad atómica; autor y `system_accounts` son los únicos que pueden listar o
+  descargar su factura conforme al scope del endpoint.
 - Una solicitud nueva sin ronda iniciable no se persiste. Si SIMPLE requiere una
   carga de soporte en una segunda llamada, un fallo al preparar el flujo debe
   revertir también la solicitud y el archivo; nunca dejar una fila `Expense`
@@ -195,6 +213,13 @@ Flujo de aprobación o atomicidad de solicitudes:
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m unittest tests.test_request_flow_creation -v
+```
+
+Registro directo sin aprobación:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m unittest tests.test_direct_expenses -v
 ```
 
 No sustituir el runner por discovery directo: `scripts.run_tests` evita leer

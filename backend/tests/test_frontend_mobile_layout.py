@@ -24,6 +24,7 @@ class FrontendMobileLayoutTests(unittest.TestCase):
         source = (FRONTEND / "mobile-layout.css").read_text(encoding="utf-8")
         required = (
             "@media (max-width: 720px)",
+            "min-width: 0",
             "overflow-x: clip",
             ".table-wrap:has(.expenses-table)",
             ".expenses-table tbody",

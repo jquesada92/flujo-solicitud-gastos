@@ -90,11 +90,18 @@ effective = baseline
 
 Para cada Rol agrupado se calcula `RolePermission ∪ GroupPermission`. Es una unión aditiva: no duplica códigos, un Permiso propio adicional se conserva y la ausencia de un Permiso propio hereda el del Grupo. No existe estado `DENY`. `GroupMember` no aparece en la consulta de autorización.
 
-La selección de participantes para aprobación y votación usa
-`users_with_permission(..., 'requests:approve')`. Por ello incluye Roles globales,
-Permisos propios de Roles agrupados y herencia de Grupos activos, siempre con
-Usuario/Rol/Grupo/Permiso activos. `ApprovalPolicy`, Cargo, `GroupMember`, nombres
-de Rol o reglas legacy por correo no agregan participantes.
+La selección de participantes para aprobación y votación parte de
+`users_with_permission(..., 'requests:approve')`. Una `ApprovalPolicy` aplicable
+puede intersectar esa población con IDs de Roles/Grupos: un Grupo expande los
+Usuarios asignados a cualquiera de sus Roles activos y se deduplican
+coincidencias. El target no concede el Permiso. El fallback sin regla usa toda la
+población IAM elegible. Cargo, `GroupMember`, nombres de Rol,
+`approver_profile_codes` o reglas legacy por correo no agregan participantes.
+
+`requests:create` autoriza intentar crear una Solicitud o un gasto directo, pero
+no basta para este último: FastAPI también exige una banda `NO_APPROVAL`
+aplicable. Esa modalidad no selecciona aprobadores y no modifica
+`effective_permission_codes()`.
 
 Para `system_accounts`, se aplica la política técnica del ambiente. En producción:
 
@@ -184,7 +191,16 @@ Roles:
 - pueden ser globales o pertenecer a máximo un Grupo;
 - pueden quedar sin límite o definir el máximo de Usuarios activos asignados;
 - muestran ocupación actual y deshabilitan como “sin cupo” una opción llena para otro Usuario;
-- guardar usa la respuesta del backend para actualizar el estado local y evitar GET innecesario.
+- editar/reactivar usa la respuesta del backend para actualizar el estado local y evitar GET innecesario;
+- crear agrega el Rol a la lista y restablece el editor vacío, sin selección,
+  recuperación ni ID, de modo que la siguiente alta vuelva a usar `POST`;
+- un error conserva el borrador y nunca convierte la siguiente alta en `PATCH`
+  sobre el Rol anterior.
+
+Toda mutación IAM iniciada por la UI participa en el Bloqueo global de
+procesamiento de la Spec 023. El documento queda `inert` hasta que finalice la
+última operación; esta protección de UX no reemplaza autorización o transacción
+backend.
 
 ## Fuentes explicables
 

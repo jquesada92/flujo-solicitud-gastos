@@ -61,9 +61,11 @@ Antes de producción se debe ensayar el head completo sobre una rama Neon o un P
 → 20260824_0009_group_permission_inheritance
 → 20260824_0010_password_reset_links
 → 20260825_0011_role_user_limit
+→ 20260827_0012_scoped_approval_policies
+→ 20260828_0013_direct_expenses
 ```
 
-`alembic heads` debe devolver `20260825_0011`.
+`alembic heads` debe devolver `20260828_0013`.
 
 `0004` permite asignaciones de Roles globales (sin Grupo) y conserva el guard de máximo un Rol del mismo Grupo por Usuario.
 
@@ -103,7 +105,11 @@ ORDER BY table_name;
 
 `alembic_version` y las tablas de aplicación deben estar en `administracion`.
 
-También deben existir allí `userrole`, `expensestatus` y `approvalstatus`. Una prueba real debe insertar una solicitud, incrementar `category_counters` y crear una aprobación; `alembic heads` por sí solo no valida estas operaciones runtime.
+También deben existir allí `userrole`, `expensestatus` y `approvalstatus`, y la
+tabla `direct_expenses` debe estar en el mismo schema. Una prueba real debe
+insertar una solicitud, incrementar `category_counters`, crear una aprobación y
+registrar un gasto directo de prueba solo en PostgreSQL local; `alembic heads`
+por sí solo no valida estas operaciones runtime.
 
 Esa prueba real se ejecuta exclusivamente en local, staging o una rama Neon desechable. En producción la verificación posterior al despliegue es no mutante. `alembic heads` comprueba el grafo disponible; `alembic current` comprueba la revisión aplicada, pero ninguno demuestra por sí solo que todos los flujos runtime funcionen.
 

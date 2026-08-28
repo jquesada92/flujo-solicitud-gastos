@@ -20,6 +20,9 @@
 - [x] editar o desvincular un Grupo conserva los Permisos propios del Rol.
 - [x] `config:manage` permanece system-only aunque se seleccione en un Grupo o Rol ordinario.
 - [x] nombre de Rol guardado se refleja sin GET adicional obligatorio.
+- [ ] crear un Rol actualiza la lista y restablece el editor vacío, sin selección ni ID.
+- [ ] dos altas consecutivas usan `POST` y no sobrescriben el primer Rol.
+- [ ] un fallo conserva el borrador; edición y reactivación conservan `PATCH` e ID.
 - [x] el Rol permite límite opcional de Usuarios activos y muestra su ocupación.
 - [x] Roles llenos rechazan asignación/reactivación y el máximo no baja de la ocupación.
 - [x] Administrador del sistema aparece como Rol global técnico protegido.
@@ -28,5 +31,6 @@
 - [x] no existe polling cada segundo/sub-segundo.
 - [x] GET idénticos concurrentes se deduplican.
 - [x] botón Recargar puede obtener datos frescos.
+- [ ] toda mutación muestra el bloqueo global no interactivo de la Spec 023.
 - [x] a 1180, 1024, 640, 440, 390 y 320 px no hay overflow horizontal accidental.
 - [x] estados, nombres largos y acciones permanecen visibles o hacen wrap dentro de su contenedor.

@@ -18,6 +18,10 @@ expense_category
 
 El formulario de solicitud nueva solo está disponible con `requests:create`.
 
+Un gasto directo usa únicamente `expense_area` para resolver su banda
+`NO_APPROVAL`; no exige `expense_category` porque no es una Solicitud. También
+requiere `requests:create` y FastAPI revalida que el Área siga activa.
+
 ## Gestión
 
 Las mutaciones de Área/Categoría requieren:
@@ -35,6 +39,7 @@ Para un usuario ordinario, ese permiso puede ser propio de un Rol global activo 
 ```text
 expenses.expense_area
 expenses.expense_category
+direct_expenses.expense_area
 expense_category_catalog
 expense_area_categories
 ```
