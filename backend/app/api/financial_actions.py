@@ -14,7 +14,7 @@ from app.models.entities import (
     User,
 )
 from app.schemas.expense import ExpenseOut
-from app.services.closure_service import can_manage_closure
+from app.services.closure_service import can_manage_closure, is_requester
 from app.services.document_service import read_upload, write_document
 from app.services.quotation_service import require_unique_winner_for_closure
 
@@ -64,9 +64,18 @@ def close_expense(
         if expense.status != ExpenseStatus.QUOTATION_VOTING:
             raise HTTPException(status_code=409, detail='La votación de cotizaciones ya no está abierta')
         require_unique_winner_for_closure(db, expense)
+        if expense.approval_policy_id is not None:
+            if not is_requester(expense, user):
+                raise HTTPException(
+                    status_code=403,
+                    detail='Solo el solicitante original puede cerrar una votación al alcanzar el umbral',
+                )
+        else:
+            _require_closure_actor(db, expense, user)
     elif expense.status != ExpenseStatus.APPROVED:
         raise HTTPException(status_code=409, detail='Solo se pueden cerrar solicitudes aprobadas')
-    _require_closure_actor(db, expense, user)
+    else:
+        _require_closure_actor(db, expense, user)
 
     content, content_type, original, stored = read_upload(invoice, label='factura')
     path = None

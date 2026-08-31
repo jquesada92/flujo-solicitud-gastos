@@ -78,10 +78,18 @@ def _request_payload(db: Session, expense: Expense, user: User) -> dict:
         'supplier': expense.supplier,
         'item_url': expense.item_url,
         'status': expense.status.value,
+        'approval_policy_id': expense.approval_policy_id,
+        'approval_policy_mode': expense.approval_policy_mode,
+        'policy_evaluation_amount': (
+            str(expense.policy_evaluation_amount)
+            if expense.policy_evaluation_amount is not None else None
+        ),
+        'minimum_votes_required': expense.minimum_votes_required,
         'selected_quotation_id': expense.selected_quotation_id,
         'current_quotation_option_id': current_vote.quotation_option_id if current_vote else None,
         'quotation_voter_count': voting.invited_count if voting else 0,
         'quotation_vote_count': voting.vote_count if voting else 0,
+        'quotation_quorum_reached': voting.quorum_reached if voting else False,
         'quotation_is_complete': voting.is_complete if voting else False,
         'quotation_has_tie': voting.is_tied if voting else False,
         'can_delegate_close': can_delegate_closure(expense, user),

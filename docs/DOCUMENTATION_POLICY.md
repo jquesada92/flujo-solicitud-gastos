@@ -49,7 +49,7 @@ Una estructura física de compatibilidad puede documentarse únicamente si todav
 | Flujo, aprobadores o atomicidad de solicitudes | Constitución, Spec/checklist/plan, Prompt, README, contrato, arquitectura, guía de usuario, validación local y riesgos | suite backend, casos sin participantes/soporte y prueba del endpoint canónico |
 | Seguridad, sesión o contraseña | Constitución, Spec, Prompt, contrato, arquitectura, correo, validación local y riesgos | casos adversos, auditoría sin secretos y flujo local completo |
 | Migración o schema | Constitución/cadena Alembic, README, Prompt, Neon, arquitectura y Spec | un solo head, `current=head` en PostgreSQL local y prueba de migración |
-| UX o responsive | Spec/checklist, Prompt, contrato, runtime frontend y guía de Accesos | build y navegador en los anchos exigidos |
+| UX o responsive | Spec/checklist, Prompt, contrato, runtime frontend y guía de usuario aplicable | build y navegador en los anchos exigidos |
 | Operación, CI o despliegue | `AGENTS.md`, README, runbook local/productivo, ejemplos `*.example` y workflows | comando ejecutado en el entorno autorizado, sin mutar producción |
 
 “Revisar” significa confirmar explícitamente si el documento cambia; no exige
@@ -109,6 +109,9 @@ backend/alembic/versions/20260824_0009_group_permission_inheritance.py
 backend/alembic/versions/20260824_0010_password_reset_links.py
 backend/alembic/versions/20260825_0011_role_user_limit.py
 backend/alembic/versions/20260825_0012_keep_quotation_voting_open.py
+backend/alembic/versions/20260827_0012_scoped_approval_policies.py
+backend/alembic/versions/20260828_0013_direct_expenses.py
+backend/alembic/versions/20260828_0014_merge_main_layout_heads.py
 ```
 
 Para persistencia:
@@ -127,7 +130,10 @@ Para UX actual:
 frontend/src/iam-admin.jsx
 frontend/src/iam-responsive.css
 frontend/src/mobile-layout.css
+frontend/src/action-state.css
 frontend/src/home-dashboard.jsx
+frontend/src/direct-expense-form.jsx
+frontend/src/direct-expense-form.css
 frontend/src/user-tracking.jsx
 frontend/src/auth-route-guard.js
 frontend/src/request-governor.js
@@ -137,10 +143,15 @@ Para población de aprobadores y creación atómica:
 
 ```text
 backend/app/services/approval_engine.py
+backend/app/services/approval_policy_service.py
 backend/app/services/iam_service.py
 backend/app/api/request_actions.py
 backend/app/api/document_actions.py
+backend/app/api/direct_expenses.py
 backend/tests/test_request_flow_creation.py
+backend/tests/test_direct_expenses.py
+specs/021-scoped-approval-rules/
+specs/022-direct-expense-registration/
 specs/019-iam-approval-flow-atomicity/
 ```
 

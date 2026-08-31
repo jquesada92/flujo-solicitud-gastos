@@ -1,10 +1,14 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.21.0**.
+> Constitución vigente: **2.26.0**.
 
-Aplicación web para registrar, evaluar, aprobar, votar, seguir, corregir, cancelar, cerrar y documentar solicitudes de gasto con trazabilidad. El producto es neutral respecto al tipo de organización: la estructura se configura como datos y los nombres organizacionales no forman parte de la lógica de autorización.
+Aplicación web para registrar gastos directos y para crear, evaluar, aprobar,
+votar, seguir, corregir, cancelar, cerrar y documentar solicitudes de gasto con
+trazabilidad. El producto es neutral respecto al tipo de organización: la
+estructura se configura como datos y los nombres organizacionales no forman
+parte de la lógica de autorización.
 
-> Revisión de soporte al desarrollo: **2026-08-26**. Antes de trabajar con una IA, leer [AGENTS.md](AGENTS.md). Los bloqueos que todavía no deben darse por resueltos están en [docs/KNOWN_RISKS.md](docs/KNOWN_RISKS.md).
+> Revisión de soporte al desarrollo: **2026-08-28**. Antes de trabajar con una IA, leer [AGENTS.md](AGENTS.md). Los bloqueos que todavía no deben darse por resueltos están en [docs/KNOWN_RISKS.md](docs/KNOWN_RISKS.md).
 
 ## Contrato actual en una página
 
@@ -39,8 +43,12 @@ Reglas clave:
 - los participantes de aprobación/votación provienen de `requests:approve`
   efectivo, no de nombres de perfiles ni reglas legacy;
 - una solicitud nueva sin ronda iniciable no queda persistida;
+- una banda `NO_APPROVAL` permite registrar proveedor, ítem, monto y factura en
+  `direct_expenses`, sin crear una solicitud o workflow;
 - una pantalla privada sin sesión vuelve al Login;
 - la aplicación es operable desde 320 px sin overflow horizontal de página;
+- toda mutación iniciada por la UI muestra **Procesando…** y vuelve inerte la
+  aplicación hasta que termina la última operación pendiente;
 - el frontend no debe hacer polling agresivo ni repetir GET idénticos innecesariamente.
 
 Ver [docs/CURRENT_PRODUCT_CONTRACT.md](docs/CURRENT_PRODUCT_CONTRACT.md).
@@ -60,6 +68,7 @@ Ver [docs/CURRENT_PRODUCT_CONTRACT.md](docs/CURRENT_PRODUCT_CONTRACT.md).
 | Inicio | Mis pendientes y mis solicitudes |
 | Seguimiento | Carga del equipo por Grupo/miembro/Rol |
 | Accesos | Administración de Usuarios, Grupos, Roles y Permisos |
+| Gasto directo | Registro final bajo una banda `NO_APPROVAL`; no es una Solicitud |
 
 ## IAM
 
@@ -68,7 +77,7 @@ Permisos funcionales vigentes:
 | Código | Capacidad |
 | --- | --- |
 | `requests:read` | Consultar y seguir solicitudes; baseline de usuario activo |
-| `requests:create` | Crear una solicitud nueva |
+| `requests:create` | Crear una solicitud nueva o un gasto directo elegible |
 | `requests:approve` | Aprobar, rechazar, votar y enviar a revisión cuando corresponda |
 | `areas:manage` | Administrar Área + Categoría |
 | `config:read` | Consultar Configuración sin mutar |
@@ -115,6 +124,12 @@ Quitar un Rol de un Grupo lo convierte en global sin borrar sus asignaciones de 
 
 El editor de Rol permite dejarlo sin límite o definir un máximo entero positivo de Usuarios activos. La lista muestra ocupación y máximo; un Rol lleno no puede asignarse a otro Usuario activo. Los Usuarios inactivos conservan el Rol sin consumir cupo y su reactivación se rechaza mientras no exista capacidad. Tampoco se puede reducir el máximo por debajo de la ocupación activa.
 
+Después de crear un Rol correctamente, la lista incorpora el registro y el
+editor vuelve a **Crear rol** vacío, sin selección, recuperación ni ID. La
+siguiente alta vuelve a usar `POST` y no puede sobrescribir el Rol anterior. Una
+edición o reactivación conserva su `PATCH`; si el request falla, el borrador se
+mantiene.
+
 La consola debe conservar estados, acciones y contenido legibles desde 320 px, envolver textos largos y apilar paneles cuando no quepan. La validación manual mínima cubre 1180, 1024, 640, 440, 390 y 320 px. El contrato multirol descrito aquí es normativo; la divergencia actual de `UsersPanel` está registrada como bloqueo conocido y no debe convertirse en una regla documental.
 
 La ficha de un Usuario activo no técnico ofrece **Regenerar contraseña**. La
@@ -151,7 +166,7 @@ votos usa el monto máximo presentado, con líder único usa el monto de la opci
 que va ganando y ante empate usa nuevamente el máximo. Es un valor informativo
 separado del monto financiero seleccionado al cerrar.
 
-## Nueva solicitud
+## Solicitudes y registro directo
 
 El formulario se muestra únicamente a quien tenga `requests:create`. Tener `requests:read` no es suficiente.
 
@@ -173,26 +188,47 @@ MULTI_QUOTE
 
 Las correcciones conservan el tipo original.
 
-En `SIMPLE`, los aprobadores son todos los usuarios activos con permiso efectivo
-`requests:approve`, excepto el Solicitante. El permiso puede ser propio de un Rol
-global o agrupado, o heredado del Grupo. No se requiere una regla de monto para
-activar IAM; sin una política aplicable se usa mayoría. Si no existe otro
-aprobador elegible o el flujo no puede prepararse, la API no conserva la nueva
-solicitud ni su soporte pendiente.
+**Configuración → Reglas** define bandas `(mínimo,máximo]` por Área, sin overlap
+dentro del mismo scope; el Área concreta precede a `ALL`. Cada regla selecciona
+Roles/Grupos y una modalidad, pero los targets solo acotan Usuarios que ya tienen
+`requests:approve` efectivo. Seleccionar un Grupo expande los Usuarios asignados
+a sus Roles activos y deduplica coincidencias. Cargo, `GroupMember`, nombres y
+`approver_profile_codes` no conceden acceso.
 
-La pantalla **Configuración → Reglas** conserva temporalmente
-`approver_profile_codes` como metadata legacy. Esos valores no conceden acceso ni
-filtran participantes; la única autoridad es `requests:approve` efectivo. Esta
-divergencia visual está registrada en
-[docs/KNOWN_RISKS.md](docs/KNOWN_RISKS.md).
+Las modalidades con ronda son `ANY`, `MAJORITY` y `ALL`. `NO_APPROVAL` no admite
+targets ni abre una ronda. La prohibición de overlap también aplica entre reglas
+de modalidades distintas dentro del mismo Área/scope.
 
-En `MULTI_QUOTE`, la población votante se congela por ronda desde usuarios
-activos con `requests:approve`, excluyendo al solicitante. Cada invitado puede
-votar o cambiar su voto mientras la ronda permanezca abierta. Un ganador único
-es provisional; un empate elimina la selección y bloquea la factura. La ronda
-solo pasa directamente a `CLOSED` cuando un actor de cierre autorizado sube la
-factura y el backend confirma nuevamente que todos votaron y no existe empate.
-Ver [docs/MULTI_QUOTE_VOTING.md](docs/MULTI_QUOTE_VOTING.md).
+`SIMPLE` evalúa su monto. `MULTI_QUOTE` evalúa el máximo de todas sus opciones.
+La regla aplicada, modalidad, monto y quórum quedan congelados por ronda. Si no
+hay regla, `SIMPLE` usa toda la población IAM y `MAJORITY`; la ausencia de
+política nunca desactiva IAM. Si no existe otro participante elegible o el flujo
+no puede prepararse, la API no conserva la solicitud ni su soporte.
+
+En `MULTI_QUOTE`, `ANY`, `MAJORITY` y `ALL` requieren 1,
+`floor(N/2)+1` y `N` votos. Con regla, quórum y líder único habilitan cierre
+anticipado solo al Solicitante, pero la ronda continúa abierta para que todos los
+invitados voten o cambien hasta que la factura la cierre. Sin regla se requieren
+todos los votos y un líder único, pero la ronda también permanece en
+`QUOTATION_VOTING`; entonces el cierre ordinario puede hacerlo el Solicitante,
+`system_accounts` o un delegado activo. Ante quórum o población incompletos, o
+empate, el `POST` de cierre responde `409` sin guardar factura ni fijar ganador.
+La factura lleva directamente a `CLOSED`. Ver
+[docs/MULTI_QUOTE_VOTING.md](docs/MULTI_QUOTE_VOTING.md).
+
+Cuando una banda `NO_APPROVAL` cubre el Área y monto, **Registro directo → Gasto
+sin aprobación** permite guardar Área, proveedor, ítem/descripción, monto y
+factura. FastAPI revalida la regla y crea un `DirectExpense` privado; nunca crea
+`Expense`, Solicitud, aprobación, voto o acción pendiente. Un Usuario ordinario
+consulta sus propios registros y facturas; `system_accounts` puede consultar
+todos. Ver [docs/DIRECT_EXPENSES.md](docs/DIRECT_EXPENSES.md).
+
+En **Registro directo**, teléfonos de 320 a 720 px presentan introducción,
+campos y bandas en una columna; hasta 440 px cada banda apila también su rango.
+En tabletas de 768, 820 y 1024 px se permiten dos columnas cuando siguen
+legibles. Área, monto, proveedor, factura, ítem y acción no se ocultan; inputs,
+selects y botones miden al menos 44 px. La matriz específica es 320, 360, 390,
+412, 440, 600, 640, 768, 820 y 1024 px, sin overflow, recortes o pérdida de foco.
 
 ## Revisión, corrección y cierre
 
@@ -207,7 +243,12 @@ can_close
 can_delegate_close
 ```
 
-Cerrar/facturar depende de ser solicitante, Administrador del sistema o delegado activo de esa solicitud; no depende de un permiso global de cierre.
+El cierre ordinario depende de ser Solicitante, Administrador del sistema o
+delegado activo; no depende de un permiso global. En una votación configurada
+con quórum y líder único, el cierre anticipado desde `QUOTATION_VOTING`
+pertenece exclusivamente al Solicitante original. En el fallback sin regla,
+esas relaciones ordinarias pueden cerrar desde `QUOTATION_VOTING` solo después
+de todos los votos y con líder único.
 
 ## Sesión y frontend
 
@@ -220,17 +261,31 @@ ordinario muestra **Sin rol asignado**; una cuenta técnica sin Rol visible mues
 ### Layout móvil
 
 Desde 320 px, la navegación principal permanece disponible como una banda táctil
-desplazable y marca la vista actual. Los formularios, filtros, tableros, Accesos
-y Seguimiento se apilan; la consulta de Solicitudes cambia la tabla ancha por
-tarjetas con etiquetas visibles. Menús, modales y visores permanecen dentro del
-viewport, usan altura dinámica y respetan las áreas seguras del dispositivo.
+desplazable y marca la vista actual. Los formularios, filtros, tableros, Accesos,
+Seguimiento y Registro directo se adaptan; la consulta de Solicitudes cambia la
+tabla ancha por tarjetas con etiquetas visibles. Menús, modales y visores
+permanecen dentro del viewport, usan altura dinámica y respetan las áreas seguras
+del dispositivo.
+
+La pantalla global **Procesando…** cubre el viewport completo desde 320 px,
+respeta `safe-area` y queda por encima de navegación, Accesos y modales. No tiene
+cierre: mientras exista una mutación pendiente, el resto de la aplicación queda
+`inert` para mouse, touch y teclado.
 
 La implementación transversal vive en `frontend/src/mobile-layout.css`; los
-ajustes propios de Accesos, Inicio y Seguimiento permanecen junto a sus módulos.
-La validación manual mínima cubre 1180, 1024, 640, 440, 390 y 320 px, sin
-overflow horizontal de página, controles recortados ni pérdida de foco visible.
+ajustes propios de Accesos, Inicio, Seguimiento y Registro directo permanecen
+junto a sus módulos, incluido `frontend/src/direct-expense-form.css`. La
+validación manual global cubre 1180, 1024, 640, 440, 390 y 320 px; Registro
+directo amplía su matriz como se indica arriba. En ambos casos se exige ausencia
+de overflow horizontal, controles recortados y pérdida de foco visible.
 
 Los hashes privados como `#access-management` y `#user-tracking` requieren sesión. Sin token se limpia la ruta privada y se muestra Login; un `401` invalida la sesión almacenada.
+
+Después de 10 minutos sin actividad humana, el frontend elimina el token,
+limpia la ruta privada y muestra **Iniciar sesión**. FastAPI aplica el mismo
+límite sobre `last_activity_at` y devuelve `401`; por eso una pestaña suspendida
+o un temporizador retrasado no prolongan la sesión. `SESSION_IDLE_MINUTES=10` es
+el valor soportado por defecto y solo admite un plazo más estricto entre 5 y 10.
 
 `/reset-password#token=...` es una ruta pública limitada al cambio de
 contraseña. El token tiene propósito exclusivo, un solo uso y vigencia
@@ -248,6 +303,9 @@ El frontend aplica una política transversal de requests:
 - GET idénticos concurrentes deduplicados;
 - caché corta para repeticiones automáticas;
 - mutaciones invalidan lecturas;
+- `POST`/`PUT`/`PATCH`/`DELETE` muestran un overlay global bloqueante hasta que
+  finaliza la última mutación concurrente;
+- el sync silencioso de `/api/auth/activity` no muestra ese overlay;
 - interacción explícita puede forzar datos frescos;
 - sin polling sub-segundo.
 
@@ -276,7 +334,10 @@ Cadena actual:
 → 20260824_0009_group_permission_inheritance
 → 20260824_0010_password_reset_links
 → 20260825_0011_role_user_limit
-→ 20260825_0012_keep_quotation_voting_open
+  ├→ 20260825_0012_keep_quotation_voting_open ───────────────┐
+  └→ 20260827_0012_scoped_approval_policies                  │
+     → 20260828_0013_direct_expenses ────────────────────────┤
+                                                             └→ 20260828_0014_merge_main_layout_heads
 ```
 
 Usuarios, Áreas, Roles y Grupos conservan versiones temporales en tablas
@@ -290,7 +351,16 @@ Los catálogos de Usuario, Área, Rol y Grupo muestran solo activos. Al volver a
 introducir la cédula, código o nombre de una entidad inactiva, el formulario
 ofrece recuperar sus datos y reactivarla con el mismo ID.
 
-`0002` fija que un Rol no puede pertenecer a más de un Grupo y un Usuario no puede tener dos Roles del mismo Grupo. `0003` fija un Cargo por Usuario. `0004` permite Roles globales sin relajar la restricción de un Rol por Grupo. `0009` agrega Permisos heredables de Grupo sin backfill de grants, conserva `role_permissions` y normaliza `permission_codes` en las instantáneas temporales abiertas. `0010` agrega `users.password_reset_version` para invalidar enlaces anteriores sin cambiar la contraseña ni las sesiones al emitir. `0011` agrega el `max_users` opcional y positivo de cada Rol; los Roles existentes continúan sin límite. `0012` devuelve a votación las solicitudes múltiples antiguas aprobadas sin factura.
+`0002` fija que un Rol no puede pertenecer a más de un Grupo y un Usuario no
+puede tener dos Roles del mismo Grupo. `0003` fija un Cargo por Usuario. `0004`
+permite Roles globales sin relajar la restricción de un Rol por Grupo. `0009`
+agrega Permisos heredables de Grupo sin backfill de grants y conserva
+`role_permissions`. `0010` agrega `users.password_reset_version`; `0011` agrega
+el `max_users` opcional. La rama `20260825_0012` devuelve a votación solicitudes
+múltiples antiguas aprobadas sin factura. La otra rama usa `20260827_0012` para
+targets e instantáneas de política y `20260828_0013` para `direct_expenses`.
+`20260828_0014` une ambas ramas inmutables mediante dos `down_revision` y no
+agrega una mutación de dominio.
 
 ## Despliegue
 
@@ -313,6 +383,7 @@ DATABASE_URL
 DATABASE_SCHEMA=administracion
 SECRET_KEY
 ANALYTICS_HASH_KEY
+SESSION_IDLE_MINUTES=10
 PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=30
 ENVIRONMENT=production
 CORS_ALLOWED_ORIGINS
@@ -345,7 +416,7 @@ Validación:
 
 ```powershell
 docker compose exec -T backend alembic heads
-# esperado: 20260825_0012 (head)
+# esperado: 20260828_0014 (head)
 
 cd backend
 .\.venv\Scripts\python.exe -m scripts.run_tests
@@ -372,6 +443,8 @@ Componentes frontend relevantes:
 
 ```text
 expense-form.jsx
+direct-expense-form.jsx
+direct-expense-form.css
 home-dashboard.jsx
 user-tracking.jsx
 iam-admin.jsx

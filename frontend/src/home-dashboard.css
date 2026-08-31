@@ -88,6 +88,31 @@
   letter-spacing: 0.08em;
 }
 
+.pending-round-summary {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #d8dee8;
+  border-radius: 10px;
+  background: #fbfcfd;
+}
+
+.pending-round-summary strong {
+  color: #273246;
+  font-size: 13px;
+}
+
+.pending-round-summary span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.pending-round-summary.reached {
+  border-color: #9fd7b3;
+  background: #f0faf4;
+}
+
 .pending-request-description {
   margin: 0 0 18px;
   white-space: pre-wrap;

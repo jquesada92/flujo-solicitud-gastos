@@ -13,6 +13,7 @@ from app.models.entities import (
     User,
 )
 from app.services.iam_service import has_permission
+from app.services.quotation_service import can_requester_close_voting
 
 
 APPROVAL_DECISION = 'APPROVAL_DECISION'
@@ -117,6 +118,7 @@ def pending_actions_by_expense(
             and_(
                 Expense.request_type == 'MULTI_QUOTE',
                 Expense.status == ExpenseStatus.QUOTATION_VOTING,
+                Expense.approval_policy_id.is_(None),
                 Expense.selected_quotation_id.is_not(None),
             ),
         ),
@@ -129,6 +131,21 @@ def pending_actions_by_expense(
         closures = closures.where(Expense.id.in_(scoped_ids))
     for expense_id in db.scalars(closures).all():
         _append(actions, expense_id, CLOSE_REQUEST)
+
+    # A configured MULTI_QUOTE round remains open after quorum. Only its
+    # original requester receives the early close task, and only while the
+    # current tally has both the frozen threshold and a unique leader.
+    early_closures = select(Expense).where(
+        Expense.status == ExpenseStatus.QUOTATION_VOTING,
+        Expense.request_type == 'MULTI_QUOTE',
+        Expense.approval_policy_id.is_not(None),
+        func.lower(Expense.requested_by) == user.email.lower(),
+    )
+    if scoped_ids is not None:
+        early_closures = early_closures.where(Expense.id.in_(scoped_ids))
+    for expense in db.scalars(early_closures).all():
+        if can_requester_close_voting(db, expense, user):
+            _append(actions, expense.id, CLOSE_REQUEST)
 
     return {
         expense_id: sorted(codes, key=ACTION_ORDER.index)

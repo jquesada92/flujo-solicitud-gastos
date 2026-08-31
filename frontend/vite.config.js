@@ -41,7 +41,7 @@ function replaceClosureVisibility(source) {
     next,
     '{canClose && ["APPROVED", "QUOTATION_VOTING"].includes(x.status) && (',
     '{x.can_close && ["APPROVED", "QUOTATION_VOTING"].includes(x.status) && (',
-    "approved closure guard",
+    "approved or quorum-reached closure guard",
   );
   return next;
 }

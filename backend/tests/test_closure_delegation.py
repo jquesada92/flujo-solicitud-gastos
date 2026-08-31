@@ -3,6 +3,7 @@ import unittest
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 os.environ.setdefault('DATABASE_URL', 'sqlite://')
@@ -11,12 +12,14 @@ os.environ.setdefault('ANALYTICS_HASH_KEY', 'unit-test-analytics-key-at-least-32
 os.environ.setdefault('ENVIRONMENT', 'test')
 os.environ.setdefault('EMAIL_MODE', 'console')
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.application import create_app
+from app.api.expenses import router as legacy_expenses_router
 from app.core.database import Base, get_db
 from app.core.security import create_token, hash_password
 from app.models.closure import ExpenseClosureDelegation
@@ -45,9 +48,15 @@ class ClosureDelegationTests(unittest.TestCase):
 
         cls.app.dependency_overrides[get_db] = override_get_db
         cls.client = TestClient(cls.app)
+        cls.legacy_app = FastAPI()
+        cls.legacy_app.include_router(legacy_expenses_router, prefix='/api/expenses')
+        cls.legacy_app.dependency_overrides[get_db] = override_get_db
+        cls.legacy_client = TestClient(cls.legacy_app)
 
     @classmethod
     def tearDownClass(cls):
+        cls.legacy_client.close()
+        cls.legacy_app.dependency_overrides.clear()
         cls.client.close()
         cls.app.dependency_overrides.clear()
         Base.metadata.drop_all(cls.engine)
@@ -218,6 +227,23 @@ class ClosureDelegationTests(unittest.TestCase):
         closed = self.close(self.admin_token)
         self.assertEqual(closed.status_code, 200, closed.text)
         self.assertEqual(closed.json()['status'], 'CLOSED')
+
+    def test_legacy_invoice_replacement_repeats_resource_authorization(self):
+        closed = self.close(self.requester_token)
+        self.assertEqual(closed.status_code, 200, closed.text)
+
+        with TemporaryDirectory() as temporary_directory, patch(
+            'app.api.expenses.UPLOAD_DIR',
+            Path(temporary_directory),
+        ):
+            denied = self.legacy_client.put(
+                '/api/expenses/closure-request/invoice',
+                headers=self.auth(self.outsider_token),
+                files={'invoice': ('replacement.pdf', PDF, 'application/pdf')},
+                data={'reason': 'Intento no autorizado'},
+            )
+        self.assertEqual(denied.status_code, 403, denied.text)
+        self.assertIn('autorización', denied.json()['detail'])
 
 
 if __name__ == '__main__':

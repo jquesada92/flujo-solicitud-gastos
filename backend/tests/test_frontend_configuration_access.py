@@ -88,7 +88,7 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
         css = (REPO_ROOT / 'frontend' / 'src' / 'iam-responsive.css').read_text(encoding='utf-8')
 
-        self.assertIn('limit_users: false, max_users: ""', source)
+        self.assertIn('limit_users: false,\n  max_users: "",', source)
         self.assertIn('max_users: form.limit_users ? Number(form.max_users) : null', source)
         self.assertIn('roleBeingEdited?.assigned_user_count || 0', source)
         self.assertIn('Limitar cantidad de usuarios activos', source)
@@ -323,11 +323,23 @@ class FrontendConfigurationAccessTests(unittest.TestCase):
         self.assertIn('const roleDirty = useMemo(() => {', source)
         self.assertIn('const canPersistRole = roleDirty && form.name.trim().length >= 2 && roleLimitIsValid;', source)
         self.assertIn('iam-persist-action ${canPersistRole ? "pending" : ""}', source)
-        self.assertIn('disabled={!canPersistRole}', source)
+        self.assertIn('disabled={!canPersistRole || savingRole}', source)
         self.assertIn('button.primary:disabled', action_css)
         self.assertIn('.iam-persist-action.pending', action_css)
         self.assertIn('.classification-save-assignment:not(:disabled)', action_css)
         self.assertIn('/src/action-state.css', index)
+
+    def test_successful_role_creation_returns_to_a_clean_create_form(self):
+        source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')
+        self.assertIn('const emptyRoleForm = () => ({', source)
+        self.assertIn('const [savingRole, setSavingRole] = useState(false);', source)
+        self.assertIn('const creating = !target;', source)
+        self.assertIn('if (!canPersistRole || savingRole) return;', source)
+        self.assertIn('if (creating) {', source)
+        self.assertIn('setSelectedId(null);\n        setRecovery(null);\n        setForm(emptyRoleForm());', source)
+        self.assertIn('} else {\n        setRecovery(null);\n        setSelectedId(saved.id);', source)
+        self.assertIn('disabled={!canPersistRole || savingRole}', source)
+        self.assertIn('{savingRole ? "Procesando…"', source)
 
     def test_role_master_list_uses_clean_single_surface_rows(self):
         source = (REPO_ROOT / 'frontend' / 'src' / 'iam-admin.jsx').read_text(encoding='utf-8')

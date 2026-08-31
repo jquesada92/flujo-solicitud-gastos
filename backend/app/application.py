@@ -12,6 +12,7 @@ from app.api import (
     cancellation_actions,
     closure_delegation,
     dashboard,
+    direct_expenses,
     document_actions,
     expenses,
     financial_actions,
@@ -129,6 +130,11 @@ def create_app() -> FastAPI:
     app.include_router(tracking.router, prefix='/api/expenses', tags=['Request Tracking'])
     app.include_router(dashboard.router, prefix='/api/expenses', tags=['Dashboard'])
     app.include_router(expenses.router, prefix='/api/expenses', tags=['Expenses (legacy compatibility)'])
+    app.include_router(
+        direct_expenses.router,
+        prefix='/api/direct-expenses',
+        tags=['Direct Expenses'],
+    )
     app.include_router(organization_overview.router, prefix='/api/organization', tags=['Organization Overview'])
     app.include_router(approvals.router, prefix='/api/approvals', tags=['Approvals'])
     app.include_router(

@@ -1,3 +1,4 @@
+import ast
 import re
 import unittest
 from pathlib import Path
@@ -17,9 +18,7 @@ ROOT_DOCUMENTS = (
 
 MARKDOWN_LINK = re.compile(r'(?<!!)\[[^\]]+\]\(([^)]+)\)')
 REVISION = re.compile(r"(?m)^revision\s*=\s*['\"]([^'\"]+)['\"]")
-DOWN_REVISION = re.compile(
-    r"(?m)^down_revision\s*=\s*(?:['\"]([^'\"]+)['\"]|None)"
-)
+DOWN_REVISION = re.compile(r'(?m)^down_revision\s*=\s*(.+)$')
 
 
 def read(path: Path) -> str:
@@ -71,6 +70,8 @@ class DocumentationContractTests(unittest.TestCase):
         readme = read(REPO_ROOT / 'README.md')
         prompt = read(REPO_ROOT / 'PROMPT_RECONSTRUCCION.md')
         changelog = read(REPO_ROOT / 'CHANGELOG.md')
+        history = read(REPO_ROOT / 'docs' / 'HISTORY.md')
+        guide = read(REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md')
 
         constitution_match = re.search(r'\*\*Versión:\*\*\s*(\d+\.\d+\.\d+)', constitution)
         self.assertIsNotNone(constitution_match)
@@ -79,9 +80,72 @@ class DocumentationContractTests(unittest.TestCase):
             with self.subTest(document=name):
                 self.assertIn(f'Constitución vigente: **{version}**', source)
         self.assertRegex(changelog, rf'(?m)^## {re.escape(version)}\s+—')
+        self.assertIn(f'Constitución {version}', guide)
+        self.assertIn(f'La Constitución evoluciona a {version}', history)
+        for spec_path in (
+            REPO_ROOT / 'specs' / '020-mobile-layout' / 'spec.md',
+            REPO_ROOT / 'specs' / '021-scoped-approval-rules' / 'spec.md',
+            REPO_ROOT / 'specs' / '022-direct-expense-registration' / 'spec.md',
+        ):
+            with self.subTest(document=spec_path.name, spec=spec_path.parent.name):
+                self.assertIn(f'**Constitución:** {version}', read(spec_path))
+
+    def test_ten_minute_session_idle_limit_is_synchronized(self):
+        required_fragments = {
+            REPO_ROOT / '.specify' / 'memory' / 'constitution.md': (
+                'La vigencia por inactividad no puede superar 10 minutos',
+                'elimina `access_token`',
+                'responde `401`',
+            ),
+            REPO_ROOT / 'specs' / '002-configurable-iam-fastapi-hardening' / 'spec.md': (
+                '## Inactividad de sesión',
+                '`SESSION_IDLE_MINUTES` vale 10 por defecto',
+                'pestaña suspendida',
+            ),
+            REPO_ROOT / 'PROMPT_RECONSTRUCCION.md': (
+                'La sesión debe cerrarse después de 10 minutos sin actividad humana',
+                'limpia cualquier hash privado',
+            ),
+            REPO_ROOT / 'README.md': (
+                'Después de 10 minutos sin actividad humana',
+                'SESSION_IDLE_MINUTES=10',
+            ),
+            REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
+                '10 minutos sin actividad humana expiran la sesión',
+                'renderiza Login',
+            ),
+            REPO_ROOT / 'docs' / 'FRONTEND_RUNTIME.md': (
+                'Después de 10 minutos sin actividad elimina',
+                'comprueba primero si el plazo ya terminó',
+            ),
+            REPO_ROOT / 'docs' / 'FASTAPI_ARCHITECTURE.md': (
+                '`last_activity_at` vence al alcanzar 10 minutos',
+            ),
+            REPO_ROOT / 'docs' / 'VALIDACION_LOCAL.md': (
+                '9 minutos 59 segundos de inactividad',
+                'token local eliminado, hash privado limpio y Login visible',
+            ),
+            REPO_ROOT / 'docs' / 'VALIDACION_PRODUCCION.md': (
+                '`SESSION_IDLE_MINUTES=10`; el backend rechaza cualquier valor superior',
+            ),
+        }
+        for document, fragments in required_fragments.items():
+            source = read(document)
+            for fragment in fragments:
+                with self.subTest(document=document.relative_to(REPO_ROOT), fragment=fragment):
+                    self.assertIn(fragment, source)
+
+        for example in (
+            REPO_ROOT / 'backend' / '.env.example',
+            REPO_ROOT / 'backend' / '.env.preview.example',
+        ):
+            self.assertEqual(active_env_values(example).get('SESSION_IDLE_MINUTES'), '10')
+
+        self.assertIn('value: "10"', read(REPO_ROOT / 'render.yaml'))
+        self.assertIn('SESSION_IDLE_MINUTES: "10"', read(REPO_ROOT / 'docker-compose.yml'))
 
     def test_alembic_chain_has_one_documented_head(self):
-        migrations: dict[str, tuple[str | None, Path]] = {}
+        migrations: dict[str, tuple[tuple[str, ...], Path]] = {}
         for path in VERSIONS_DIR.glob('*.py'):
             source = read(path)
             revision_match = REVISION.search(source)
@@ -90,9 +154,20 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertIsNotNone(down_match, path.name)
             revision = revision_match.group(1)
             self.assertNotIn(revision, migrations, f'Revisión duplicada: {revision}')
-            migrations[revision] = (down_match.group(1), path)
+            down_value = ast.literal_eval(down_match.group(1))
+            if down_value is None:
+                parents: tuple[str, ...] = ()
+            elif isinstance(down_value, str):
+                parents = (down_value,)
+            else:
+                parents = tuple(down_value)
+            migrations[revision] = (parents, path)
 
-        referenced = {down for down, _ in migrations.values() if down is not None}
+        referenced = {
+            parent
+            for parents, _ in migrations.values()
+            for parent in parents
+        }
         missing_parents = sorted(referenced - migrations.keys())
         self.assertEqual(missing_parents, [], f'down_revision inexistente: {missing_parents}')
         heads = sorted(set(migrations) - referenced)
@@ -130,14 +205,17 @@ class DocumentationContractTests(unittest.TestCase):
             '.github/workflows/reusable-ci.yml',
             'backend/app/services/iam_service.py',
             'backend/app/services/approval_engine.py',
+            'backend/app/services/approval_policy_service.py',
             'backend/app/api/request_actions.py',
             'backend/app/api/document_actions.py',
+            'backend/app/api/direct_expenses.py',
             'backend/app/api/iam_users.py',
             'backend/app/api/iam_access_policy.py',
             'backend/app/core/security.py',
             'backend/scripts/run_tests.py',
             'frontend/src/main.jsx',
             'frontend/src/expense-form.jsx',
+            'frontend/src/direct-expense-form.jsx',
             'frontend/src/home-dashboard.jsx',
             'frontend/src/iam-admin.jsx',
             'frontend/src/iam-responsive.css',
@@ -146,11 +224,14 @@ class DocumentationContractTests(unittest.TestCase):
             'frontend/src/request-governor.js',
             'frontend/vite.config.js',
             'docs/CURRENT_PRODUCT_CONTRACT.md',
+            'docs/DIRECT_EXPENSES.md',
             'docs/DOCUMENTATION_POLICY.md',
             'docs/GUIA_USUARIO_FINAL.md',
             'docs/KNOWN_RISKS.md',
             'docs/VALIDACION_LOCAL.md',
             'docs/VALIDACION_PRODUCCION.md',
+            'specs/021-scoped-approval-rules/spec.md',
+            'specs/022-direct-expense-registration/spec.md',
         )
         missing = [path for path in required_paths if not (REPO_ROOT / path).exists()]
         self.assertEqual(missing, [], f'Rutas de soporte inexistentes: {missing}')
@@ -201,13 +282,15 @@ class DocumentationContractTests(unittest.TestCase):
         )
         workflow_fragments = (
             'requests:approve`, excluyendo al Solicitante',
-            'ausencia de política no desactiva IAM',
-            'ApprovalPolicy.approver_profile_codes',
+            'Sin política aplicable se conserva el fallback IAM global',
+            '`approver_profile_codes` no autorizan',
             'solicitud nueva sin ronda iniciable no se persiste',
             'nunca dejar una fila `Expense` huérfana',
-            'permanece en `QUOTATION_VOTING` hasta que se carga la factura',
-            'Un ganador único es provisional',
-            'un empate limpia la selección y bloquea el cierre',
+            '`NO_APPROVAL` es una modalidad de política',
+            'sin crear `Expense`, ronda, voto ni acción pendiente',
+            'la ronda también permanece en `QUOTATION_VOTING` hasta la factura',
+            'Cada invitado conserva **Votar o cambiar voto** mientras la ronda siga abierta',
+            'un empate bloquea el cierre',
             'nunca restaurar la transición automática a `APPROVED`',
             'El monto operativo mostrado para `MULTI_QUOTE` es máximo sin votos',
             'separado de `Expense.amount`',
@@ -226,18 +309,60 @@ class DocumentationContractTests(unittest.TestCase):
                 '## 18. Experiencia móvil',
                 'desde 320 px',
                 '1180, 1024, 640, 440, 390 y 320 px',
+                '**Registro directo** conserva Área, monto, proveedor, factura, ítem, bandas',
+                '320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
             ),
             REPO_ROOT / 'README.md': (
                 '### Layout móvil',
                 'frontend/src/mobile-layout.css',
+                'frontend/src/direct-expense-form.css',
+                'La matriz específica es 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
             ),
             REPO_ROOT / 'PROMPT_RECONSTRUCCION.md': (
                 'tabla operativa de Solicitudes como tarjetas etiquetadas',
                 'objetivos táctiles de al menos 44 px',
+                'frontend/src/direct-expense-form.css',
+                'Valida en Chrome a 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
             ),
             REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
                 'Contrato responsive global',
                 'sin overflow horizontal de página',
+                'La matriz específica de aceptación es 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+            ),
+            REPO_ROOT / 'docs' / 'FRONTEND_RUNTIME.md': (
+                '`direct-expense-form.css`',
+                'De 320 a 720 px, introducción, formulario y resumen de bandas se apilan',
+                'La matriz específica cubre 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+                'la pantalla actual no renderiza un panel de historial',
+            ),
+            REPO_ROOT / 'docs' / 'DIRECT_EXPENSES.md': (
+                '## Layout para teléfonos y tabletas',
+                'inputs, selects y botones miden al menos 44 px',
+                '320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+            ),
+            REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md': (
+                'teléfonos de 320 a 720 px',
+                'tabletas de 768, 820 y 1024 px',
+                'controles táctiles miden al menos 44 px',
+            ),
+            REPO_ROOT / 'docs' / 'DOCUMENTATION_POLICY.md': (
+                'runtime frontend y guía de usuario aplicable',
+                'frontend/src/direct-expense-form.css',
+            ),
+            REPO_ROOT / 'specs' / '020-mobile-layout' / 'spec.md': (
+                '### Registro directo en teléfonos y tabletas',
+                'en tabletas de 768, 820 y 1024 px',
+            ),
+            REPO_ROOT / 'specs' / '020-mobile-layout' / 'plan.md': (
+                'para Registro directo ampliar la matriz a 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+            ),
+            REPO_ROOT / 'specs' / '020-mobile-layout' / 'checklists' / 'acceptance.md': (
+                'Registro directo no tiene overflow ni recortes',
+                '320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+            ),
+            REPO_ROOT / 'specs' / '022-direct-expense-registration' / 'spec.md': (
+                '### Layout para teléfonos y tabletas',
+                'La aceptación visual específica se ejecuta en 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
             ),
             REPO_ROOT / 'AGENTS.md': (
                 '`mobile-layout.css` es la capa responsive transversal',
@@ -250,27 +375,112 @@ class DocumentationContractTests(unittest.TestCase):
                 with self.subTest(document=document.name, fragment=fragment):
                     self.assertIn(fragment, source)
 
-    def test_workflow_support_docs_cannot_restore_legacy_approver_authority(self):
+    def test_scoped_rules_and_direct_expenses_are_synchronized(self):
         required_fragments = {
+            REPO_ROOT / '.specify' / 'memory' / 'constitution.md': (
+                'permanece en `QUOTATION_VOTING` hasta la factura',
+                'pueden ejecutarlo el Solicitante original, `system_accounts` o un delegado activo',
+                'responde `409` sin guardar factura ni fijar ganador',
+                'no inserta `Expense`, aprobación, invitación, voto, acción pendiente ni estado de Solicitud',
+            ),
             REPO_ROOT / 'README.md': (
-                'la única autoridad es `requests:approve` efectivo',
+                'targets solo acotan Usuarios que ya tienen `requests:approve` efectivo',
+                '`MULTI_QUOTE` evalúa el máximo de todas sus opciones',
                 'solicitud nueva sin ronda iniciable no queda persistida',
+                '`NO_APPROVAL` no admite targets ni abre una ronda',
+                'nunca crea `Expense`, Solicitud, aprobación, voto o acción pendiente',
+                'el `POST` de cierre responde `409` sin guardar factura ni fijar ganador',
+            ),
+            REPO_ROOT / 'PROMPT_RECONSTRUCCION.md': (
+                'el `POST` de cierre responde `409` sin guardar factura ni fijar ganador',
+                'No crees `Expense`, aprobación, invitación, voto, acción pendiente, `flow_id` ni estado',
+                'No expongas la ruta interna ni redirijas de forma automática',
+            ),
+            REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
+                'el `POST` de cierre responde `409` sin factura ni ganador',
+                'pasa directamente a `CLOSED`, nunca a `APPROVED`',
+                'No crea `Expense`, Solicitud, ronda, voto, acción pendiente ni estado',
+                'resalta **Registro directo** sin exponer rutas internas',
             ),
             REPO_ROOT / 'docs' / 'CONFIGURATION_ACCESS.md': (
                 '`approver_profile_codes`',
-                'metadata legacy y no selecciona, agrega ni autoriza participantes',
+                'únicamente como metadata física legacy',
+                'Un Grupo incluye Usuarios asignados a cualquiera de sus Roles activos',
+                '`NO_APPROVAL` se muestra como **No requiere aprobación**',
             ),
             REPO_ROOT / 'docs' / 'DOCUMENTATION_POLICY.md': (
                 'Flujo, aprobadores o atomicidad de solicitudes',
                 'backend/tests/test_request_flow_creation.py',
-            ),
-            REPO_ROOT / 'docs' / 'KNOWN_RISKS.md': (
-                'Perfiles legacy visibles en Reglas',
-                'no reintroducir filtros por nombre de perfil',
+                'backend/tests/test_direct_expenses.py',
             ),
             REPO_ROOT / 'docs' / 'VALIDACION_LOCAL.md': (
                 '`SIMPLE` sin `ApprovalPolicy`',
                 'sin `Expense`, `ExpenseAttachment` ni archivo físico huérfano',
+                '`NO_APPROVAL` fuera de banda',
+                'otro Usuario no puede listar/descargarlo',
+                'antes de cumplir ambos, el cierre responde `409`',
+                '`system_accounts` o delegado activo cierra directamente a `CLOSED`',
+                '320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+                'guía sin ruta interna, conservan el borrador',
+            ),
+            REPO_ROOT / 'docs' / 'DIRECT_EXPENSES.md': (
+                '`NO_APPROVAL` no es un tipo ni un estado de Solicitud',
+                'nunca crea `Expense`, aprobación, invitación, voto, acción pendiente o `flow_id`',
+                'La fila y la factura forman una unidad',
+                '## Layout para teléfonos y tabletas',
+                'la pantalla actual no renderiza un panel de historial',
+                'conserva el borrador, muestra una orientación humana sin revelar la ruta interna',
+            ),
+            REPO_ROOT / 'docs' / 'FRONTEND_RUNTIME.md': (
+                'no `aria-current`: **Solicitudes** sigue siendo la vista activa',
+                'Otra navegación o un nuevo envío limpian el resaltado',
+            ),
+            REPO_ROOT / 'docs' / 'MULTI_QUOTE_VOTING.md': (
+                'Si falta un voto o hay empate, el cierre responde `409` sin persistir factura ni fijar `selected_quotation_id`',
+                'la ronda permanece en `QUOTATION_VOTING`',
+            ),
+            REPO_ROOT / 'docs' / 'FASTAPI_ARCHITECTURE.md': (
+                'Sin política requiere todos los votos y líder único',
+                'En ningún caso hay transición automática a `APPROVED`',
+            ),
+            REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md': (
+                'Pulsa **Registrar gasto y factura**',
+                'la pantalla actual no muestra un panel de historial',
+                'El área y el monto seleccionados no requieren un proceso de aprobación',
+            ),
+            REPO_ROOT / 'docs' / 'REQUEST_TRACKING.md': (
+                'la pantalla actual de **Registro directo** confirma el ID creado, pero no renderiza ese listado',
+            ),
+            REPO_ROOT / 'specs' / '021-scoped-approval-rules' / 'spec.md': (
+                '`max(QuotationOption.amount)`',
+                'Seleccionar un Grupo expande todos sus Roles activos',
+                'Sin política aplicable se invita a todos los Usuarios activos',
+                'Se exige el voto de los `N` invitados',
+                'la solicitud permanece en `QUOTATION_VOTING` hasta que la factura',
+                'pueden cerrar el Solicitante, `system_accounts` o un delegado activo',
+            ),
+            REPO_ROOT / 'specs' / '021-scoped-approval-rules' / 'plan.md': (
+                'mantener `QUOTATION_VOTING`',
+                'cierre ordinario directo a `CLOSED`',
+            ),
+            REPO_ROOT / 'specs' / '021-scoped-approval-rules' / 'checklists' / 'acceptance.md': (
+                'permanece en `QUOTATION_VOTING` hasta la factura',
+                'votos pendientes o empate responden 409 sin factura ni ganador seleccionado',
+            ),
+            REPO_ROOT / 'specs' / '022-direct-expense-registration' / 'spec.md': (
+                '`requests:create`',
+                'no crea `Expense`, `Approval`, `QuotationVotingInvitation`, voto, acción',
+                'un Usuario ordinario lista únicamente sus propios registros',
+                'El aviso no expone rutas internas',
+            ),
+            REPO_ROOT / 'specs' / '022-direct-expense-registration' / 'plan.md': (
+                'Validar el navegador en 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+                'resaltar **Registro directo** sin redirección automática',
+            ),
+            REPO_ROOT / 'specs' / '022-direct-expense-registration' / 'checklists' / 'acceptance.md': (
+                'no crea `Expense`, aprobación, invitación, voto, acción pendiente ni estado de Solicitud',
+                'navegador a 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+                'conserva el borrador, muestra una guía sin rutas internas',
             ),
         }
         for document, fragments in required_fragments.items():
@@ -279,22 +489,31 @@ class DocumentationContractTests(unittest.TestCase):
                 with self.subTest(document=document.name, fragment=fragment):
                     self.assertIn(fragment, source)
 
+        stale_history_claims = {
+            REPO_ROOT / 'docs' / 'FRONTEND_RUNTIME.md': 'formulario, resumen de bandas e historial',
+            REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md': 'queda en el historial de esta pantalla',
+            REPO_ROOT / 'docs' / 'REQUEST_TRACKING.md': 'Los gastos directos se consultan en **Registro directo**',
+        }
+        for document, stale_fragment in stale_history_claims.items():
+            with self.subTest(document=document.name, stale_fragment=stale_fragment):
+                self.assertNotIn(stale_fragment, read(document))
+
     def test_multi_quote_docs_keep_voting_open_until_invoice(self):
         required_fragments = {
             REPO_ROOT / '.specify' / 'memory' / 'constitution.md': (
-                'ganador único provisional',
-                'bloquea la factura',
-                'lleva la solicitud a `CLOSED`',
+                'permanece en `QUOTATION_VOTING` aun después de alcanzar el umbral',
+                'Un empate nunca habilita el cierre',
+                'llevan directamente a `CLOSED`',
             ),
             REPO_ROOT / 'specs' / '013-multi-quote-voting' / 'spec.md': (
-                'puede cambiar su voto',
-                'pasa directamente a `CLOSED`',
+                'Todo invitado conserva **Votar o cambiar voto**',
+                'la factura la lleva directamente a `CLOSED`',
                 'Sin votos muestra el máximo',
                 'líderes están empatados muestra nuevamente el máximo',
             ),
             REPO_ROOT / 'docs' / 'MULTI_QUOTE_VOTING.md': (
                 '**Votar o cambiar voto**',
-                'Ante empate o voto pendiente responde 409',
+                'Si falta un voto o hay empate, el cierre responde `409`',
                 'antes del primer voto muestra el máximo',
                 'si hay empate, vuelve a mostrar el máximo',
             ),
@@ -305,15 +524,15 @@ class DocumentationContractTests(unittest.TestCase):
             ),
             REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
                 '→ 0012 keep_quotation_voting_open',
-                '`0012` devuelve a `QUOTATION_VOTING`',
+                '`20260825_0012` devuelve a `QUOTATION_VOTING`',
             ),
             REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md': (
                 '**Votar o cambiar voto**',
-                'La acción personal no desaparece después de votar',
+                'mantiene la acción disponible hasta que se cargue la factura',
             ),
             REPO_ROOT / 'docs' / 'VALIDACION_LOCAL.md': (
                 '`MULTI_QUOTE` con todos los votos empatados',
-                'ganador provisional sin pasar a `APPROVED`',
+                'recalcula el líder sin pasar a `APPROVED`',
             ),
         }
         for document, fragments in required_fragments.items():

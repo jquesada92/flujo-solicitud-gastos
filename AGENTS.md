@@ -143,21 +143,38 @@ una tarea con alcance explícito.
   no sustituyen la comprobación de servidor.
 - Las rondas `SIMPLE` y `MULTI_QUOTE` seleccionan participantes únicamente desde
   Usuarios activos con permiso efectivo `requests:approve`, excluyendo al
-  Solicitante. Un `ApprovalPolicy`, nombre de perfil, Cargo, `GroupMember` o regla
-  legacy por correo no crea autoridad; la ausencia de política no desactiva IAM.
-  En particular, `ApprovalPolicy.approver_profile_codes` es metadata física de
-  compatibilidad: nunca usarla para filtrar, agregar o autorizar participantes.
-- Una ronda `MULTI_QUOTE` permanece en `QUOTATION_VOTING` hasta que se carga la
-  factura. Cada invitado conserva un voto activo pero puede cambiarlo mientras
-  la ronda esté abierta, registrando un evento por cambio. Un ganador único es
-  provisional; un empate limpia la selección y bloquea el cierre. La carga de
-  factura debe bloquear la solicitud, recalcular población y resultado, y solo
-  entonces pasar directamente a `CLOSED`; nunca restaurar la transición
-  automática a `APPROVED` ni ocultar la acción después del primer voto.
+  Solicitante. Una `ApprovalPolicy` aplicable puede acotar esa población por IDs
+  de Roles/Grupos: un Grupo expande Usuarios asignados a sus Roles activos y la
+  población se deduplica. El target nunca concede el Permiso; Cargo,
+  `GroupMember`, nombres, reglas legacy y `approver_profile_codes` no autorizan.
+  Sin política aplicable se conserva el fallback IAM global.
+- Las bandas de política son `(min_amount,max_amount]`, sin superposición dentro
+  del mismo Área/scope; una regla de Área precede a `ALL`. `SIMPLE` evalúa su
+  monto y `MULTI_QUOTE` el máximo de todas sus opciones. La regla, modalidad,
+  monto evaluado y quórum se congelan por ronda.
+- En `MULTI_QUOTE`, `ANY`, `MAJORITY` y `ALL` requieren respectivamente 1,
+  `floor(N/2)+1` y `N` votos. Con política, quórum y líder único habilitan cierre
+  anticipado solo al Solicitante; la ronda permanece abierta para votos/cambios
+  hasta factura + `CLOSED`. Sin política se requieren todos los votos y un líder
+  único; la ronda también permanece en `QUOTATION_VOTING` hasta la factura y el
+  cierre ordinario puede hacerlo Solicitante, `system_accounts` o delegado activo.
+- Cada invitado conserva **Votar o cambiar voto** mientras la ronda siga abierta,
+  aunque ya haya votado. Un cambio conserva evento, un empate bloquea el cierre y
+  la factura debe recalcular población, quórum y resultado bajo bloqueo antes de
+  pasar directamente a `CLOSED`; nunca restaurar la transición automática a
+  `APPROVED` ni ocultar la acción después del primer voto.
 - El monto operativo mostrado para `MULTI_QUOTE` es máximo sin votos, monto del
   líder único cuando existe y máximo ante empate. Debe exponerse separado de
   `Expense.amount`: nunca fijar proveedor o selección financiera solo para evitar
   que la tabla muestre cero.
+- `NO_APPROVAL` es una modalidad de política, no un tipo o estado de Solicitud.
+  Sus reglas no tienen targets y solo habilitan **Registro directo** para un
+  Usuario con `requests:create` cuando Área y monto pertenecen a su banda
+  `(min,max]`. FastAPI debe revalidar la política; la UI no decide elegibilidad.
+- Un gasto directo guarda proveedor, ítem, monto y factura en `direct_expenses`
+  sin crear `Expense`, ronda, voto ni acción pendiente. Fila y archivo son una
+  unidad atómica; autor y `system_accounts` son los únicos que pueden listar o
+  descargar su factura conforme al scope del endpoint.
 - Una solicitud nueva sin ronda iniciable no se persiste. Si SIMPLE requiere una
   carga de soporte en una segunda llamada, un fallo al preparar el flujo debe
   revertir también la solicitud y el archivo; nunca dejar una fila `Expense`
@@ -206,6 +223,13 @@ Flujo de aprobación o atomicidad de solicitudes:
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m unittest tests.test_request_flow_creation -v
+```
+
+Registro directo sin aprobación:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m unittest tests.test_direct_expenses -v
 ```
 
 Votación de cotizaciones o cierre con factura:

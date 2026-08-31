@@ -32,6 +32,7 @@ from app.models.entities import (
     UserRole,
 )
 from app.models.iam import Permission, Role, RolePermission, UserRoleAssignment
+from app.services.quotation_service import quotation_voting_summary
 
 
 PDF = b'%PDF-1.7\nquotation-voting-test\n'
@@ -310,6 +311,7 @@ class MultiQuoteOpenVotingTests(unittest.TestCase):
         self.assertEqual(tracking.status_code, 200, tracking.text)
         row = next(item for item in tracking.json() if item['request_id'] == 'multi-open-voting')
         self.assertTrue(row['can_close'])
+        self.assertTrue(row['quotation_quorum_reached'])
 
         tied_again = self.vote(self.voter_two_token, self.option_two_id)
         self.assertEqual(tied_again.status_code, 200, tied_again.text)
@@ -340,6 +342,65 @@ class MultiQuoteOpenVotingTests(unittest.TestCase):
 
         with self.Session() as db:
             self.assertEqual(db.scalar(select(func.count(ExpenseAttachment.id))), 0)
+
+    def test_tally_ignores_votes_outside_the_frozen_population_or_request_options(self):
+        first = self.vote(self.voter_one_token, self.option_one_id)
+        self.assertEqual(first.status_code, 200, first.text)
+
+        with self.Session() as db:
+            expense = db.get(Expense, self.expense_id)
+            requester = db.scalar(select(User).where(User.email == 'requester@example.com'))
+            db.add(QuotationVote(
+                expense_id=expense.id,
+                quotation_option_id=self.option_one_id,
+                voter_user_id=requester.id,
+                voter_email=requester.email,
+                voter_role='corrupt-uninvited-vote',
+            ))
+            db.commit()
+
+            summary = quotation_voting_summary(db, expense)
+            self.assertEqual(summary.invited_count, 2)
+            self.assertEqual(summary.vote_count, 1)
+            self.assertFalse(summary.quorum_reached)
+            self.assertIsNone(summary.winner_option_id)
+
+            foreign_expense = Expense(
+                request_id='foreign-quotation-request',
+                flow_id='FLOW-FOREIGN-QUOTATION',
+                display_id='ADM-2026-0000000002',
+                request_type='MULTI_QUOTE',
+                title='Solicitud ajena',
+                description='Opción que no pertenece a la ronda bajo prueba.',
+                expense_type='ADMINISTRATION',
+                expense_subcategory='SERVICES',
+                urgency='NORMAL',
+                requested_by=requester.email,
+                status=ExpenseStatus.QUOTATION_VOTING,
+            )
+            db.add(foreign_expense)
+            db.flush()
+            foreign_option = QuotationOption(
+                expense_id=foreign_expense.id,
+                option_number=1,
+                supplier='Proveedor ajeno',
+                amount=Decimal('10.00'),
+                item_url='https://example.test/foreign-quote',
+            )
+            db.add(foreign_option)
+            db.flush()
+            invited_vote = db.scalar(select(QuotationVote).where(
+                QuotationVote.expense_id == expense.id,
+                QuotationVote.voter_email == 'voter-one@example.com',
+            ))
+            invited_vote.quotation_option_id = foreign_option.id
+            db.commit()
+
+            summary = quotation_voting_summary(db, expense)
+            self.assertEqual(summary.invited_count, 2)
+            self.assertEqual(summary.vote_count, 0)
+            self.assertFalse(summary.quorum_reached)
+            self.assertIsNone(summary.winner_option_id)
 
 
 if __name__ == '__main__':

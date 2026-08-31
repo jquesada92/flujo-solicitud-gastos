@@ -93,6 +93,8 @@ Nunca imprime ni envía secretos de producción. Los correos de workflow se mues
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m scripts.run_tests
+.\.venv\Scripts\python.exe -m unittest tests.test_direct_expenses -v
+.\.venv\Scripts\python.exe -m unittest tests.test_documentation_contract -v
 .\.venv\Scripts\python.exe -m unittest tests.test_multi_quote_open_voting -v
 
 cd ..\frontend
@@ -112,13 +114,43 @@ docker compose exec -T backend alembic current
 docker compose exec -T backend alembic heads
 ```
 
-Ambos deben indicar `20260825_0012 (head)`.
+Ambos deben indicar `20260828_0014 (head)` como único head.
 
 Las tablas, tipos ENUM, contadores e `alembic_version` deben resolverse dentro de `administracion`. Toda consulta SQL cruda debe usar el nombre calificado derivado del modelo; no debe depender de `search_path`.
+
+## Navegador responsive
+
+La matriz global se revisa a 1180, 1024, 640, 440, 390 y 320 px. Para
+**Registro directo**, ampliar la validación en Chrome a 320, 360, 390, 412, 440,
+600, 640, 768, 820 y 1024 px. En cada ancho comprobar:
+
+- ancho del documento igual al viewport, sin overflow horizontal;
+- ningún control o dato recortado y foco visible por teclado;
+- inputs, selects y botones de al menos 44 px;
+- una columna desde 320 hasta 720 px, incluida la introducción y las bandas;
+- descripción y rango de cada banda apilados hasta 440 px;
+- dos columnas en 768, 820 y 1024 px solo cuando ambas permanecen legibles;
+- desde **Solicitudes**, un Área y un monto cubiertos por `NO_APPROVAL` muestran la
+  guía sin ruta interna, conservan el borrador y resaltan el botón **Registro
+  directo** dentro de la porción visible de la banda, sin cambiar `aria-current`
+  ni navegar automáticamente;
+- Área, monto, proveedor, factura, ítem y acción principal siempre visibles.
+
+Para el Bloqueo global **Procesando…**, ejecutar una mutación demorada en 1180,
+1024, 640, 440, 390 y 320 px y comprobar que:
+
+- el overlay aparece antes de completar el request y cubre topbar, Accesos y modales;
+- los demás hijos de `body` tienen `inert` y no responden a clic, touch, Enter o Tab;
+- el mensaje/spinner caben sin overflow y respetan `safe-area`;
+- dos mutaciones concurrentes mantienen la pantalla hasta terminar la última;
+- éxito, error HTTP y fallo de red la retiran y presentan el resultado;
+- `GET` y `POST /api/auth/activity` nunca la muestran.
 
 ## Pruebas adversas mínimas
 
 - token inválido y acceso anónimo → 401;
+- 9 minutos 59 segundos de inactividad → sesión vigente; al alcanzar 10 minutos → `401`, token local eliminado, hash privado limpio y Login visible;
+- volver a una pestaña suspendida después de 10 minutos → Login sin reactivar ni sincronizar la sesión;
 - payload inválido → 422;
 - método no soportado → 405;
 - cinco logins fallidos y un sexto intento → 429;
@@ -126,15 +158,34 @@ Las tablas, tipos ENUM, contadores e `alembic_version` deben resolverse dentro d
 - token de restablecimiento expirado, reemplazado o reutilizado → rechazo sin cambio de contraseña;
 - Rol con cupo lleno → asignación y reactivación rechazadas; Usuario inactivo asignado no consume cupo;
 - reducción del máximo de Rol por debajo de su ocupación activa → 409 sin cambio persistido;
+- crear Rol A → lista actualizada + editor vacío/sin selección; crear Rol B a
+  continuación → segundo `POST`, nunca `PATCH` sobre A;
+- fallo al crear Rol → overlay liberado y borrador intacto; editar/reactivar →
+  `PATCH` sobre el ID seleccionado/original;
 - `SIMPLE` sin `ApprovalPolicy`, con aprobadores por Rol propio, herencia de Grupo
   o Rol global → ronda `MAJORITY` con esos Usuarios;
 - `SIMPLE` sin otro Usuario con `requests:approve` → 422 sin `Expense` persistido;
-- `MULTI_QUOTE` con todos los votos empatados → conserva
-  `QUOTATION_VOTING`, no tiene selección y rechaza factura con 409;
-- un invitado cambia su voto → conserva un voto activo, agrega evento y, si
-  rompe el empate, establece ganador provisional sin pasar a `APPROVED`;
-- factura con todos los votos y ganador único → pasa directo a `CLOSED`;
-- votar después del cierre → 409;
+- reglas del mismo Área/scope con bandas solapadas, incluso de modalidades
+  distintas → 422; bandas adyacentes respetan `(min,max]`;
+- `MULTI_QUOTE` resuelve por el máximo de opciones y expande/deduplica targets de
+  Rol/Grupo sin incluir Usuarios sin `requests:approve`;
+- con regla, quórum y líder único habilitan cierre solo al Solicitante y los
+  demás invitados pueden votar/cambiar hasta factura + `CLOSED`;
+- sin regla, `MULTI_QUOTE` exige todos los votos y líder único; antes de cumplir
+  ambos, el cierre responde `409`, y al cumplirlos Solicitante,
+  `system_accounts` o delegado activo cierra directamente a `CLOSED`;
+- `MULTI_QUOTE` con todos los votos empatados conserva `QUOTATION_VOTING`, no
+  tiene selección y rechaza factura con `409`;
+- un invitado conserva **Votar o cambiar voto** después del primer voto; cambiarlo
+  mantiene un voto activo, agrega evento y recalcula el líder sin pasar a
+  `APPROVED`;
+- `tracking_amount` usa máximo sin votos, monto del líder único o máximo ante
+  empate sin modificar `Expense.amount`;
+- votar después del cierre responde `409`;
+- `NO_APPROVAL` fuera de banda, sin `requests:create` o con Área inactiva →
+  rechazo sin `DirectExpense`, `Expense` ni archivo físico;
+- gasto directo válido → fila + factura sin `Expense`, aprobación, invitación,
+  voto o acción pendiente; otro Usuario no puede listar/descargarlo;
 - fallo al iniciar la primera ronda después de cargar soporte → 422 sin
   `Expense`, `ExpenseAttachment` ni archivo físico huérfano;
 - origen CORS no autorizado sin `Access-Control-Allow-Origin`;

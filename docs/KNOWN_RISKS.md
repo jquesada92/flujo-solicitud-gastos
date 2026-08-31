@@ -1,6 +1,6 @@
 # Riesgos y divergencias conocidas
 
-Última revisión: 2026-08-26.
+Última revisión: 2026-08-28.
 
 Este registro evita que una persona o IA convierta una limitación actual en una regla falsa. Los documentos normativos siguen describiendo el comportamiento correcto; una divergencia se corrige en código y pruebas, no rebajando el contrato.
 
@@ -73,15 +73,6 @@ con alcance explícito.
 ### Transformaciones de Vite
 
 `frontend/vite.config.js` transforma fragmentos concretos de `main.jsx` y `iam-admin.jsx` durante el build. Una edición puede funcionar en el archivo fuente y romper la extracción. Todo cambio en esos puntos exige `npm run build`; consultar `FRONTEND_RUNTIME.md` antes de mover componentes o guards.
-
-### Perfiles legacy visibles en Reglas
-
-La pantalla `Configuración → Reglas` todavía muestra y exige
-`approver_profile_codes`, aunque el motor vigente no usa perfiles para elegir
-aprobadores. La población se resuelve únicamente mediante `requests:approve`
-efectivo. Hasta rediseñar esa pantalla, no interpretar sus checkboxes como
-autoridad, no reintroducir filtros por nombre de perfil y no documentarlos como
-requisito para que una ronda pueda iniciar.
 
 ### Scripts demo
 

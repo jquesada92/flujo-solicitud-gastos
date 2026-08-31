@@ -35,14 +35,17 @@ Una acción existe solo si el backend confirma que sigue vigente.
 La invitación es una instantánea de la ronda. Después de votar la acción
 permanece como **Votar o cambiar voto**. Solo desaparece cuando la factura cierra
 la ronda; un empate la mantiene abierta para que un participante cambie su voto.
+Un gasto directo nunca crea `QUOTATION_VOTE` ni otra acción pendiente.
 
 ### CORRECT_REQUEST
 Solicitud propia en `NEEDS_REVISION`.
 
 ### CLOSE_REQUEST
 Solicitud `SIMPLE` en `APPROVED`, o `MULTI_QUOTE` en `QUOTATION_VOTING` con
-ganador provisional, y actor con autoridad de cierre por recurso. El endpoint
-revalida población completa y ausencia de empate antes de persistir la factura.
+líder único y actor habilitado. Con política, quórum habilita cierre anticipado
+solo al Solicitante; sin política deben votar todos y entonces aplican
+Solicitante, `system_accounts` o delegado activo. El endpoint revalida población,
+quórum y ausencia de empate antes de persistir la factura.
 
 ### Monto de solicitudes con múltiples cotizaciones
 
@@ -80,3 +83,8 @@ Seguimiento requiere sesión. No contiene controles de edición y no sustituye A
 ## Refresco
 
 Inicio carga al montar/cambiar `refreshKey`. Seguimiento carga al montar y cuando el usuario pulsa Recargar. Ninguna vista usa polling continuo.
+
+Los gastos directos no forman parte de las métricas, estados o pendientes de
+Solicitudes. Su listado privado existe en `GET /api/direct-expenses`; la pantalla
+actual de **Registro directo** confirma el ID creado, pero no renderiza ese
+listado.

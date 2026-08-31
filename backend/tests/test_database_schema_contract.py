@@ -34,7 +34,7 @@ class DatabaseSchemaContractTests(unittest.TestCase):
                 with self.assertRaises(ValidationError):
                     Settings(database_url='sqlite://', database_schema=schema)
 
-    def test_clean_initial_baseline_is_preserved_and_forward_migrations_are_linear(self):
+    def test_clean_initial_baseline_is_preserved_and_forward_migrations_converge(self):
         revisions = sorted(path.name for path in VERSIONS_DIR.glob('*.py'))
         self.assertEqual(
             revisions,
@@ -51,6 +51,9 @@ class DatabaseSchemaContractTests(unittest.TestCase):
                 '20260824_0010_password_reset_links.py',
                 '20260825_0011_role_user_limit.py',
                 '20260825_0012_keep_quotation_voting_open.py',
+                '20260827_0012_scoped_approval_policies.py',
+                '20260828_0013_direct_expenses.py',
+                '20260828_0014_merge_main_layout_heads.py',
             ],
         )
 
@@ -93,9 +96,29 @@ class DatabaseSchemaContractTests(unittest.TestCase):
         self.assertIn("revision = '20260825_0011'", role_limit)
         self.assertIn("down_revision = '20260824_0010'", role_limit)
         self.assertIn("'ck_roles_max_users_positive'", role_limit)
-        open_voting = (VERSIONS_DIR / '20260825_0012_keep_quotation_voting_open.py').read_text(encoding='utf-8')
+        open_voting = (
+            VERSIONS_DIR / '20260825_0012_keep_quotation_voting_open.py'
+        ).read_text(encoding='utf-8')
         self.assertIn("revision = '20260825_0012'", open_voting)
         self.assertIn("down_revision = '20260825_0011'", open_voting)
+        scoped_policies = (
+            VERSIONS_DIR / '20260827_0012_scoped_approval_policies.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("revision = '20260827_0012'", scoped_policies)
+        self.assertIn("down_revision = '20260825_0011'", scoped_policies)
+        direct_expenses = (
+            VERSIONS_DIR / '20260828_0013_direct_expenses.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("revision = '20260828_0013'", direct_expenses)
+        self.assertIn("down_revision = '20260827_0012'", direct_expenses)
+        merged_heads = (
+            VERSIONS_DIR / '20260828_0014_merge_main_layout_heads.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("revision = '20260828_0014'", merged_heads)
+        self.assertIn(
+            "down_revision = ('20260825_0012', '20260828_0013')",
+            merged_heads,
+        )
         self.assertIn("down_revision = '20260820_0002'", single_position)
 
         global_roles = (VERSIONS_DIR / '20260821_0004_allow_global_roles.py').read_text(encoding='utf-8')

@@ -51,6 +51,18 @@ Una opción principal de compra/proveedor.
 ## Solicitud MULTI_QUOTE
 Varias opciones que pasan por votación/selección antes de continuar el flujo.
 
+## Regla de aprobación
+
+Política de un Área o `ALL` y una banda `(min_amount,max_amount]`. En modalidades
+`ANY`, `MAJORITY` o `ALL` acota por Roles/Grupos a Usuarios que ya tienen
+`requests:approve` y define el quórum. `NO_APPROVAL` no tiene targets ni ronda.
+
+## Gasto directo
+
+Registro final de Área, proveedor, ítem, monto y factura bajo una banda
+`NO_APPROVAL`. No es una Solicitud, no crea `Expense` y no tiene estado,
+aprobadores, votantes, corrección, delegación o cierre.
+
 ## Enviar a revisión
 Decisión de un aprobador que lleva la solicitud a `NEEDS_REVISION`, expira decisiones restantes y solicita corrección al solicitante.
 

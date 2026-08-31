@@ -20,7 +20,7 @@ app/core/                config, DB, security, rate limit
 
 ## Seguridad
 
-`current_user()` valida token, `session_version`, estado activo, inactividad y contraseña temporal.
+`current_user()` valida token, `session_version`, estado activo, inactividad y contraseña temporal. `last_activity_at` vence al alcanzar 10 minutos; `SESSION_IDLE_MINUTES` usa 10 por defecto y solo acepta valores de 5 a 10, de modo que una configuración puede endurecer el límite pero no prolongarlo.
 
 `require_permission()` resuelve permisos desde `iam_service.py`. Para Configuración, `config:read` puede satisfacer lecturas GET/HEAD protegidas históricamente por `config:manage`; las mutaciones siguen requiriendo escritura.
 
@@ -71,12 +71,24 @@ no consumen cupo.
 
 ## Inicio de flujos
 
-`approval_engine.start_approval_flow()` selecciona participantes exclusivamente
-mediante `users_with_permission(..., 'requests:approve')` y excluye al
-Solicitante. Una `ApprovalPolicy` aplicable define la modalidad; sin política se
-usa `MAJORITY`. Las tablas legacy de reglas por correo no autorizan.
-`ApprovalPolicy.approver_profile_codes` se conserva como metadata compatible y
-no entra en la consulta de participantes.
+`approval_policy_service` resuelve bandas `(min,max]` con precedencia del Área
+concreta sobre `ALL`. `approval_engine.start_approval_flow()` intersecta los
+targets de Rol/Grupo de una política con Usuarios activos que tienen
+`requests:approve` efectivo y excluye al Solicitante. Un Grupo expande sus Roles
+activos y se deduplican Usuarios. Sin política, `SIMPLE` usa toda la población
+IAM y `MAJORITY`; `MULTI_QUOTE` usa toda la población y exige todos los votos.
+Cargo, `GroupMember`, reglas legacy y `approver_profile_codes` no autorizan.
+
+El cierre desde `QUOTATION_VOTING` usa la instantánea de la ronda. Con política
+requiere quórum y líder único y solo lo ejecuta el Solicitante original. Sin
+política requiere todos los votos y líder único; entonces aplican las relaciones
+ordinarias de cierre. En ningún caso hay transición automática a `APPROVED`: la
+ronda permanece abierta hasta la factura.
+
+`MULTI_QUOTE` evalúa el máximo de sus opciones antes de congelar regla,
+modalidad, monto y quórum. Con regla, alcanzar el umbral y líder único habilita
+cierre con factura solo al Solicitante sin terminar la votación; votar continúa
+permitido a cada invitado hasta `CLOSED`.
 
 Las rutas canónicas pueden preparar aprobaciones con `commit=False` para incluir
 la solicitud, el soporte y la ronda en una misma transacción. El endpoint de
@@ -87,9 +99,15 @@ solo después del commit mediante `notify_approval_flow_started()`.
 `quotation_service.cast_quotation_vote()` mantiene un voto activo por invitado,
 registra cada cambio y recalcula la selección provisional. La solicitud conserva
 `QUOTATION_VOTING`: una opción líder no es una aprobación final. Las rutas de voto
-y cierre bloquean la fila de `Expense`; al cargar factura,
-`require_unique_winner_for_closure()` exige todos los votos y ganador único antes
+y cierre bloquean la fila de `Expense`; al cargar factura, el servicio exige
+quórum con política o población completa sin ella, además de líder único, antes
 de que `financial_actions` persista el adjunto y cambie a `CLOSED`.
+
+`direct_expenses` atiende `NO_APPROVAL` fuera de ese motor. El `POST` multipart
+requiere `requests:create`, vuelve a resolver Área/monto, valida una factura
+privada y confirma `DirectExpense` + archivo como una unidad. No llama
+`start_approval_flow()` ni crea `Expense`. El listado y la descarga filtran por
+autor, salvo `system_accounts`.
 
 ## Middlewares
 
@@ -103,6 +121,7 @@ de que `financial_actions` persista el adjunto y cambie a `CLOSED`.
 /api/auth
 /api/auth/reset-password
 /api/expenses
+/api/direct-expenses
 /api/approvals
 /api/areas
 /api/iam
@@ -127,6 +146,8 @@ Los contratos críticos deben tener pruebas HTTP/modelo para:
 - workflow/capacidades;
 - empate, cambio de voto, ganador provisional y cierre atómico `MULTI_QUOTE`;
 - población IAM y ausencia de solicitudes huérfanas cuando el flujo no inicia;
+- bandas/targets/quórum, cierre anticipado y votos posteriores hasta `CLOSED`;
+- `NO_APPROVAL` sin `Expense`, atomicidad de factura y aislamiento por autor;
 - schema PostgreSQL;
 - frontend contracts cuando haya bridges transitorios.
 - emisión/consumo de restablecimiento: autorización, expiración, uso único,

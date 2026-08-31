@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 
 from app.core.database import Base
@@ -130,6 +130,12 @@ class AccessProfileChangeEvent(Base):
 
 class Expense(Base):
     __tablename__ = 'expenses'
+    __table_args__ = (
+        CheckConstraint(
+            'minimum_votes_required IS NULL OR minimum_votes_required >= 1',
+            name='ck_expenses_minimum_votes_required_positive',
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     request_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
@@ -160,6 +166,13 @@ class Expense(Base):
     closed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     closure_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     selected_quotation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Policy fields are immutable snapshots of the rule used to open the round.
+    # approval_policy_id intentionally has no FK: deleting/editing a policy must
+    # not change the behavior or audit evidence of an already-open request.
+    approval_policy_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    approval_policy_mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    policy_evaluation_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    minimum_votes_required: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Transitional aliases keep older internal callers working while the
     # canonical ORM and physical database columns remain expense_area/category.
@@ -170,6 +183,60 @@ class Expense(Base):
     attachments = relationship('ExpenseAttachment', back_populates='expense', cascade='all, delete-orphan')
     quotation_options = relationship('QuotationOption', back_populates='expense', cascade='all, delete-orphan', order_by='QuotationOption.option_number')
     quotation_votes = relationship('QuotationVote', back_populates='expense', cascade='all, delete-orphan')
+
+
+class DirectExpense(Base):
+    """Final expense record for an applicable NO_APPROVAL amount band.
+
+    This is deliberately independent from Expense and every workflow table.
+    The policy identifier is historical evidence rather than a destructive FK,
+    matching the immutable policy snapshot convention used by open requests.
+    """
+
+    __tablename__ = 'direct_expenses'
+    __table_args__ = (
+        CheckConstraint('amount > 0', name='ck_direct_expenses_amount_positive'),
+        CheckConstraint('invoice_size > 0', name='ck_direct_expenses_invoice_size_positive'),
+        Index(
+            'ix_direct_expenses_requester_created',
+            'requester_user_id',
+            'created_at',
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    record_id: Mapped[str] = mapped_column(
+        String(36),
+        unique=True,
+        nullable=False,
+        default=lambda: str(uuid.uuid4()),
+    )
+    display_id: Mapped[str] = mapped_column(
+        String(40),
+        unique=True,
+        nullable=False,
+        default=lambda: f'GD-{uuid.uuid4()}',
+    )
+    expense_area: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    supplier: Mapped[str] = mapped_column(String(200), nullable=False)
+    item_description: Mapped[str] = mapped_column(Text, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    requester_user_id: Mapped[int] = mapped_column(
+        ForeignKey('users.id', ondelete='RESTRICT'),
+        nullable=False,
+    )
+    requester_analytics_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    requester_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    invoice_original_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    invoice_stored_name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    invoice_content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    invoice_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    approval_policy_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
 
 
 class QuotationOption(Base):
@@ -317,6 +384,8 @@ class ApprovalPolicy(Base):
     max_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     approval_mode: Mapped[str] = mapped_column(String(20), nullable=False, default='ANY')
     approver_profile_codes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    approver_role_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    approver_group_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -326,7 +395,11 @@ class ApprovalPolicyChangeEvent(Base):
 
     __tablename__ = 'approval_policy_change_events'
 
-    event_sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_sequence: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, 'sqlite'),
+        primary_key=True,
+        autoincrement=True,
+    )
     event_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     event_type: Mapped[str] = mapped_column(String(40), nullable=False)

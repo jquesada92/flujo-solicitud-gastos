@@ -3,21 +3,23 @@
 - [x] MULTI_QUOTE requiere al menos dos opciones.
 - [x] cada opción requiere soporte.
 - [x] URLs duplicadas se rechazan.
-- [x] participantes vienen de `requests:approve` efectivo.
-- [x] solicitante queda excluido de la población.
+- [x] participantes vienen de `requests:approve` efectivo y del scope/fallback de la Spec 021.
+- [x] solicitante queda excluido de la población configurada o fallback.
 - [x] usuario sin invitación recibe 403.
 - [x] opción ajena recibe 422.
 - [x] ronda cerrada recibe 409.
 - [x] cada usuario mantiene un voto activo.
 - [x] cambios de voto conservan evento.
-- [x] la ronda espera a todos los invitados.
-- [x] ganador único queda provisional y conserva QUOTATION_VOTING.
-- [x] empate conserva QUOTATION_VOTING y limpia la selección provisional.
-- [x] empate o voto pendiente bloquean la factura sin persistirla.
-- [x] cada invitado puede cambiar su voto mientras la ronda esté abierta.
-- [x] factura con población completa y ganador único lleva directo a CLOSED.
+- [x] con regla, quórum y líder único habilitan cierre anticipado sin cerrar la votación.
+- [x] sin regla, la ronda espera a todos y un ganador único habilita el cierre ordinario sin pasar a `APPROVED`.
+- [x] ambos caminos conservan `QUOTATION_VOTING` hasta factura y `CLOSED`.
+- [x] empate conserva `QUOTATION_VOTING`, limpia la selección provisional y no habilita cierre.
+- [x] quórum/población insuficiente o empate bloquean la factura sin persistirla.
+- [x] invitados restantes pueden votar/cambiar hasta la factura y CLOSED.
+- [x] Inicio mantiene `QUOTATION_VOTE` como **Votar o cambiar voto** incluso después del primer voto.
+- [x] factura válida recalcula bajo bloqueo, fija el ganador y lleva directamente a `CLOSED`.
 - [x] voto posterior al cierre recibe 409.
-- [x] corrección reinicia población, votos y flow_id activos.
-- [x] Inicio mantiene QUOTATION_VOTE como "Votar o cambiar voto" hasta el cierre.
+- [x] corrección reinicia política, quórum, población, votos y flow_id activos.
+- [x] Docker local contiene votación abierta y voto parcial visibles.
 - [x] monto operativo muestra máximo sin votos, líder único o máximo ante empate sin alterar `Expense.amount`.
-- [x] PostgreSQL local confirma `20260825_0012` como `current=head`.
+- [ ] PostgreSQL local confirma `20260828_0014` como `current=head` único.

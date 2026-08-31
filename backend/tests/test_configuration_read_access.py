@@ -145,6 +145,7 @@ class ConfigurationReadAccessTests(unittest.TestCase):
             '/api/users',
             '/api/users/profiles?include_inactive=true',
             '/api/rules/policies',
+            '/api/rules/approver-targets',
         ):
             with self.subTest(path=path):
                 response = self.client.get(path, headers=self.auth())

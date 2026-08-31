@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     analytics_hash_key: str = ''
     token_expire_minutes: int = Field(default=480, ge=5, le=10080)
     password_reset_token_expire_minutes: int = Field(default=30, ge=5, le=1440)
-    session_idle_minutes: int = Field(default=30, ge=5, le=1440)
+    session_idle_minutes: int = Field(default=10, ge=5, le=10)
 
     public_url: str = 'http://localhost:5173'
     cors_allowed_origins: str = 'http://localhost:3000,http://localhost:5173'

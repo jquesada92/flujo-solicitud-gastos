@@ -116,7 +116,7 @@ function ApprovalAction({ request, busy, onSubmit }) {
 
 function QuotationVoteAction({ request, busy, onVote, onError }) {
   return <section className="pending-action-block">
-    <div><p className="pending-action-eyebrow">VOTACIÓN DE COTIZACIONES</p><h3>{request.current_quotation_option_id ? "Puedes cambiar tu voto" : "Selecciona una opción"}</h3></div>
+    <div><p className="pending-action-eyebrow">VOTACIÓN DE COTIZACIONES</p><h3>{request.current_quotation_option_id ? "Puedes cambiar tu voto" : "Selecciona una opción"}</h3><p className="pending-action-muted">Puedes votar o cambiar tu voto mientras el flujo siga abierto.</p></div>
     {request.quotation_has_tie && <div className="pending-action-warning">La votación está empatada. Debe quedar un ganador único antes de registrar la factura.</div>}
     {!request.quotation_has_tie && request.selected_quotation_id && <div className="pending-action-info">Hay un ganador provisional. La votación seguirá abierta hasta que se registre la factura.</div>}
     <div className="pending-quote-grid">{request.quotation_options.map((option) => (
@@ -141,7 +141,7 @@ function CloseRequestAction({ request, busy, onCloseRequest, onDelegationChanged
     if (invoice) onCloseRequest(invoice, notes);
   };
   return <section className="pending-action-block">
-    <div><p className="pending-action-eyebrow">CIERRE DE SOLICITUD</p><h3>Sube la factura y cierra el expediente</h3></div>
+    <div><p className="pending-action-eyebrow">CIERRE DE SOLICITUD</p><h3>Sube la factura y cierra el expediente</h3>{request.status === "QUOTATION_VOTING" && <p className="pending-action-muted">{request.approval_policy_id != null ? "El umbral y un líder único ya fueron alcanzados." : "Todos los participantes votaron y existe un líder único."} La votación seguirá abierta hasta que confirmes el cierre.</p>}</div>
     <form className="pending-action-form" onSubmit={submit}>
       <label className="pending-action-field">Factura<input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" required onChange={(event) => setInvoice(event.target.files?.[0] || null)} /></label>
       <label className="pending-action-field">Notas de cierre<textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Opcional" /></label>
@@ -157,6 +157,24 @@ function CloseRequestAction({ request, busy, onCloseRequest, onDelegationChanged
       </div>
     </form>
   </section>;
+}
+
+function QuotationRoundSummary({ request }) {
+  if (request.request_type !== "MULTI_QUOTE") return null;
+  const optionAmounts = (request.quotation_options || []).map((option) => Number(option.amount) || 0);
+  const evaluationAmount = request.policy_evaluation_amount == null
+    ? Math.max(0, ...optionAmounts)
+    : Number(request.policy_evaluation_amount);
+  const votes = Number(request.quotation_vote_count) || 0;
+  const participants = Math.max(Number(request.quotation_voter_count) || 0, votes);
+  return <div className={`pending-round-summary ${request.quotation_quorum_reached ? "reached" : ""}`}>
+    <strong>Monto evaluado: mayor cotización · ${evaluationAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+    {request.approval_policy_id != null ? (
+      <span>{votes} de {participants} voto(s) · mínimo para cerrar: {Number(request.minimum_votes_required) || 0}</span>
+    ) : (
+      <span>Sin regla aplicable: deben votar todos antes de agregar la factura y cerrar.</span>
+    )}
+  </div>;
 }
 
 function CorrectRequestAction({ busy, onOpenRequests }) {
@@ -212,6 +230,7 @@ function PendingActionModal({ detail, loading, error, busy, message, onClose, on
           {request.supplier && <div><span>Proveedor</span><strong>{request.supplier}</strong></div>}
           <div><span>Flujo</span><strong>{request.request_type === "MULTI_QUOTE" ? "Múltiples cotizaciones" : "Solicitud sencilla"}</strong></div>
         </div>
+        <QuotationRoundSummary request={request} />
         <p className="pending-request-description">{request.description}</p>
         {request.supports?.length > 0 && <div className="pending-supports"><strong>Soportes generales</strong><SupportLinks supports={request.supports} onError={onError} /></div>}
         {!detail.actions.length && !loading && <div className="pending-action-state">Ya no tienes acciones pendientes para esta solicitud.</div>}

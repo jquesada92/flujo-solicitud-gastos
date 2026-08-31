@@ -28,12 +28,15 @@ class FrontendClosureContractTests(unittest.TestCase):
         self.assertIn('x.can_delegate_close', vite)
         self.assertIn('ClosureDelegationButton expense={x} api={api} onChanged={onChanged}', vite)
         self.assertIn('closed invoice correction guard', vite)
-        self.assertIn('approved closure guard', vite)
+        self.assertIn('approved or quorum-reached closure guard', vite)
 
     def test_global_can_close_is_not_the_built_visibility_rule(self):
         vite = (REPO_ROOT / 'frontend' / 'vite.config.js').read_text(encoding='utf-8')
         self.assertIn('{x.can_close && x.status === "CLOSED"', vite)
-        self.assertIn('{x.can_close && ["APPROVED", "QUOTATION_VOTING"].includes(x.status)', vite)
+        self.assertIn(
+            '{x.can_close && ["APPROVED", "QUOTATION_VOTING"].includes(x.status)',
+            vite,
+        )
         self.assertNotIn('canClose || filtered.some((item) => item.can_correct)', vite)
 
     def test_closure_delegation_bridge_is_whitespace_tolerant(self):

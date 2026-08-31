@@ -9,6 +9,8 @@
 - [x] `config:read` permite GET/HEAD sin permitir mutaciones.
 - [x] contraseña nueva usa Argon2.
 - [x] sesión valida versión, expiración/inactividad y usuario activo.
+- [x] 10 minutos sin actividad eliminan el token, limpian la ruta privada y muestran Login; FastAPI rechaza la sesión con 401.
+- [x] volver a una pestaña suspendida después del límite no reactiva la sesión.
 - [x] API tiene CORS, rate limiting y headers sensibles.
 - [x] migraciones/bootstrap se ejecutan antes del servidor ASGI.
 - [x] rutas que contradicen el IAM actual están bloqueadas.

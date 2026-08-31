@@ -1,3 +1,3 @@
-from app.models.entities import Approval, ApprovalRule, Expense
+from app.models.entities import Approval, ApprovalRule, DirectExpense, Expense
 
-__all__ = ['Expense', 'Approval', 'ApprovalRule']
+__all__ = ['Expense', 'DirectExpense', 'Approval', 'ApprovalRule']

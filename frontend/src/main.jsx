@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Analytics } from "@vercel/analytics/react";
 import { injectSpeedInsights } from "@vercel/speed-insights";
+import DirectExpenseForm from "./direct-expense-form.jsx";
+import { createSessionIdleDeadline } from "./session-idle.js";
 import "./styles.css";
 import "./mobile-layout.css";
 
@@ -179,7 +181,6 @@ async function api(path, options = {}) {
   return response.json();
 }
 
-const SESSION_IDLE_MS = 30 * 60 * 1000;
 const ACTIVITY_SYNC_MS = 60 * 1000;
 
 async function downloadAttachment(attachment) {
@@ -811,6 +812,11 @@ function ExpenseForm({
 
 function ClosurePanel({ expense, onDone, onCancel }) {
   const replacing = expense.status === "CLOSED";
+  const closingActiveVote = expense.request_type === "MULTI_QUOTE"
+    && expense.status === "QUOTATION_VOTING";
+  const activeVoteClosureMessage = expense.approval_policy_id != null
+    ? "El umbral y un líder único ya fueron alcanzados. La votación seguirá abierta hasta que confirmes este cierre con la factura."
+    : "Todos los participantes votaron y existe un líder único. La votación seguirá abierta hasta que confirmes este cierre con la factura.";
   const [invoice, setInvoice] = useState(null),
     [notes, setNotes] = useState(""),
     [saving, setSaving] = useState(false),
@@ -838,10 +844,14 @@ function ClosurePanel({ expense, onDone, onCancel }) {
   return (
     <form className="closure-panel" onSubmit={submit}>
       <div>
-        <p className="eyebrow">{replacing ? "CORRECCIÓN DE FACTURA" : "CIERRE DE APROBACIÓN"}</p>
+        <p className="eyebrow">{replacing ? "CORRECCIÓN DE FACTURA" : closingActiveVote ? "CIERRE DE VOTACIÓN" : "CIERRE DE APROBACIÓN"}</p>
         <h3>{expense.title}</h3>
         <span className="muted">
-          {replacing ? "Adjunta la factura correcta. La anterior se conservará para auditoría." : "Adjunta la factura final para cerrar esta solicitud aprobada."}
+          {replacing
+            ? "Adjunta la factura correcta. La anterior se conservará para auditoría."
+            : closingActiveVote
+              ? activeVoteClosureMessage
+              : "Adjunta la factura final para cerrar esta solicitud aprobada."}
         </span>
       </div>
       <label>
@@ -869,7 +879,7 @@ function ClosurePanel({ expense, onDone, onCancel }) {
           Cancelar
         </button>
         <button className="primary" disabled={saving}>
-          {saving ? "Guardando..." : replacing ? "Reemplazar factura" : "Cerrar solicitud"}
+          {saving ? "Guardando..." : replacing ? "Reemplazar factura" : closingActiveVote ? "Agregar factura y cerrar flujo" : "Cerrar solicitud"}
         </button>
       </div>
     </form>
@@ -884,7 +894,7 @@ const flowMetrics = (approvals = []) => {
 };
 const expenseFlowMetrics = (expense) => {
   if (expense.request_type !== "MULTI_QUOTE") return flowMetrics(expense.approvals);
-  const answered = expense.quotation_votes?.length || 0;
+  const answered = Number(expense.quotation_vote_count ?? expense.quotation_votes?.length) || 0;
   const total = Math.max(Number(expense.quotation_voter_count) || 0, answered);
   return {
     answered,
@@ -893,6 +903,32 @@ const expenseFlowMetrics = (expense) => {
     percentage: total ? Math.round(answered * 100 / total) : 0,
   };
 };
+const approvalModeLabel = (mode) => ({
+  ANY: "una aprobación",
+  MAJORITY: "mayoría absoluta",
+  ALL: "voto de todos",
+})[mode] || descriptor(mode);
+
+function QuotationPolicyStatus({ expense }) {
+  if (expense.request_type !== "MULTI_QUOTE") return null;
+  const votes = Number(expense.quotation_vote_count ?? expense.quotation_votes?.length) || 0;
+  const participants = Math.max(Number(expense.quotation_voter_count) || 0, votes);
+  const minimum = expense.minimum_votes_required == null
+    ? null
+    : Number(expense.minimum_votes_required);
+  const hasPolicy = expense.approval_policy_id != null;
+  return <div className={`quotation-policy-status ${expense.quotation_quorum_reached ? "reached" : ""}`}>
+    <strong>{hasPolicy ? `Regla aplicada · ${approvalModeLabel(expense.approval_policy_mode)}` : "Sin regla aplicable"}</strong>
+    {expense.policy_evaluation_amount != null && (
+      <span>Monto evaluado: mayor cotización · ${Number(expense.policy_evaluation_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+    )}
+    {hasPolicy && minimum !== null ? (
+      <span>{votes} de {participants} voto(s) · mínimo para cerrar: {minimum}{expense.quotation_quorum_reached ? " · umbral alcanzado" : ""}</span>
+    ) : (
+      <span>Todos los votantes deben responder antes de agregar la factura y cerrar.</span>
+    )}
+  </div>;
+}
 const APP_TIME_ZONE = import.meta.env.VITE_TIME_ZONE || "America/Panama";
 const approvalTimestamp = (value) => value ? new Date(value).toLocaleString("es-PA", {
   dateStyle: "medium",
@@ -931,14 +967,20 @@ function FlowProgressViewer({ expense, currentUserEmail, canApprove, onChangeVot
   const currentVote = multiQuote ? expense.quotation_votes.find((vote) => vote.voter_email?.toLowerCase() === currentUserEmail?.toLowerCase()) : null;
   const voteCounts = multiQuote ? expense.quotation_options.map((option) => expense.quotation_votes.filter((vote) => vote.quotation_option_id === option.id).length) : [];
   const highestVoteCount = voteCounts.length ? Math.max(...voteCounts) : 0;
-  const tied = multiQuote && metrics.pending === 0 && voteCounts.filter((count) => count === highestVoteCount).length > 1;
+  const leadingOptionCount = highestVoteCount > 0
+    ? voteCounts.filter((count) => count === highestVoteCount).length
+    : 0;
+  const tied = multiQuote && leadingOptionCount > 1;
+  const hasProvisionalWinner = multiQuote && leadingOptionCount === 1;
+  const canVote = expense.can_vote === true;
   return <div className="confirm-overlay" role="presentation" onMouseDown={onClose}>
     <section className="confirm-dialog flow-progress-dialog" role="dialog" aria-modal="true" aria-labelledby="flow-progress-title" onMouseDown={(event) => event.stopPropagation()}>
       <div className="card-heading"><div><p className="eyebrow">AVANCE DEL FLUJO</p><h2 id="flow-progress-title">{expense.display_id}</h2><span className="muted">{expense.title}</span></div><button className="secondary" onClick={onClose}>Cerrar</button></div>
       <div className="flow-summary"><strong>{metrics.percentage}% respondido</strong><span>{metrics.answered} respuesta(s) · {metrics.pending} pendiente(s) · {metrics.total} participante(s)</span><div className="flow-progress-track"><span style={{width:`${metrics.percentage}%`}} /></div></div>
+      <QuotationPolicyStatus expense={expense} />
       {tied && <div className="notice error">La votación está empatada y no permite registrar la factura. Los aprobadores pueden cambiar su voto.</div>}
-      {multiQuote && !tied && expense.selected_quotation_id && <div className="notice success">Existe un ganador provisional. La votación se cerrará al registrar la factura.</div>}
-      {multiQuote && canApprove && currentVote && expense.status === "QUOTATION_VOTING" && <button className="primary" onClick={onChangeVote}>Cambiar mi voto</button>}
+      {hasProvisionalWinner && <div className="notice success">Existe un ganador provisional. La votación se cerrará al registrar la factura.</div>}
+      {canVote && currentVote && expense.status === "QUOTATION_VOTING" && <button className="primary" onClick={onChangeVote}>Cambiar mi voto</button>}
       <div className="flow-response-list">{multiQuote ? expense.quotation_votes.map((vote) => { const option = expense.quotation_options.find((item) => item.id === vote.quotation_option_id); return <article key={`${vote.voter_email}-${vote.quotation_option_id}`} className="flow-response-card">
         <div><strong>{vote.voter_name || vote.voter_email}</strong><span>{titleName(vote.voter_role)}</span></div>
         <StatusBadge status="APPROVED"/>
@@ -955,6 +997,7 @@ function FlowProgressViewer({ expense, currentUserEmail, canApprove, onChangeVot
 }
 
 function ExpenseDetailViewer({ expense, categoryName, subcategoryName, canApprove, currentUserEmail, onVoted, onClose }) {
+  const canVote = expense.can_vote === true;
   const hasCurrentVote = expense.quotation_votes?.some((item) => item.voter_email?.toLowerCase() === currentUserEmail?.toLowerCase());
   const vote = async (optionId) => {
     await api(`/api/expenses/${expense.internal_request_id || expense.request_id}/quotation-vote`, { method: "POST", body: JSON.stringify({ quotation_option_id: optionId }) });
@@ -974,7 +1017,8 @@ function ExpenseDetailViewer({ expense, categoryName, subcategoryName, canApprov
         <div><dt>Inicio</dt><dd>{approvalTimestamp(expense.created_at)}</dd></div>
         <div><dt>Última actualización</dt><dd>{flowEventName(expense.last_event_type)}<span className="subtext">{approvalTimestamp(expense.last_event_at)}</span></dd></div>
       </dl>
-      {expense.request_type === "MULTI_QUOTE" && <div className="quotation-audit-list"><h3>Cotizaciones presentadas</h3>{expense.quotation_options.map((option) => { const count = expense.quotation_votes.filter((item) => item.quotation_option_id === option.id).length; const isCurrentVote = expense.quotation_votes.some((item) => item.quotation_option_id === option.id && item.voter_email?.toLowerCase() === currentUserEmail?.toLowerCase()); return <article className={`quote-option-card ${expense.selected_quotation_id === option.id ? "selected" : ""}`} key={option.id}><div><strong>Opción {option.option_number}: {option.supplier}</strong><span className="subtext">${Number(option.amount).toLocaleString(undefined,{minimumFractionDigits:2})} · {count} voto(s)</span>{isCurrentVote && <span className="subtext">Tu voto actual</span>}{option.notes && <span className="subtext">{option.notes}</span>}</div>{option.item_url && <a href={option.item_url} target="_blank" rel="noreferrer">Ver cotización</a>}{canApprove && expense.status === "QUOTATION_VOTING" && <button className="primary" disabled={isCurrentVote} onClick={() => vote(option.id)}>{isCurrentVote ? "Voto actual" : hasCurrentVote ? "Cambiar voto a esta opción" : "Votar por esta opción"}</button>}</article> })}</div>}
+      <QuotationPolicyStatus expense={expense} />
+      {expense.request_type === "MULTI_QUOTE" && <div className="quotation-audit-list"><h3>Cotizaciones presentadas</h3>{expense.quotation_options.map((option) => { const count = expense.quotation_votes.filter((item) => item.quotation_option_id === option.id).length; const isCurrentVote = expense.quotation_votes.some((item) => item.quotation_option_id === option.id && item.voter_email?.toLowerCase() === currentUserEmail?.toLowerCase()); return <article className={`quote-option-card ${expense.selected_quotation_id === option.id ? "selected" : ""}`} key={option.id}><div><strong>Opción {option.option_number}: {option.supplier}</strong><span className="subtext">${Number(option.amount).toLocaleString(undefined,{minimumFractionDigits:2})} · {count} voto(s)</span>{isCurrentVote && <span className="subtext">Tu voto actual</span>}{option.notes && <span className="subtext">{option.notes}</span>}</div>{option.item_url && <a href={option.item_url} target="_blank" rel="noreferrer">Ver cotización</a>}{canVote && expense.status === "QUOTATION_VOTING" && <button className="primary" disabled={isCurrentVote} onClick={() => vote(option.id)}>{isCurrentVote ? "Voto actual" : hasCurrentVote ? "Cambiar voto a esta opción" : "Votar por esta opción"}</button>}</article> })}</div>}
       <div className="description-box"><strong>Descripción / justificación</strong><p>{expense.description}</p></div>
       <div className="expense-detail-references"><span><strong>ID:</strong> {expense.display_id}</span><span><strong>Flujo:</strong> {expense.flow_id}</span></div>
     </section>
@@ -1228,6 +1272,12 @@ function ExpenseTable({
                           <span className="subtext">{a.original_name}</span>
                         </button>
                       ))
+                    ) : x.status === "QUOTATION_VOTING" && x.can_close ? (
+                      <span className="closure-ready">{x.approval_policy_id != null ? "Umbral alcanzado" : "Todos votaron"} · lista para agregar factura</span>
+                    ) : x.status === "QUOTATION_VOTING" && x.approval_policy_id != null ? (
+                      <span className="muted">{Number(x.quotation_vote_count) || 0} de {Number(x.minimum_votes_required) || 0} voto(s) mínimos</span>
+                    ) : x.status === "QUOTATION_VOTING" ? (
+                      <span className="muted">Disponible cuando todos voten y exista un ganador único</span>
                     ) : <span className="muted">Disponible al cerrar</span>}
                     {x.status === "CLOSED" && !x.attachments.some((a) => a.document_type === "INVOICE") && <span className="muted">Sin factura registrada</span>}
                   </td>
@@ -1285,7 +1335,9 @@ function ExpenseTable({
                             className="primary nowrap"
                             onClick={() => setClosing(x)}
                           >
-                            Registrar factura y cerrar
+                            {x.status === "QUOTATION_VOTING"
+                              ? "Agregar factura y cerrar flujo"
+                              : "Registrar factura y cerrar"}
                           </button>
                         )}
                       </div>
@@ -2914,20 +2966,25 @@ function RuleSettings({ categoryOptions }) {
     min_amount: "0",
     max_amount: "",
     approval_mode: "MAJORITY",
-    approver_profile_codes: ["PRESIDENTE", "VICEPRESIDENTE", "TESORERO", "VOCERO"],
+    approver_profile_codes: [],
+    approver_role_ids: [],
+    approver_group_ids: [],
     active: true,
   };
   const [items, setItems] = useState([]),
-    [profiles, setProfiles] = useState([]),
+    [targets, setTargets] = useState({ roles: [], groups: [] }),
     [form, setForm] = useState(blank),
     [editing, setEditing] = useState(null),
     [message, setMessage] = useState(null),
     [saving, setSaving] = useState(false);
   const load = () =>
-    Promise.all([api("/api/rules/policies"), api("/api/users/profiles")])
-      .then(([rules, p]) => {
+    Promise.all([api("/api/rules/policies"), api("/api/rules/approver-targets")])
+      .then(([rules, approvalTargets]) => {
         setItems(rules);
-        setProfiles(p.filter((x) => x.active && x.can_approve));
+        setTargets({
+          roles: approvalTargets?.roles || [],
+          groups: approvalTargets?.groups || [],
+        });
       })
       .catch((e) => setMessage({ type: "error", text: e.message }));
   useEffect(load, []);
@@ -2937,25 +2994,62 @@ function RuleSettings({ categoryOptions }) {
       ...item,
       min_amount: String(item.min_amount),
       max_amount: item.max_amount === null ? "" : String(item.max_amount),
+      approval_mode: item.approval_mode || "MAJORITY",
+      approver_profile_codes: item.approver_profile_codes || [],
+      approver_role_ids: (item.approver_role_ids || []).map(Number),
+      approver_group_ids: (item.approver_group_ids || []).map(Number),
     });
     setMessage(null);
   };
-  const toggleProfile = (code) =>
+  const toggleTarget = (field, id) => {
+    const selected = form[field] || [];
     setForm({
       ...form,
-      approver_profile_codes: form.approver_profile_codes.includes(code)
-        ? form.approver_profile_codes.filter((x) => x !== code)
-        : [...form.approver_profile_codes, code],
+      [field]: selected.includes(id)
+        ? selected.filter((value) => value !== id)
+        : [...selected, id],
     });
+  };
+  const minAmount = Number(form.min_amount);
+  const maxAmount = form.max_amount === "" ? null : Number(form.max_amount);
+  const invalidRange = String(form.min_amount).trim() === ""
+    || !Number.isFinite(minAmount)
+    || minAmount < 0
+    || (maxAmount !== null && (!Number.isFinite(maxAmount) || maxAmount <= minAmount));
+  const overlappingRule = !invalidRange && form.active
+    ? items.find((item) => {
+      if (!item.active || item.id === editing || item.expense_type !== form.expense_type) return false;
+      const otherMin = Number(item.min_amount);
+      const otherMax = item.max_amount === null ? null : Number(item.max_amount);
+      return (maxAmount === null || maxAmount > otherMin)
+        && (otherMax === null || otherMax > minAmount);
+    })
+    : null;
+  const hasApprovalTargets = form.approver_role_ids.length > 0
+    || form.approver_group_ids.length > 0;
+  const requiresApprovalTargets = form.approval_mode !== "NO_APPROVAL";
+  const validationMessage = invalidRange
+    ? "El monto máximo debe ser mayor que el mínimo."
+    : overlappingRule
+      ? `El rango se superpone con “${overlappingRule.name}” en la misma Área.`
+      : requiresApprovalTargets && !hasApprovalTargets
+        ? "Selecciona al menos un Rol o Grupo con permiso efectivo para aprobar."
+        : "";
   const save = async (e) => {
     e.preventDefault();
+    if (validationMessage) {
+      setMessage({ type: "error", text: validationMessage });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
       const payload = {
         ...form,
-        min_amount: Number(form.min_amount),
-        max_amount: form.max_amount === "" ? null : Number(form.max_amount),
+        min_amount: minAmount,
+        max_amount: maxAmount,
+        approver_role_ids: requiresApprovalTargets ? form.approver_role_ids : [],
+        approver_group_ids: requiresApprovalTargets ? form.approver_group_ids : [],
       };
       await api(
         editing ? `/api/rules/policies/${editing}` : "/api/rules/policies",
@@ -2963,7 +3057,7 @@ function RuleSettings({ categoryOptions }) {
       );
       setForm(blank);
       setEditing(null);
-      setMessage({ type: "success", text: "Regla de aprobación guardada." });
+      setMessage({ type: "success", text: "Regla por rango guardada." });
       load();
     } catch (err) {
       setMessage({ type: "error", text: err.message });
@@ -2982,14 +3076,34 @@ function RuleSettings({ categoryOptions }) {
   };
   const categoryName = (code) =>
     code === "ALL"
-      ? "Todas las categorías"
+      ? "Todas las áreas (respaldo)"
       : categoryOptions.find((x) => x[0] === code)?.[1] || code;
+  const approvalModeName = (mode) => ({
+    NO_APPROVAL: "No requiere aprobación",
+    ANY: "Una aprobación (mínimo 1)",
+    MAJORITY: "Mayoría absoluta (más del 50 %)",
+    ALL: "Aprobación unánime (todos)",
+  })[mode] || mode;
+  const targetNames = (rule) => rule.approval_mode === "NO_APPROVAL"
+    ? ["No aplica"]
+    : [
+      ...(rule.approver_group_ids || []).map((id) => {
+        const group = targets.groups.find((item) => item.id === Number(id));
+        return group ? `Grupo: ${group.name}` : `Grupo #${id}`;
+      }),
+      ...(rule.approver_role_ids || []).map((id) => {
+        const role = targets.roles.find((item) => item.id === Number(id));
+        return role ? `Rol: ${role.name}` : `Rol #${id}`;
+      }),
+    ];
   const ruleBaseline = editing ? items.find((item) => item.id === editing) : blank;
   const normalizedRule = (value) => JSON.stringify({
     name: value?.name || "", expense_type: value?.expense_type || "ALL",
     min_amount: String(value?.min_amount ?? "0"), max_amount: value?.max_amount == null ? "" : String(value.max_amount),
-    approval_mode: "MAJORITY",
+    approval_mode: value?.approval_mode || "MAJORITY",
     approver_profile_codes: [...(value?.approver_profile_codes || [])].sort(), active: value?.active ?? true,
+    approver_role_ids: [...(value?.approver_role_ids || [])].map(Number).sort((a, b) => a - b),
+    approver_group_ids: [...(value?.approver_group_ids || [])].map(Number).sort((a, b) => a - b),
   });
   const ruleHasPendingChanges = normalizedRule(form) !== normalizedRule(ruleBaseline);
   return (
@@ -3001,8 +3115,9 @@ function RuleSettings({ categoryOptions }) {
             <p className="eyebrow">FLUJOS DE APROBACIÓN</p>
             <h2>{editing ? "Editar regla" : "Nueva regla por rango"}</h2>
             <p className="muted">
-              Define el rango, los cargos participantes y si basta una
-              aprobación o deben aprobar todos. Los límites son inclusivos.
+              Define rangos por Área sin solapamiento. En solicitudes múltiples
+              se evalúa el mayor monto cotizado. El mínimo es excluyente y el
+              máximo inclusivo.
             </p>
           </div>
         </div>
@@ -3017,14 +3132,14 @@ function RuleSettings({ categoryOptions }) {
             />
           </label>
           <label>
-            Categoría
+            Área
             <select
               value={form.expense_type}
               onChange={(e) =>
                 setForm({ ...form, expense_type: e.target.value })
               }
             >
-              <option value="ALL">Todas las categorías</option>
+              <option value="ALL">Todas las áreas (regla de respaldo)</option>
               {categoryOptions.map(([v, n]) => (
                 <option key={v} value={v}>
                   {n}
@@ -3055,24 +3170,79 @@ function RuleSettings({ categoryOptions }) {
             />
           </label>
           <label className="full">
-            Tipo de aprobación
-            <select value="MAJORITY" disabled>
+            Modalidad de la regla
+            <select
+              value={form.approval_mode}
+              onChange={(e) => {
+                const approvalMode = e.target.value;
+                setForm({
+                  ...form,
+                  approval_mode: approvalMode,
+                  ...(approvalMode === "NO_APPROVAL"
+                    ? { approver_role_ids: [], approver_group_ids: [] }
+                    : {}),
+                });
+              }}
+            >
+              <option value="NO_APPROVAL">No requiere aprobación — registro directo con factura</option>
+              <option value="ANY">Una aprobación — mínimo 1 voto</option>
               <option value="MAJORITY">Mayoría absoluta — más del 50 %</option>
+              <option value="ALL">Aprobación unánime — todos los votantes</option>
             </select>
+            <span className="field-help">
+              {requiresApprovalTargets
+                ? "El mínimo se calcula al abrir la ronda. Por ejemplo, la mayoría de 15 votantes es 8."
+                : "Los gastos dentro de esta banda se registran con proveedor, ítem, monto y factura, sin crear una solicitud."}
+            </span>
           </label>
-          <fieldset className="full rule-profiles">
-            <legend>Cargos aprobadores</legend>
-            {profiles.map((p) => (
-              <label key={p.code}>
-                <input
-                  type="checkbox"
-                  checked={form.approver_profile_codes.includes(p.code)}
-                  onChange={() => toggleProfile(p.code)}
-                />
-                <span>{p.name}</span>
-              </label>
-            ))}
-          </fieldset>
+          {requiresApprovalTargets ? (
+            <fieldset className="full rule-profiles">
+              <legend>Roles o Grupos aprobadores</legend>
+              <div className="rule-target-section">
+                <strong>Grupos</strong>
+                {!targets.groups.length && <span className="muted">No hay Grupos elegibles.</span>}
+                {targets.groups.map((group) => (
+                  <label key={`group-${group.id}`}>
+                    <input
+                      type="checkbox"
+                      checked={form.approver_group_ids.includes(group.id)}
+                      onChange={() => toggleTarget("approver_group_ids", group.id)}
+                    />
+                    <span>
+                      <strong>{group.name}</strong>
+                      <small>{group.role_count} Rol(es) relacionado(s)</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <div className="rule-target-section">
+                <strong>Roles</strong>
+                {!targets.roles.length && <span className="muted">No hay Roles elegibles.</span>}
+                {targets.roles.map((role) => (
+                  <label key={`role-${role.id}`}>
+                    <input
+                      type="checkbox"
+                      checked={form.approver_role_ids.includes(role.id)}
+                      onChange={() => toggleTarget("approver_role_ids", role.id)}
+                    />
+                    <span>
+                      <strong>{role.name}</strong>
+                      <small>{role.group_name ? `Grupo: ${role.group_name}` : "Rol global"}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="rule-target-help">
+                Solo se ofrecen Roles y Grupos activos con <code>requests:approve</code> efectivo.
+                Al elegir un Grupo participan los Usuarios de todos sus Roles relacionados; cada Usuario se cuenta una sola vez.
+              </p>
+            </fieldset>
+          ) : (
+            <div className="full no-approval-rule-note">
+              <strong>Esta banda no crea un flujo de aprobación.</strong>
+              <span>No se seleccionan Roles ni Grupos. El solicitante debe registrar la factura desde “Registro directo”.</span>
+            </div>
+          )}
           <label className="active-check">
             <input
               type="checkbox"
@@ -3084,6 +3254,9 @@ function RuleSettings({ categoryOptions }) {
           <div className="full form-actions">
             {message && (
               <div className={`notice ${message.type}`}>{message.text}</div>
+            )}
+            {!message && validationMessage && (
+              <div className="notice error">{validationMessage}</div>
             )}
             {editing && (
               <button
@@ -3099,7 +3272,7 @@ function RuleSettings({ categoryOptions }) {
             )}
             <button
               className="primary"
-              disabled={saving || !form.approver_profile_codes.length}
+              disabled={saving || Boolean(validationMessage)}
             >
               {saving ? "Guardando..." : "Guardar regla"}
             </button>
@@ -3110,8 +3283,9 @@ function RuleSettings({ categoryOptions }) {
         <h2>Reglas configuradas</h2>
         {!items.length ? (
           <p className="muted">
-            Aún no hay reglas nuevas. Mientras tanto se mantienen los flujos
-            existentes.
+            Aún no hay reglas. En solicitudes múltiples sin una regla aplicable
+            participan todos los Usuarios elegibles, se esperan todos sus votos
+            y no hay cierre anticipado.
           </p>
         ) : (
           <div className="table-wrap rules-table-wrap">
@@ -3119,10 +3293,10 @@ function RuleSettings({ categoryOptions }) {
               <thead>
                 <tr>
                   <th>Regla</th>
-                  <th>Categoría</th>
+                  <th>Área</th>
                   <th>Rango</th>
-                  <th>Aprobación</th>
-                  <th>Cargos</th>
+                  <th>Modalidad</th>
+                  <th>Audiencia</th>
                   <th>Estado</th>
                   <th>Acción</th>
                 </tr>
@@ -3135,20 +3309,16 @@ function RuleSettings({ categoryOptions }) {
                     </td>
                     <td>{categoryName(x.expense_type)}</td>
                     <td>
-                      ${Number(x.min_amount).toFixed(2)} –{" "}
+                      (${Number(x.min_amount).toFixed(2)}, {" "}
                       {x.max_amount === null
-                        ? "Sin límite"
-                        : `$${Number(x.max_amount).toFixed(2)}`}
+                        ? "Sin límite)"
+                        : `$${Number(x.max_amount).toFixed(2)}]`}
                     </td>
                     <td>
-                      Mayoría absoluta (&gt; 50 %)
+                      {approvalModeName(x.approval_mode)}
                     </td>
                     <td>
-                      {x.approver_profile_codes
-                        .map(
-                          (c) => profiles.find((p) => p.code === c)?.name || c,
-                        )
-                        .join(", ")}
+                      {targetNames(x).join(", ") || "Sin alcance IAM configurado"}
                     </td>
                     <td>{x.active ? "Activa" : "Inactiva"}</td>
                     <td>
@@ -3218,9 +3388,22 @@ function App() {
     [loading, setLoading] = useState(true),
     [tab, setTab] = useState("home"),
     [configOpen, setConfigOpen] = useState(false),
+    [directExpenseSuggested, setDirectExpenseSuggested] = useState(false),
     [refresh, setRefresh] = useState(0),
     [revision, setRevision] = useState(null),
     [catalog, setCatalog] = useState([]);
+  useEffect(() => {
+    if (!directExpenseSuggested) return undefined;
+    const revealDirectExpenseButton = () => {
+      if (!window.matchMedia("(max-width: 720px)").matches) return;
+      document
+        .querySelector('.header-actions button[data-attention="true"]')
+        ?.scrollIntoView({ block: "nearest", inline: "center" });
+    };
+    revealDirectExpenseButton();
+    window.addEventListener("resize", revealDirectExpenseButton);
+    return () => window.removeEventListener("resize", revealDirectExpenseButton);
+  }, [directExpenseSuggested]);
   useEffect(() => {
     if (passwordResetRoute) {
       setLoading(false);
@@ -3243,22 +3426,36 @@ function App() {
   }, [user, refresh]);
   useEffect(() => {
     if (!user) return undefined;
-    let lastHumanActivity = Date.now();
     let lastSync = 0;
     let syncing = false;
+    let active = true;
+    let idleDeadline;
 
     const expireSession = () => {
+      if (!active) return;
+      active = false;
+      idleDeadline?.stop();
       localStorage.removeItem("access_token");
+      window.history.replaceState(
+        null,
+        document.title,
+        `${window.location.pathname}${window.location.search}`,
+      );
+      setDirectExpenseSuggested(false);
       setUser(null);
     };
-    const registerActivity = () => {
+    idleDeadline = createSessionIdleDeadline({ onExpire: expireSession });
+    const registerActivity = (event) => {
+      if (!active || event?.isTrusted === false) return;
+      if (!idleDeadline.recordActivity()) return;
       const now = Date.now();
-      lastHumanActivity = now;
       if (syncing || now - lastSync < ACTIVITY_SYNC_MS) return;
       syncing = true;
       lastSync = now;
-      api("/api/auth/activity", { method: "POST" })
-        .then((result) => localStorage.setItem("access_token", result.access_token))
+      api("/api/auth/activity", { method: "POST", appMutationOverlay: false })
+        .then((result) => {
+          if (active) localStorage.setItem("access_token", result.access_token);
+        })
         .catch((error) => {
           if (error.status === 401) expireSession();
         })
@@ -3272,14 +3469,12 @@ function App() {
     const events = ["pointerdown", "keydown", "touchstart", "scroll"];
     events.forEach((event) => window.addEventListener(event, registerActivity, { passive: true }));
     document.addEventListener("visibilitychange", onVisibility);
-    const timer = window.setInterval(() => {
-      if (Date.now() - lastHumanActivity >= SESSION_IDLE_MS) expireSession();
-    }, 15000);
 
     return () => {
+      active = false;
+      idleDeadline.stop();
       events.forEach((event) => window.removeEventListener(event, registerActivity));
       document.removeEventListener("visibilitychange", onVisibility);
-      window.clearInterval(timer);
     };
   }, [user]);
   useEffect(() => {
@@ -3303,6 +3498,7 @@ function App() {
   const logout = () => {
     if (!confirmDiscardChanges()) return;
     localStorage.removeItem("access_token");
+    setDirectExpenseSuggested(false);
     setUser(null);
   };
   const headerRoleLabel = user.role_names?.length
@@ -3314,6 +3510,7 @@ function App() {
     if (nextTab === tab || !confirmDiscardChanges()) return;
     setTab(nextTab);
     setConfigOpen(false);
+    setDirectExpenseSuggested(false);
   };
   const startRevision = (item) => {
     setRevision(item);
@@ -3347,6 +3544,7 @@ function App() {
   const titles = {
     home: "Inicio",
     expenses: "Solicitudes de gasto del PH",
+    "direct-expenses": "Registro directo de gastos",
     invoices: "Consulta de facturas",
     people: "Configuración · Usuarios con acceso",
     organization: "Configuración · Organigrama",
@@ -3369,6 +3567,16 @@ function App() {
         <div className="header-actions">
           <button aria-current={tab === "home" ? "page" : undefined} onClick={() => navigateTo("home")}>Inicio</button>
           <button aria-current={tab === "expenses" ? "page" : undefined} onClick={() => navigateTo("expenses")}>Solicitudes</button>
+          {canCreate && (
+            <button
+              aria-current={tab === "direct-expenses" ? "page" : undefined}
+              aria-describedby={directExpenseSuggested ? "direct-expense-guidance" : undefined}
+              data-attention={directExpenseSuggested ? "true" : undefined}
+              onClick={() => navigateTo("direct-expenses")}
+            >
+              Registro directo
+            </button>
+          )}
           {canView && (
             <button aria-current={tab === "invoices" ? "page" : undefined} onClick={() => navigateTo("invoices")}>Facturas</button>
           )}
@@ -3401,6 +3609,12 @@ function App() {
         </section>
         {tab === "home" ? (
           <HomeDashboard refreshKey={refresh} onOpenRequests={() => navigateTo("expenses")} />
+        ) : tab === "direct-expenses" && canCreate ? (
+          <DirectExpenseForm
+            api={api}
+            categoryOptions={categoryOptions}
+            onCreated={() => setRefresh((x) => x + 1)}
+          />
         ) : tab === "invoices" && canView ? (
           <Invoices categoryOptions={categoryOptions} />
         ) : ["people", "organization"].includes(tab) && canManagePeople && (tab !== "organization" || canAccessOrganization) ? (
@@ -3416,6 +3630,7 @@ function App() {
             {canCreate && (
               <ExpenseForm
                 onCreated={created}
+                onDirectExpenseSuggestionChange={setDirectExpenseSuggested}
                 draft={revision}
                 onCancelEdit={() => setRevision(null)}
                 categoryOptions={categoryOptions}

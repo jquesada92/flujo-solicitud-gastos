@@ -2,18 +2,27 @@
 
 ## Contrato
 
-Una solicitud `MULTI_QUOTE` entra en `QUOTATION_VOTING` y conserva al menos dos opciones. Cada opción requiere proveedor, monto y soporte mediante URL o archivo válido.
+Una solicitud `MULTI_QUOTE` entra en `QUOTATION_VOTING` y conserva al menos dos
+opciones. Cada opción requiere proveedor, monto y soporte mediante URL o archivo
+válido. FastAPI evalúa la regla usando el monto máximo de todas las opciones.
 
 La población votante se congela al abrir cada ronda:
 
 ```text
 Usuario activo
 + permiso efectivo requests:approve
+- target de Rol/Grupo de la regla, cuando existe
 - solicitante original
 → QuotationVotingInvitation
 ```
 
-Cargo, nombres organizacionales y permisos directos no participan en la selección.
+Una regla del Área precede a `ALL`. Seleccionar un Grupo expande Usuarios
+asignados a cualquiera de sus Roles activos y las coincidencias se deduplican.
+Cargo, `GroupMember`, nombres organizacionales, perfiles legacy y permisos
+directos no participan. Sin regla aplicable se invita a toda la población IAM.
+
+Regla, modalidad, monto máximo evaluado y quórum se congelan por ronda. Sobre
+`N` invitados, `ANY=1`, `MAJORITY=floor(N/2)+1` y `ALL=N`.
 
 ## Voto
 
@@ -29,20 +38,32 @@ Cada usuario mantiene un voto activo por solicitud. Cambiar de opción actualiza
 
 ## Resolución
 
-La ronda espera el voto de todas las invitaciones congeladas. Cuando todos han votado:
+Con una regla aplicable, alcanzar el quórum no cambia el estado: la ronda sigue
+en `QUOTATION_VOTING`. Si además existe un líder único, solo el Solicitante
+original obtiene cierre anticipado y puede cargar la factura. Los invitados que
+faltan pueden votar y cualquiera puede cambiar su voto mientras no exista
+factura y el estado siga abierto; cada cambio recalcula líder y capacidad de
+cierre. Un empate nunca habilita el cierre.
 
-- un ganador único selecciona una cotización **provisional**, pero conserva la solicitud en `QUOTATION_VOTING`;
-- un empate mantiene la ronda abierta, elimina cualquier selección provisional y bloquea la carga de factura;
-- cada invitado puede cambiar su voto y el resultado se recalcula sin crear un segundo voto activo;
-- una opción ajena se rechaza con 422;
-- un usuario fuera de la población recibe 403;
-- votar cuando la ronda ya cerró recibe 409.
+Sin regla aplicable se requieren los votos de los `N` invitados y un líder único.
+Cumplirlos tampoco cambia el estado: la ronda permanece en
+`QUOTATION_VOTING`. Como ya no es un cierre anticipado, pueden registrar la
+factura el Solicitante original, `system_accounts` o un delegado activo de esa
+solicitud. Si falta un voto o hay empate, el cierre responde `409` sin persistir
+factura ni fijar `selected_quotation_id`.
 
-La ronda no termina al completar los votos. El ganador sigue siendo provisional
-porque un invitado puede cambiar su decisión. La carga de factura es el evento de
-finalización: FastAPI bloquea la solicitud, vuelve a contar los votos y solo si
-todos votaron y existe un ganador único persiste la factura y pasa directamente
-a `CLOSED`. Ante empate o voto pendiente responde 409 y no crea el adjunto.
+En ambos caminos:
+
+- un líder único representa una selección provisional, nunca una aprobación;
+- un empate elimina la selección provisional y bloquea la factura;
+- cada invitado conserva **Votar o cambiar voto** y el resultado se recalcula sin
+  crear un segundo voto activo;
+- una opción ajena se rechaza con `422`;
+- un Usuario fuera de la población recibe `403`;
+- la carga de factura bloquea la solicitud y vuelve a calcular población, quórum
+  y líder antes de persistir;
+- cierre, ganador y factura son una unidad que pasa directamente a `CLOSED`;
+- votar después del cierre recibe `409`.
 
 ## Inicio y Seguimiento
 
@@ -56,13 +77,17 @@ voto muestra el máximo de las cotizaciones, durante la votación muestra el mon
 del líder único y, si hay empate, vuelve a mostrar el máximo presentado. Este
 valor no selecciona proveedor ni sustituye el monto financiero de cierre.
 
-El solicitante original, la cuenta técnica o el delegado activo pueden registrar
-la factura conforme a la autoridad de cierre por recurso. El botón solo se
-ofrece cuando hay ganador provisional; el backend siempre revalida el resultado.
+Con política, el botón de cierre anticipado solo se ofrece al Solicitante cuando
+hay quórum y líder único. Sin política, se ofrece a las relaciones ordinarias de
+cierre únicamente después de todos los votos y con líder único. El backend
+siempre revalida el resultado.
 
 ## Corrección
 
-Corregir una solicitud múltiple conserva el tipo, rehidrata opciones y soportes, crea un nuevo `flow_id`, congela una población nueva y no reutiliza votos/invitaciones anteriores como estado activo.
+Corregir una solicitud múltiple conserva el tipo, rehidrata opciones y soportes,
+crea un nuevo `flow_id`, reevalúa el monto máximo y la política y congela nueva
+población/quórum. No reutiliza votos o invitaciones anteriores como estado
+activo.
 
 ## Escenarios locales
 
@@ -76,3 +101,7 @@ Las credenciales y el procedimiento están en [VALIDACION_LOCAL.md](VALIDACION_L
 La migración `20260825_0012_keep_quotation_voting_open` devuelve a
 `QUOTATION_VOTING` las solicitudes múltiples antiguas en `APPROVED` que no tienen
 factura. Solicitudes ya cerradas o con factura no se modifican.
+
+Esa revisión y la rama `20260827_0012_scoped_approval_policies →
+20260828_0013_direct_expenses` permanecen inmutables. La revisión
+`20260828_0014_merge_main_layout_heads` une ambas ramas y deja un solo head.

@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
@@ -19,7 +20,16 @@ from sqlalchemy.pool import StaticPool
 from app.application import create_app
 from app.core.database import Base, get_db
 from app.core.security import create_token, hash_password
-from app.models.entities import Approval, Expense, ExpenseArea, ExpenseAttachment, ExpenseSubcategory, User, UserRole
+from app.models.entities import (
+    Approval,
+    Expense,
+    ExpenseArea,
+    ExpenseAttachment,
+    ExpenseStatus,
+    ExpenseSubcategory,
+    User,
+    UserRole,
+)
 from app.models.iam import (
     GroupPermission,
     GroupRole,
@@ -185,6 +195,44 @@ class RequestFlowCreationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422, response.text)
         with self.Session() as db:
             self.assertEqual(db.scalar(select(func.count(Expense.id))), 0)
+
+    def test_simple_resubmit_rolls_back_when_no_flow_can_start(self):
+        with self.Session() as db:
+            expense = Expense(
+                request_id='request-to-correct',
+                flow_id='original-flow',
+                display_id='ADM-2026-CORRECT',
+                request_type='SIMPLE',
+                title='Título original',
+                description='Descripción original',
+                expense_area='ADMINISTRATION',
+                expense_category='SERVICES',
+                urgency='NORMAL',
+                amount=Decimal('900.00'),
+                supplier='Proveedor original',
+                item_url='https://example.com/original',
+                requested_by=self.requester.email,
+                status=ExpenseStatus.NEEDS_REVISION,
+            )
+            db.add(expense)
+            db.commit()
+
+        response = self.client.put(
+            '/api/expenses/request-to-correct/resubmit',
+            json=self._payload(),
+            headers=self._auth(),
+        )
+
+        self.assertEqual(response.status_code, 422, response.text)
+        with self.Session() as db:
+            stored = db.scalar(
+                select(Expense).where(Expense.request_id == 'request-to-correct')
+            )
+            self.assertEqual(stored.flow_id, 'original-flow')
+            self.assertEqual(stored.title, 'Título original')
+            self.assertEqual(stored.amount, Decimal('900.00'))
+            self.assertEqual(stored.status, ExpenseStatus.NEEDS_REVISION)
+            self.assertEqual(db.scalar(select(func.count(Approval.id))), 0)
 
     def test_request_with_upload_is_removed_when_no_flow_can_start(self):
         created = self.client.post(

@@ -1,24 +1,87 @@
 # Changelog
 
-## 2.21.0 — 2026-08-26
+## 2.26.0 — 2026-08-31
 
-- las rondas `MULTI_QUOTE` permanecen en `QUOTATION_VOTING` aunque exista un
-  ganador único provisional;
-- los invitados conservan **Votar o cambiar voto** hasta que se registre la
-  factura, manteniendo un voto activo y un evento inmutable por cada cambio;
-- un empate limpia la selección provisional y bloquea la factura con 409 sin
-  persistir adjuntos;
-- el cierre recalcula votos bajo bloqueo y solo una población completa con
-  ganador único pasa directamente a `CLOSED` al subir factura;
-- Alembic `20260825_0012_keep_quotation_voting_open` devuelve a votación las
-  solicitudes múltiples antiguas en `APPROVED` sin factura;
-- Inicio y Seguimiento muestran voto actual, cambio de voto, empate y ganador
-  provisional; se agregan pruebas integrales y guardrails contra regresiones.
-- la tabla operativa de Solicitudes muestra para `MULTI_QUOTE` el máximo sin
-  votos, el monto del líder único o el máximo ante empate, sin alterar el monto
-  financiero canónico.
-- login y `/api/auth/me` exponen los Roles IAM activos asignados y la cabecera
-  muestra sus nombres en lugar de etiquetas legacy de capacidad.
+- cierre automático de sesión al alcanzar 10 minutos sin actividad humana, con
+  limpieza del token y de la ruta privada antes de mostrar Login;
+- validación al volver a una pestaña suspendida para impedir que el throttling
+  del navegador reactive una sesión cuyo plazo ya terminó;
+- FastAPI, Docker local, ejemplos y manifiesto de Render alineados en
+  `SESSION_IDLE_MINUTES=10`, sin permitir configuraciones superiores a 10;
+- regresiones frontend, backend y documentales para mantener sincronizado el
+  límite de inactividad.
+
+## 2.25.0 — 2026-08-28
+
+- reconciliación de `main` con `layout_movil` sin reescribir las migraciones ya
+  publicadas en ninguna rama;
+- todas las rondas `MULTI_QUOTE` permanecen en `QUOTATION_VOTING` hasta la
+  factura: con política, quórum y líder único habilitan cierre anticipado solo al
+  Solicitante; sin política se exigen todos los votos y un líder único antes del
+  cierre ordinario por Solicitante, `system_accounts` o delegado activo;
+- los invitados conservan **Votar o cambiar voto** hasta `CLOSED`, con evento por
+  cada cambio, recálculo transaccional y rechazo `409` ante empate o votos
+  insuficientes;
+- `tracking_amount` muestra máximo sin votos, monto del líder único o máximo ante
+  empate sin alterar `Expense.amount`;
+- login y `/api/auth/me` exponen `role_names` y la cabecera presenta los Roles IAM
+  activos en lugar de etiquetas legacy de capacidad;
+- un intento de crear una Solicitud dentro de una banda `NO_APPROVAL` conserva
+  el borrador, muestra una guía orientada al Usuario y resalta **Registro
+  directo** sin exponer el endpoint ni redirigir automáticamente;
+- `20260828_0014_merge_main_layout_heads` une los heads inmutables
+  `20260825_0012_keep_quotation_voting_open` y
+  `20260828_0013_direct_expenses` en un único head Alembic.
+
+## 2.24.0 — 2026-08-28
+
+- pantalla global **Procesando…** para mutaciones `POST`/`PUT`/`PATCH`/`DELETE`,
+  con aplicación inerte, contador concurrente y liberación garantizada ante
+  éxito o error;
+- exclusión del sync silencioso de actividad para no interrumpir el uso normal;
+- alta de Rol corregida para actualizar la lista y limpiar formulario, selección
+  e ID después del `POST`, evitando que la siguiente captura sobrescriba el Rol;
+- contrato responsive y accesible del overlay desde 320 px, con `safe-area`,
+  foco modal y reducción de movimiento;
+- nueva Spec 023 y regresiones frontend/documentales asociadas.
+
+## 2.23.0 — 2026-08-28
+
+- contrato reconstruible de **Registro directo** sincronizado para teléfonos y
+  tabletas: una columna hasta 720 px, bandas apiladas hasta 440 px, controles
+  táctiles de al menos 44 px y ausencia de overflow o recortes;
+- validación de navegador ampliada a 320, 360, 390, 412, 440, 600, 640, 768, 820
+  y 1024 px;
+- regresión explícita que intenta cerrar un `MULTI_QUOTE` sin regla antes del
+  voto de toda la población y exige rechazo `409` sin factura ni ganador;
+- documentación depurada para no prometer un historial visual que la pantalla
+  de registro directo no implementa.
+
+## 2.22.0 — 2026-08-28
+
+- modalidad `NO_APPROVAL` para bandas sin targets de Rol/Grupo;
+- nueva pantalla **Registro directo → Gasto sin aprobación** con Área,
+  proveedor, ítem, monto y factura, protegida por `requests:create`;
+- `DirectExpense` y tabla `direct_expenses` independientes de `Expense`, sin
+  solicitud, ronda, voto, acción pendiente o estado;
+- validación backend de banda `(min,max]`, precedencia Área/`ALL`, archivo
+  privado y atomicidad entre factura y fila;
+- consulta limitada al autor, con alcance global reservado a `system_accounts`;
+- Spec 022 y migración `20260828_0013_direct_expenses` sobre el head anterior.
+
+## 2.21.0 — 2026-08-27
+
+- reglas activas por Área/`ALL` y bandas `(min,max]` sin overlap dentro del
+  scope, con precedencia del Área concreta;
+- targets persistentes de Roles/Grupos que acotan Usuarios con
+  `requests:approve` efectivo; un Grupo expande sus Roles activos y deduplica;
+- `MULTI_QUOTE` evalúa el máximo de todas sus opciones y congela regla,
+  modalidad, monto y quórum por ronda;
+- `ANY`, `MAJORITY` y `ALL` calculan 1, `floor(N/2)+1` y `N` votos;
+- con regla, quórum y líder único habilitan cierre con factura solo al
+  Solicitante sin impedir votos/cambios restantes hasta `CLOSED`;
+- sin regla, la votación exige a toda la población y no admite cierre anticipado;
+- Spec 021 y migración `20260827_0012_scoped_approval_policies`.
 
 ## 2.20.0 — 2026-08-25
 

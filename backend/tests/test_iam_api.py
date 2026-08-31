@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -225,6 +225,17 @@ class IamApiTests(unittest.TestCase):
         response = self.client.get('/api/auth/me', headers=self.auth(self.user_token))
         self.assertEqual(response.status_code, 200, response.text)
         self.assertFalse(response.json()['is_system_account'])
+
+    def test_me_rejects_session_after_ten_idle_minutes(self):
+        with self.Session() as db:
+            user = db.get(User, self.normal_user_id)
+            user.last_activity_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+            db.commit()
+
+        response = self.client.get('/api/auth/me', headers=self.auth(self.user_token))
+
+        self.assertEqual(response.status_code, 401, response.text)
+        self.assertEqual(response.json()['detail'], 'La sesión expiró por 10 minutos de inactividad')
 
     def test_login_and_me_return_active_assigned_iam_role_names(self):
         with self.Session() as db:

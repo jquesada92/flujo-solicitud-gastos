@@ -82,7 +82,12 @@ Global      → sin Grupo
 Agrupado    → pertenece a un único Grupo
 ```
 
-Al guardar, la UI usa la respuesta actualizada del backend para mantener nombre/estado sincronizados sin una recarga GET obligatoria.
+Al editar o reactivar, la UI usa la respuesta actualizada del backend para
+mantener nombre/estado sincronizados sin una recarga GET obligatoria. Después de
+crear por `POST`, agrega el Rol a la lista y restablece **Crear rol** sin
+selección, recuperación, ID, nombre, descripción, permisos, límite o máximo. Una
+segunda alta vuelve a usar `POST`; un error conserva el borrador y
+edición/reactivación continúan con `PATCH`.
 
 Si el Rol está agrupado, también muestra los Permisos heredados. La semántica es aditiva: `RolePermission ∪ GroupPermission`; la ausencia de un grant propio hereda el del Grupo y no existe `DENY`.
 
@@ -102,15 +107,24 @@ Cargo/Posición es metadato organizacional y no aparece como fuente de autorizac
 
 ## Reglas de aprobación
 
-Las políticas de monto (`ApprovalPolicy`) pueden definir el rango aplicable y la
-modalidad de una ronda `SIMPLE`. Si no existe una política aplicable, la ronda no
-se desactiva: usa `MAJORITY` y mantiene la población IAM.
+Las políticas (`ApprovalPolicy`) se administran por Área concreta o `ALL` y banda
+`(min_amount,max_amount]`. Dos reglas activas del mismo scope no pueden
+superponerse, cualquiera que sea su modalidad; las bandas adyacentes sí son
+válidas. La regla del Área concreta precede a `ALL`.
 
-La pantalla actual todavía solicita perfiles en `approver_profile_codes`. Ese
-campo es metadata legacy y no selecciona, agrega ni autoriza participantes. La
-población se obtiene exclusivamente de Usuarios activos con permiso efectivo
-`requests:approve`, excluyendo al Solicitante. No reconstruir autorización desde
-el nombre de Cargo, Rol, Grupo, perfil, membresía o una regla antigua por correo.
+Para `ANY`, `MAJORITY` y `ALL`, la pantalla selecciona IDs de Roles y/o Grupos
+activos compatibles con `requests:approve`. Esos targets acotan la población,
+pero no conceden el Permiso. Un Grupo incluye Usuarios asignados a cualquiera de
+sus Roles activos; las coincidencias se deduplican y el Solicitante se excluye.
+Cargo, `GroupMember`, nombres y `approver_profile_codes` no seleccionan ni
+autorizan. Este último queda únicamente como metadata física legacy y ya no es
+un control visible.
+
+`NO_APPROVAL` se muestra como **No requiere aprobación**, oculta los targets y
+solo puede guardarse con sus listas de Rol/Grupo vacías. La regla habilita
+**Registro directo**, no una ronda. Sin política aplicable, `SIMPLE` conserva
+`MAJORITY` sobre toda la población IAM y `MULTI_QUOTE` espera a todos; no existe
+fallback de registro directo.
 
 ## Modo lectura
 
@@ -131,12 +145,18 @@ Accesos debe ser utilizable desde **320 px de ancho CSS en adelante** sin desbor
 - el nombre o resumen largo de un Rol se ajusta o trunca dentro de su columna y nunca desplaza fuera de pantalla el estado `Activo`, `Inactivo` o `SISTEMA`;
 - las tarjetas de Permisos reducen sus columnas hasta una sola y sus códigos/descripciones pueden partir línea;
 - formularios, inputs, textareas y botones respetan el ancho de su contenedor.
+- el overlay **Procesando…** cubre el viewport, respeta `safe-area` y queda por
+  encima de Accesos sin permitir interacción con sus controles.
 
 La regresión visual mínima se valida a **1180, 1024, 640, 440, 390 y 320 px**. El criterio de aceptación no es conservar siempre dos columnas, sino mantener legibilidad, acciones alcanzables, estados visibles y ausencia de scroll horizontal accidental.
 
 ## Política de requests
 
-Accesos no hace PATCH por cada checkbox/select. Los GET repetidos están sujetos al gobernador global y no existe polling sub-segundo.
+Accesos no hace PATCH por cada checkbox/select. Los GET repetidos están sujetos
+al gobernador global y no existe polling sub-segundo. Cada
+`POST`/`PUT`/`PATCH`/`DELETE` muestra el Bloqueo global **Procesando…** y vuelve
+`inert` toda la aplicación hasta finalizar la última mutación concurrente. El
+sync de `/api/auth/activity` queda excluido.
 
 ## API relevante
 
@@ -148,6 +168,8 @@ GET/PATCH/POST /api/iam/groups...
 GET/PATCH/POST /api/iam/roles...
 GET            /api/iam/permissions
 GET            /api/iam/me/permissions
+GET            /api/rules/approver-targets
+GET/POST/PUT/DELETE /api/rules/policies...
 ```
 
 `iam_access_policy.py` bloquea rutas legacy que permitirían bypass del modelo.
@@ -170,9 +192,15 @@ GET            /api/iam/me/permissions
 - sin sesión se vuelve a Login;
 - `config:read` no puede mutar;
 - un nombre de Rol actualizado se refleja inmediatamente.
+- crear un Rol actualiza la lista y deja el formulario vacío/sin selección;
+- dos altas consecutivas usan dos `POST` y no sobrescriben el primer Rol;
+- un error conserva el borrador y editar/reactivar conserva `PATCH` e ID;
 - el límite vacío significa ilimitado y cero/negativos se rechazan;
 - un Rol lleno rechaza asignación y reactivación, mientras inactivar libera cupo sin borrar el Rol;
 - el máximo no puede guardarse por debajo de la ocupación activa;
+- reglas activas del mismo scope no se solapan y conservan `(min,max]`;
+- targets de Rol/Grupo solo acotan Usuarios con `requests:approve` efectivo;
+- `NO_APPROVAL` guarda targets vacíos y no abre una Solicitud o ronda;
 - solo `config:manage` puede emitir un enlace para un Usuario activo no técnico;
 - la emisión confirmada es inmediata y no altera cambios staged de IAM;
 - el correo de restablecimiento contiene un enlace de uso único y no una contraseña;

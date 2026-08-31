@@ -202,11 +202,18 @@ class ExpenseOut(BaseModel):
     quotation_options: list[QuotationOptionOut] = Field(default_factory=list)
     quotation_votes: list[QuotationVoteOut] = Field(default_factory=list)
     quotation_voter_count: int = 0
+    quotation_vote_count: int = 0
+    quotation_quorum_reached: bool = False
     selected_quotation_id: int | None = None
+    approval_policy_id: int | None = None
+    approval_policy_mode: str | None = None
+    policy_evaluation_amount: Decimal | None = None
+    minimum_votes_required: int | None = None
     can_cancel: bool = False
     can_correct: bool = False
     can_close: bool = False
     can_delegate_close: bool = False
+    can_vote: bool = False
 
     @property
     def expense_type(self) -> str:

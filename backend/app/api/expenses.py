@@ -34,6 +34,7 @@ from app.models.entities import (
 )
 from app.schemas.expense import AttachmentOut, ExpenseCreate, ExpenseOut, InvoiceOut
 from app.services.approval_engine import expire_open_approvals, start_approval_flow
+from app.services.closure_service import can_manage_closure, is_requester
 from app.services.email_service import send_quotation_vote_request
 from app.services.quotation_service import (
     cast_quotation_vote,
@@ -808,8 +809,19 @@ async def close_expense(
         if expense.status != ExpenseStatus.QUOTATION_VOTING:
             raise HTTPException(status_code=409, detail='La votación de cotizaciones ya no está abierta')
         require_unique_winner_for_closure(db, expense)
+        if expense.approval_policy_id is not None:
+            allowed_to_close = is_requester(expense, user)
+        else:
+            allowed_to_close = can_manage_closure(db, expense, user)
     elif expense.status != ExpenseStatus.APPROVED:
         raise HTTPException(status_code=409, detail='Solo se pueden cerrar solicitudes aprobadas')
+    else:
+        allowed_to_close = can_manage_closure(db, expense, user)
+    if not allowed_to_close:
+        raise HTTPException(
+            status_code=403,
+            detail='No tienes autorización para registrar la factura o cerrar esta solicitud',
+        )
     documents = [('INVOICE', invoice)]
     prepared = []
     for document_type, upload in documents:
@@ -874,6 +886,11 @@ async def replace_invoice(
         raise HTTPException(status_code=404, detail='Solicitud no encontrada')
     if expense.status != ExpenseStatus.CLOSED:
         raise HTTPException(status_code=409, detail='Solo se puede corregir la factura de una solicitud cerrada')
+    if not can_manage_closure(db, expense, user):
+        raise HTTPException(
+            status_code=403,
+            detail='No tienes autorización para registrar o corregir la factura de esta solicitud',
+        )
     previous = db.scalar(select(ExpenseAttachment).where(
         ExpenseAttachment.expense_id == expense.id,
         ExpenseAttachment.document_type == 'INVOICE',

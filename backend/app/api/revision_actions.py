@@ -19,9 +19,20 @@ from app.models.entities import (
     User,
 )
 from app.schemas.expense import ExpenseCreate, ExpenseOut
-from app.services.approval_engine import expire_open_approvals, start_approval_flow
+from app.services.approval_engine import (
+    expire_open_approvals,
+    notify_approval_flow_started,
+    start_approval_flow,
+)
+from app.services.approval_policy_service import (
+    DIRECT_EXPENSE_REQUIRED_DETAIL,
+    find_applicable_policy,
+    is_no_approval_policy,
+    participants_for_policy,
+    snapshot_policy_resolution,
+)
 from app.services.email_service import send_quotation_vote_request
-from app.services.iam_service import is_system_account, users_with_permission
+from app.services.iam_service import is_system_account
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -140,6 +151,10 @@ def _apply_common_fields(expense: Expense, payload: ExpenseCreate) -> None:
     expense.closed_by = None
     expense.closure_notes = None
     expense.flow_id = str(uuid.uuid4())
+    expense.approval_policy_id = None
+    expense.approval_policy_mode = None
+    expense.policy_evaluation_amount = None
+    expense.minimum_votes_required = None
 
 
 def _reset_multi_quote_round(
@@ -178,9 +193,16 @@ def _reset_multi_quote_round(
     expense.selected_quotation_id = None
     expense.status = ExpenseStatus.QUOTATION_VOTING
 
-    voters = users_with_permission(
+    evaluation_amount = max(option.amount for option in payload.quotation_options)
+    try:
+        policy = find_applicable_policy(db, expense.expense_type, evaluation_amount)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if policy is not None and is_no_approval_policy(policy):
+        raise HTTPException(status_code=422, detail=DIRECT_EXPENSE_REQUIRED_DETAIL)
+    voters = participants_for_policy(
         db,
-        'requests:approve',
+        policy,
         exclude_email=expense.requested_by.lower(),
     )
     if not voters:
@@ -188,6 +210,13 @@ def _reset_multi_quote_round(
             status_code=422,
             detail='No existe otro usuario activo con permiso de aprobación para participar en la votación',
         )
+    snapshot_policy_resolution(
+        expense,
+        policy,
+        evaluation_amount,
+        len(voters),
+        default_mode='ALL',
+    )
 
     invitations: list[tuple[User, QuotationVotingInvitation]] = []
     for voter in voters:
@@ -240,6 +269,23 @@ def resubmit_expense(
             status_code=409,
             detail='Una corrección no puede cambiar el tipo original de la solicitud',
         )
+
+    evaluation_amount = (
+        max(option.amount for option in payload.quotation_options)
+        if stored_type == 'MULTI_QUOTE'
+        else payload.amount
+    )
+    try:
+        applicable_policy = find_applicable_policy(
+            db,
+            payload.expense_type,
+            evaluation_amount,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if applicable_policy is not None and is_no_approval_policy(applicable_policy):
+        raise HTTPException(status_code=422, detail=DIRECT_EXPENSE_REQUIRED_DETAIL)
+
     # Repair an inconsistent legacy row even before the Alembic backfill has run.
     expense.request_type = stored_type
 
@@ -257,9 +303,8 @@ def resubmit_expense(
         expense.selected_quotation_id = None
         expense.status = ExpenseStatus.SUBMITTED
 
-    db.commit()
-
     if stored_type == 'MULTI_QUOTE':
+        db.commit()
         refreshed = _present(db, expense.id)
         for voter, invitation in invitations:
             try:
@@ -277,8 +322,13 @@ def resubmit_expense(
     ) is not None
     if expense.item_url or has_existing_support:
         try:
-            start_approval_flow(db, expense)
+            approvals = start_approval_flow(db, expense, commit=False)
         except ValueError as exc:
+            db.rollback()
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        db.commit()
+        notify_approval_flow_started(approvals)
+    else:
+        db.commit()
 
     return _present(db, expense.id)

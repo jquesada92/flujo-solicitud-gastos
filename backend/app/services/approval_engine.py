@@ -4,19 +4,25 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.entities import (
     Approval,
-    ApprovalPolicy,
     ApprovalStatus,
     ApprovalStepEvent,
     Expense,
     ExpenseStatus,
 )
 from app.services.email_service import send_approval_request, send_final_notification
-from app.services.iam_service import users_with_permission
+from app.services.approval_policy_service import (
+    DIRECT_EXPENSE_REQUIRED_DETAIL,
+    find_applicable_policy,
+    is_no_approval_policy,
+    minimum_votes_for_mode,
+    participants_for_policy,
+    snapshot_policy_resolution,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -130,23 +136,23 @@ def start_approval_flow(
     commit: bool = True,
 ) -> list[Approval]:
     amount = Decimal(expense.amount)
-    policies = list(db.scalars(select(ApprovalPolicy).where(
-        ApprovalPolicy.active.is_(True),
-        ApprovalPolicy.expense_type.in_([expense.expense_type, 'ALL']),
-        ApprovalPolicy.min_amount <= amount,
-        or_(ApprovalPolicy.max_amount.is_(None), ApprovalPolicy.max_amount >= amount),
-    ).order_by(ApprovalPolicy.expense_type.desc())).all())
-
-    # Approval participation is permission-driven even when an installation has
-    # no amount policy yet. Policy profile names are legacy metadata and never
-    # authorize or select participants.
-    users = users_with_permission(
+    policy = find_applicable_policy(db, expense.expense_type, amount)
+    if policy is not None and is_no_approval_policy(policy):
+        raise ValueError(DIRECT_EXPENSE_REQUIRED_DETAIL)
+    users = participants_for_policy(
         db,
-        'requests:approve',
+        policy,
         exclude_email=expense.requested_by.lower(),
     )
     if users:
-        approval_mode = policies[0].approval_mode if policies else 'MAJORITY'
+        approval_mode = policy.approval_mode if policy else 'MAJORITY'
+        snapshot_policy_resolution(
+            expense,
+            policy,
+            amount,
+            len(users),
+            default_mode='MAJORITY',
+        )
         approvals = [
             Approval(
                 expense_id=expense.id,
@@ -237,13 +243,16 @@ def apply_decision(
             actor_email=actor_email,
             comment=comment,
         )
-        threshold = len(peers) // 2 + 1
+        threshold = minimum_votes_for_mode(approval.approval_mode, len(peers))
         approved_count = sum(a.status == ApprovalStatus.APPROVED for a in peers)
         rejected_count = sum(a.status == ApprovalStatus.REJECTED for a in peers)
         if approved_count >= threshold:
             expense.status = ExpenseStatus.APPROVED
             expire_open_approvals(db, expense, approval.id, actor_email)
-        elif rejected_count >= threshold:
+        # Reject only when the remaining PENDING votes can no longer reach the
+        # configured approval threshold. Thus ALL rejects on one rejection,
+        # ANY rejects only when everyone rejects, and MAJORITY is symmetric.
+        elif rejected_count > len(peers) - threshold:
             expense.status = ExpenseStatus.REJECTED
             expire_open_approvals(db, expense, approval.id, actor_email)
         db.commit()

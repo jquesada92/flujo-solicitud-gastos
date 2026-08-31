@@ -76,10 +76,19 @@ class SecurityControlTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             apply_decision(unittest.mock.MagicMock(), approval, ApprovalStatus.APPROVED, None)
 
-    def test_session_expires_after_thirty_idle_minutes(self):
+    def test_session_expires_after_ten_idle_minutes(self):
         now = datetime.now(timezone.utc)
-        self.assertFalse(session_is_idle(now - timedelta(minutes=29), now))
-        self.assertTrue(session_is_idle(now - timedelta(minutes=30), now))
+        self.assertFalse(session_is_idle(now - timedelta(minutes=9, seconds=59), now))
+        self.assertTrue(session_is_idle(now - timedelta(minutes=10), now))
+
+    def test_session_idle_setting_cannot_exceed_ten_minutes(self):
+        self.assertEqual(Settings.model_fields['session_idle_minutes'].default, 10)
+        with self.assertRaises(ValidationError):
+            Settings(
+                _env_file=None,
+                database_url='sqlite://',
+                session_idle_minutes=11,
+            )
 
     def test_authenticated_user_rate_limit(self):
         for index in range(SENSITIVE_POLICY.limit):

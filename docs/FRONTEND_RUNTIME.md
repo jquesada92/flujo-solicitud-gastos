@@ -29,7 +29,8 @@ después de `styles.css`. Desde 320 px, la página no genera overflow horizontal
 la navegación es una banda táctil desplazable, la consulta de Solicitudes se
 convierte en tarjetas etiquetadas y menús, modales y visores se mantienen dentro
 del viewport con altura dinámica y `safe-area`. Los estilos particulares siguen
-en `iam-responsive.css`, `home-dashboard.css` y `user-tracking.css`.
+en `iam-responsive.css`, `home-dashboard.css`, `user-tracking.css` y
+`direct-expense-form.css`.
 
 No se elimina información para ajustar una pantalla. Si una tabla secundaria
 conserva desplazamiento interno, el documento completo no debe desplazarse y la
@@ -54,6 +55,15 @@ limpiar sesión local
 limpiar ruta privada
 volver a Login
 ```
+
+`session-idle.js` concentra el plazo y el temporizador que usa `main.jsx`. El
+runtime reinicia ese timeout con cada interacción humana real de puntero,
+teclado, touch o scroll. Después de 10 minutos sin actividad elimina
+`access_token`, limpia el hash privado y renderiza Login. No usa un intervalo de
+sondeo: programa el vencimiento restante y, cuando la pestaña vuelve a estar
+visible, comprueba primero si el plazo ya terminó antes de aceptar esa
+interacción. El sync silencioso de `/api/auth/activity` no sustituye el límite
+autoritativo de FastAPI.
 
 El login fallido no debe crear un loop de redirección.
 
@@ -82,6 +92,15 @@ mostrar el token y no modifica ni guarda el borrador IAM.
 
 La ventana de caché es una optimización de frontend, no una garantía de consistencia del backend.
 
+El mismo gobernador coordina el Bloqueo global de procesamiento. Antes de toda
+mutación `/api/*` iniciada por la UI (`POST`, `PUT`, `PATCH`, `DELETE`) crea o
+muestra **Procesando…**, vuelve `inert` los demás hijos de `body` y mantiene un
+contador hasta que termina la última mutación. La liberación está en `finally`,
+por lo que también ocurre ante respuesta HTTP de error, aborto o fallo de red.
+`GET`/`HEAD` no lo activan y `/api/auth/activity` usa exclusión explícita para no
+interrumpir al Usuario. `action-state.css` lo ubica por encima de todos los roots,
+con `safe-area`, sin overflow y desde 320 px.
+
 ## Política de polling
 
 No usar `setInterval`/`setTimeout` como mecanismo de sincronización por defecto. Si una feature necesita polling:
@@ -103,6 +122,45 @@ El límite de Usuarios de un Rol sí es una edición staged: checkbox, valor y
 validación local permanecen en el formulario hasta **Guardar cambios**. La lista
 muestra ocupación/máximo y el selector identifica Roles llenos, sin sustituir la
 validación autoritativa del backend.
+
+Un `POST` exitoso de Rol actualiza la lista y limpia el editor completo:
+`selectedId=null`, `recovery=null`, nombre/descripción/permisos vacíos y límite
+desactivado. El siguiente registro vuelve a usar `POST`. Un `PATCH` de edición o
+reactivación conserva la selección; un error conserva el borrador. El estado
+local `savingRole` evita un segundo submit programático aunque el overlay ya
+bloquee la interacción humana.
+
+En Reglas, `NO_APPROVAL` oculta/deshabilita targets y se envía con listas
+vacías; `ANY`, `MAJORITY` y `ALL` exigen al menos un Rol/Grupo. Las validaciones
+de overlap o elegibilidad mostradas por la UI no sustituyen FastAPI.
+
+## Registro directo
+
+La pestaña **Registro directo** solo se presenta con `requests:create`. Consulta
+`/api/direct-expenses/eligible-policies`, orienta la banda `(min,max]` y envía
+Área, proveedor, ítem, monto y factura como multipart. Un rechazo por política
+concurrentemente modificada se muestra al Usuario y no se convierte en una
+Solicitud alternativa. La factura se abre siempre por el endpoint autorizado.
+
+Cuando FastAPI rechaza la creación de una Solicitud porque el Área y el monto
+corresponden a `NO_APPROVAL`, el formulario mantiene el borrador y sustituye el
+detalle técnico por una guía para usar **Registro directo**. El botón real de la
+navegación recibe un estado de atención visual y una descripción accesible, pero
+no `aria-current`: **Solicitudes** sigue siendo la vista activa. No existe
+redirección automática; en móvil, la banda se desplaza solo hasta mantener el
+control visible. Otra navegación o un nuevo envío limpian el resaltado.
+
+De 320 a 720 px, introducción, formulario y resumen de bandas se apilan en una
+columna; hasta 440 px, cada banda apila además su descripción y rango. En 768,
+820 y 1024 px se permiten dos columnas cuando ambas permanecen legibles. Área,
+monto, proveedor, factura, ítem y acción principal no se ocultan. Inputs, selects
+y botones miden al menos 44 px, conservan foco visible y ajustan textos sin
+overflow horizontal. La matriz específica cubre 320, 360, 390, 412, 440, 600,
+640, 768, 820 y 1024 px.
+
+El alta confirma el ID del gasto directo. El listado privado existe mediante
+`GET /api/direct-expenses`, pero la pantalla actual no renderiza un panel de
+historial.
 
 ## Recargar
 
