@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Analytics } from "@vercel/analytics/react";
 import { injectSpeedInsights } from "@vercel/speed-insights";
 import DirectExpenseForm from "./direct-expense-form.jsx";
+import { createSessionIdleDeadline } from "./session-idle.js";
 import "./styles.css";
 import "./mobile-layout.css";
 
@@ -180,7 +181,6 @@ async function api(path, options = {}) {
   return response.json();
 }
 
-const SESSION_IDLE_MS = 30 * 60 * 1000;
 const ACTIVITY_SYNC_MS = 60 * 1000;
 
 async function downloadAttachment(attachment) {
@@ -3388,9 +3388,22 @@ function App() {
     [loading, setLoading] = useState(true),
     [tab, setTab] = useState("home"),
     [configOpen, setConfigOpen] = useState(false),
+    [directExpenseSuggested, setDirectExpenseSuggested] = useState(false),
     [refresh, setRefresh] = useState(0),
     [revision, setRevision] = useState(null),
     [catalog, setCatalog] = useState([]);
+  useEffect(() => {
+    if (!directExpenseSuggested) return undefined;
+    const revealDirectExpenseButton = () => {
+      if (!window.matchMedia("(max-width: 720px)").matches) return;
+      document
+        .querySelector('.header-actions button[data-attention="true"]')
+        ?.scrollIntoView({ block: "nearest", inline: "center" });
+    };
+    revealDirectExpenseButton();
+    window.addEventListener("resize", revealDirectExpenseButton);
+    return () => window.removeEventListener("resize", revealDirectExpenseButton);
+  }, [directExpenseSuggested]);
   useEffect(() => {
     if (passwordResetRoute) {
       setLoading(false);
@@ -3413,22 +3426,36 @@ function App() {
   }, [user, refresh]);
   useEffect(() => {
     if (!user) return undefined;
-    let lastHumanActivity = Date.now();
     let lastSync = 0;
     let syncing = false;
+    let active = true;
+    let idleDeadline;
 
     const expireSession = () => {
+      if (!active) return;
+      active = false;
+      idleDeadline?.stop();
       localStorage.removeItem("access_token");
+      window.history.replaceState(
+        null,
+        document.title,
+        `${window.location.pathname}${window.location.search}`,
+      );
+      setDirectExpenseSuggested(false);
       setUser(null);
     };
-    const registerActivity = () => {
+    idleDeadline = createSessionIdleDeadline({ onExpire: expireSession });
+    const registerActivity = (event) => {
+      if (!active || event?.isTrusted === false) return;
+      if (!idleDeadline.recordActivity()) return;
       const now = Date.now();
-      lastHumanActivity = now;
       if (syncing || now - lastSync < ACTIVITY_SYNC_MS) return;
       syncing = true;
       lastSync = now;
       api("/api/auth/activity", { method: "POST", appMutationOverlay: false })
-        .then((result) => localStorage.setItem("access_token", result.access_token))
+        .then((result) => {
+          if (active) localStorage.setItem("access_token", result.access_token);
+        })
         .catch((error) => {
           if (error.status === 401) expireSession();
         })
@@ -3442,14 +3469,12 @@ function App() {
     const events = ["pointerdown", "keydown", "touchstart", "scroll"];
     events.forEach((event) => window.addEventListener(event, registerActivity, { passive: true }));
     document.addEventListener("visibilitychange", onVisibility);
-    const timer = window.setInterval(() => {
-      if (Date.now() - lastHumanActivity >= SESSION_IDLE_MS) expireSession();
-    }, 15000);
 
     return () => {
+      active = false;
+      idleDeadline.stop();
       events.forEach((event) => window.removeEventListener(event, registerActivity));
       document.removeEventListener("visibilitychange", onVisibility);
-      window.clearInterval(timer);
     };
   }, [user]);
   useEffect(() => {
@@ -3473,6 +3498,7 @@ function App() {
   const logout = () => {
     if (!confirmDiscardChanges()) return;
     localStorage.removeItem("access_token");
+    setDirectExpenseSuggested(false);
     setUser(null);
   };
   const headerRoleLabel = user.role_names?.length
@@ -3484,6 +3510,7 @@ function App() {
     if (nextTab === tab || !confirmDiscardChanges()) return;
     setTab(nextTab);
     setConfigOpen(false);
+    setDirectExpenseSuggested(false);
   };
   const startRevision = (item) => {
     setRevision(item);
@@ -3541,7 +3568,14 @@ function App() {
           <button aria-current={tab === "home" ? "page" : undefined} onClick={() => navigateTo("home")}>Inicio</button>
           <button aria-current={tab === "expenses" ? "page" : undefined} onClick={() => navigateTo("expenses")}>Solicitudes</button>
           {canCreate && (
-            <button aria-current={tab === "direct-expenses" ? "page" : undefined} onClick={() => navigateTo("direct-expenses")}>Registro directo</button>
+            <button
+              aria-current={tab === "direct-expenses" ? "page" : undefined}
+              aria-describedby={directExpenseSuggested ? "direct-expense-guidance" : undefined}
+              data-attention={directExpenseSuggested ? "true" : undefined}
+              onClick={() => navigateTo("direct-expenses")}
+            >
+              Registro directo
+            </button>
           )}
           {canView && (
             <button aria-current={tab === "invoices" ? "page" : undefined} onClick={() => navigateTo("invoices")}>Facturas</button>
@@ -3596,6 +3630,7 @@ function App() {
             {canCreate && (
               <ExpenseForm
                 onCreated={created}
+                onDirectExpenseSuggestionChange={setDirectExpenseSuggested}
                 draft={revision}
                 onCancelEdit={() => setRevision(null)}
                 categoryOptions={categoryOptions}

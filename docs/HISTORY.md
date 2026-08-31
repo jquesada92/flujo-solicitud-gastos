@@ -1,5 +1,16 @@
 # Historia funcional
 
+## 2026-08-31 — cierre de sesión por inactividad
+
+- La Constitución evoluciona a 2.26.0 y fija 10 minutos como límite máximo de
+  inactividad de una sesión.
+- El navegador elimina el token, limpia la ruta privada y muestra Login; al
+  volver de una pestaña suspendida valida primero el tiempo transcurrido.
+- FastAPI sigue siendo la autoridad con `last_activity_at` y `401`; Settings y
+  configuraciones soportadas ya no permiten extender el plazo sobre 10 minutos.
+- Pruebas backend, frontend y documentales protegen el mismo valor y la
+  redirección a **Iniciar sesión**.
+
 ## 2026-08-28 — reconciliación de main y layout móvil
 
 - La Constitución evoluciona a 2.25.0 y combina reglas de aprobación por banda,
@@ -10,6 +21,8 @@
 - Los invitados conservan **Votar o cambiar voto** hasta `CLOSED`, y
   `tracking_amount` mantiene el monto operativo separado de `Expense.amount`.
 - La sesión conserva `role_names` y la cabecera muestra los Roles IAM activos.
+- Solicitudes orienta las bandas `NO_APPROVAL` con un aviso humano y resalta
+  **Registro directo** sin descartar el borrador ni redirigir automáticamente.
 - Alembic mantiene inmutables las dos ramas `20260825_0012` y `20260827_0012 →
   20260828_0013`; `20260828_0014_merge_main_layout_heads` las une en un solo
   head sin una mutación adicional de dominio.

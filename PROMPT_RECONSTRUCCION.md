@@ -1,6 +1,6 @@
 # Prompt maestro de reconstrucción
 
-> Constitución vigente: **2.25.0**.
+> Constitución vigente: **2.26.0**.
 
 Reconstruye **Flujo de Control de Gastos** como una aplicación web neutral respecto al tipo de organización, lista para desplegar con React/Vite, FastAPI, SQLAlchemy, Alembic y PostgreSQL/Neon.
 
@@ -215,6 +215,14 @@ No selecciones proveedor ni ganador solo para completar esta visualización.
 
 Una ruta privada sin sesión debe redirigir al Login antes de montar su contenido. Un 401 recibido con token almacenado debe limpiar la sesión y retornar al Login.
 
+La sesión debe cerrarse después de 10 minutos sin actividad humana. Usa un
+temporizador reiniciable por interacción real de puntero, teclado, touch o
+scroll; al vencer elimina `access_token`, limpia cualquier hash privado y
+renderiza Login. Antes de aceptar actividad al volver a una pestaña suspendida,
+comprueba el tiempo transcurrido para no revivir una sesión vencida. FastAPI es
+la autoridad final: `last_activity_at` expira a los 10 minutos y devuelve `401`.
+`SESSION_IDLE_MINUTES` puede reducir el plazo entre 5 y 10, nunca ampliarlo.
+
 Incluye en login y `GET /api/auth/me` los nombres ordenados de todos los Roles IAM
 activos asignados al Usuario. La cabecera debe mostrar esos nombres, no traducir
 el perfil técnico legacy `user.role` a capacidades como “Puede consultar”. Si el
@@ -317,6 +325,13 @@ sin aprobación** con Área, proveedor, ítem/descripción, monto positivo y fac
 El frontend consulta bandas elegibles y puede orientar `(min,max]`, pero el
 backend vuelve a resolver Área sobre `ALL` y rechaza si la política dejó de ser
 aplicable. Requiere `requests:create`.
+
+Cuando una creación de Solicitud sea rechazada porque el Área y el monto pertenecen
+a `NO_APPROVAL`, conserva el borrador y muestra **El área y el monto seleccionados
+no requieren un proceso de aprobación. Usa Registro directo para registrar el
+gasto y adjuntar la factura.** No expongas la ruta interna ni redirijas de forma
+automática; resalta de manera visual y accesible el botón **Registro directo**
+hasta que el Usuario elija otra navegación o vuelva a enviar.
 
 Construye esta pantalla para teléfonos y tabletas. Entre 320 y 720 px apila la
 introducción, los campos y las bandas en una columna; hasta 440 px apila también

@@ -12,9 +12,11 @@
 5. Hacer atómicos archivo y fila, incluyendo compensación del archivo ante fallo
    de validación o commit.
 6. Incorporar **Registro directo → Gasto sin aprobación** para Usuarios con
-   `requests:create`, con validación orientativa, error backend visible y layout
-   sin overflow para teléfonos/tabletas, controles táctiles de al menos 44 px y
-   apilado de una columna hasta 720 px.
+   `requests:create`, con validación orientativa y layout sin overflow para
+   teléfonos/tabletas, controles táctiles de al menos 44 px y apilado de una
+   columna hasta 720 px. Traducir el rechazo `NO_APPROVAL` recibido al intentar
+   crear una Solicitud en una guía humana sin rutas internas, conservar el
+   borrador y resaltar **Registro directo** sin redirección automática.
 7. Verificar que el alta no crea Solicitud, ronda, voto, acción pendiente ni
    notificación de aprobación.
 8. Cubrir autorización del autor y `system_accounts`, archivos adversos,

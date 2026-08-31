@@ -1,7 +1,7 @@
 # Spec 022 — Registro directo de gastos sin aprobación
 
 **Estado:** Implementada  
-**Constitución:** 2.25.0
+**Constitución:** 2.26.0
 **Fecha:** 2026-08-28
 
 ## Objetivo
@@ -48,6 +48,15 @@ La validación frontend de `(min,max]` no autoriza ni congela una política. El
 Área concreta sobre `ALL` y la existencia de una regla `NO_APPROVAL` aplicable.
 Un cambio concurrente de configuración puede hacer que una banda antes mostrada
 deje de ser válida y el backend debe rechazar el registro.
+
+Si el Usuario intenta crear una Solicitud con un Área y un monto que corresponden
+a una banda `NO_APPROVAL`, el formulario conserva el borrador y presenta: **El área y
+el monto seleccionados no requieren un proceso de aprobación. Usa Registro
+directo para registrar el gasto y adjuntar la factura.** El aviso no expone
+rutas internas y señala de forma visual y accesible el botón **Registro
+directo**, sin navegar automáticamente ni marcar esa pantalla como activa antes
+de que el Usuario la elija. En la banda móvil desplazable, el control se lleva a
+la porción visible sin mover el foco ni ocultar el aviso.
 
 ### Layout para teléfonos y tabletas
 

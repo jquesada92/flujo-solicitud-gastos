@@ -13,12 +13,35 @@ test("requests:create exposes a dedicated direct-expense screen", async () => {
   assert.match(main, /import DirectExpenseForm from "\.\/direct-expense-form\.jsx";/);
   const navigation = main.indexOf('onClick={() => navigateTo("direct-expenses")}');
   assert.ok(navigation > 0, "missing direct-expense navigation");
+  const navigationGuard = main.lastIndexOf("{canCreate && (", navigation);
   assert.ok(
-    main.lastIndexOf("{canCreate && (", navigation) >= navigation - 240,
+    navigationGuard > 0 && main.slice(navigationGuard, navigation).includes("<button"),
     "direct-expense navigation must be guarded by requests:create capability",
   );
   assert.match(main, /tab === "direct-expenses" && canCreate/);
   assert.match(main, /<DirectExpenseForm\s+api=\{api\}\s+categoryOptions=\{categoryOptions\}/s);
+});
+
+test("NO_APPROVAL request rejection guides users to highlighted direct registration", async () => {
+  const [form, main, css] = await Promise.all([
+    source("src/expense-form.jsx"),
+    source("src/main.jsx"),
+    source("src/styles.css"),
+  ]);
+
+  assert.match(form, /error\?\.status === 422[\s\S]+includes\(DIRECT_EXPENSE_REQUIRED_PATH\)/);
+  assert.match(
+    form,
+    /El área y el monto seleccionados no requieren un proceso de aprobación\. Usa Registro directo para registrar el gasto y adjuntar la factura\./,
+  );
+  assert.match(form, /onDirectExpenseSuggestionChange\?\.\(true\)/);
+  assert.match(form, /id=\{message\.directExpenseRequired \? "direct-expense-guidance" : undefined\}/);
+  assert.match(main, /\[directExpenseSuggested, setDirectExpenseSuggested\] = useState\(false\)/);
+  assert.match(main, /aria-describedby=\{directExpenseSuggested \? "direct-expense-guidance" : undefined\}/);
+  assert.match(main, /data-attention=\{directExpenseSuggested \? "true" : undefined\}/);
+  assert.match(main, /onDirectExpenseSuggestionChange=\{setDirectExpenseSuggested\}/);
+  assert.match(main, /querySelector\('\.header-actions button\[data-attention="true"\]'\)[\s\S]+scrollIntoView\(\{ block: "nearest", inline: "center" \}\)/);
+  assert.match(css, /\.header-actions button\[data-attention="true"\][\s\S]+background: #fbbf24;/);
 });
 
 test("direct expense uses the isolated multipart API and never creates an Expense", async () => {

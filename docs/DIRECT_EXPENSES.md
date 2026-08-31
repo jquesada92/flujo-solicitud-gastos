@@ -26,6 +26,11 @@ bandas disponibles como ayuda. El navegador puede advertir si el monto no está
 en `(min,max]`, pero no concede elegibilidad. Al enviar, FastAPI vuelve a validar
 el Área activa, el monto, la precedencia Área/`ALL` y la política vigente.
 
+Si el Usuario intenta primero crear una Solicitud dentro de una de esas bandas,
+la interfaz conserva el borrador, muestra una orientación humana sin revelar la
+ruta interna y resalta **Registro directo**. No cambia de pantalla por sí sola:
+la navegación sigue su confirmación normal para no descartar datos sin permiso.
+
 ## Atomicidad y privacidad
 
 El `POST /api/direct-expenses` valida firma, MIME y tamaño antes de confirmar.

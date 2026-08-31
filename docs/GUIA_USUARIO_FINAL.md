@@ -4,7 +4,7 @@
 
 **Dirigida a:** Solicitantes y miembros de Junta Directiva (JD)
 
-**Contrato vigente:** Constitución 2.25.0
+**Contrato vigente:** Constitución 2.26.0
 
 ## 1. ¿Para qué sirve la aplicación?
 
@@ -152,6 +152,13 @@ Solicitante no vota en su propia solicitud.
 
 Usa esta pantalla solo cuando el Área y monto estén cubiertos por una banda que
 la administración marcó como **No requiere aprobación**.
+
+Si primero intentas crear una Solicitud con esa Área y ese monto, la aplicación
+conserva lo que escribiste y muestra: **El área y el monto seleccionados no
+requieren un proceso de aprobación. Usa Registro directo para registrar el gasto
+y adjuntar la factura.** El botón **Registro directo** queda resaltado, pero la
+aplicación no cambia de pantalla hasta que tú lo selecciones y confirmes la
+salida del formulario.
 
 1. Entra a **Registro directo**.
 2. Selecciona el **Área** y revisa las bandas disponibles.
@@ -384,8 +391,9 @@ archivo a la administración.
 
 ### Mi sesión terminó
 
-Vuelve a iniciar sesión. Por seguridad, una sesión inválida, revocada o inactiva
-regresa automáticamente al Login.
+Vuelve a iniciar sesión. Por seguridad, después de 10 minutos sin usar la
+aplicación se elimina la sesión y aparece automáticamente **Iniciar sesión**.
+También se vuelve al Login si la sesión es inválida o fue revocada.
 
 ### El sistema rechaza el archivo
 

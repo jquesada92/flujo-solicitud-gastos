@@ -90,6 +90,60 @@ class DocumentationContractTests(unittest.TestCase):
             with self.subTest(document=spec_path.name, spec=spec_path.parent.name):
                 self.assertIn(f'**Constitución:** {version}', read(spec_path))
 
+    def test_ten_minute_session_idle_limit_is_synchronized(self):
+        required_fragments = {
+            REPO_ROOT / '.specify' / 'memory' / 'constitution.md': (
+                'La vigencia por inactividad no puede superar 10 minutos',
+                'elimina `access_token`',
+                'responde `401`',
+            ),
+            REPO_ROOT / 'specs' / '002-configurable-iam-fastapi-hardening' / 'spec.md': (
+                '## Inactividad de sesión',
+                '`SESSION_IDLE_MINUTES` vale 10 por defecto',
+                'pestaña suspendida',
+            ),
+            REPO_ROOT / 'PROMPT_RECONSTRUCCION.md': (
+                'La sesión debe cerrarse después de 10 minutos sin actividad humana',
+                'limpia cualquier hash privado',
+            ),
+            REPO_ROOT / 'README.md': (
+                'Después de 10 minutos sin actividad humana',
+                'SESSION_IDLE_MINUTES=10',
+            ),
+            REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
+                '10 minutos sin actividad humana expiran la sesión',
+                'renderiza Login',
+            ),
+            REPO_ROOT / 'docs' / 'FRONTEND_RUNTIME.md': (
+                'Después de 10 minutos sin actividad elimina',
+                'comprueba primero si el plazo ya terminó',
+            ),
+            REPO_ROOT / 'docs' / 'FASTAPI_ARCHITECTURE.md': (
+                '`last_activity_at` vence al alcanzar 10 minutos',
+            ),
+            REPO_ROOT / 'docs' / 'VALIDACION_LOCAL.md': (
+                '9 minutos 59 segundos de inactividad',
+                'token local eliminado, hash privado limpio y Login visible',
+            ),
+            REPO_ROOT / 'docs' / 'VALIDACION_PRODUCCION.md': (
+                '`SESSION_IDLE_MINUTES=10`; el backend rechaza cualquier valor superior',
+            ),
+        }
+        for document, fragments in required_fragments.items():
+            source = read(document)
+            for fragment in fragments:
+                with self.subTest(document=document.relative_to(REPO_ROOT), fragment=fragment):
+                    self.assertIn(fragment, source)
+
+        for example in (
+            REPO_ROOT / 'backend' / '.env.example',
+            REPO_ROOT / 'backend' / '.env.preview.example',
+        ):
+            self.assertEqual(active_env_values(example).get('SESSION_IDLE_MINUTES'), '10')
+
+        self.assertIn('value: "10"', read(REPO_ROOT / 'render.yaml'))
+        self.assertIn('SESSION_IDLE_MINUTES: "10"', read(REPO_ROOT / 'docker-compose.yml'))
+
     def test_alembic_chain_has_one_documented_head(self):
         migrations: dict[str, tuple[tuple[str, ...], Path]] = {}
         for path in VERSIONS_DIR.glob('*.py'):
@@ -340,11 +394,13 @@ class DocumentationContractTests(unittest.TestCase):
             REPO_ROOT / 'PROMPT_RECONSTRUCCION.md': (
                 'el `POST` de cierre responde `409` sin guardar factura ni fijar ganador',
                 'No crees `Expense`, aprobación, invitación, voto, acción pendiente, `flow_id` ni estado',
+                'No expongas la ruta interna ni redirijas de forma automática',
             ),
             REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
                 'el `POST` de cierre responde `409` sin factura ni ganador',
                 'pasa directamente a `CLOSED`, nunca a `APPROVED`',
                 'No crea `Expense`, Solicitud, ronda, voto, acción pendiente ni estado',
+                'resalta **Registro directo** sin exponer rutas internas',
             ),
             REPO_ROOT / 'docs' / 'CONFIGURATION_ACCESS.md': (
                 '`approver_profile_codes`',
@@ -365,6 +421,7 @@ class DocumentationContractTests(unittest.TestCase):
                 'antes de cumplir ambos, el cierre responde `409`',
                 '`system_accounts` o delegado activo cierra directamente a `CLOSED`',
                 '320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+                'guía sin ruta interna, conservan el borrador',
             ),
             REPO_ROOT / 'docs' / 'DIRECT_EXPENSES.md': (
                 '`NO_APPROVAL` no es un tipo ni un estado de Solicitud',
@@ -372,6 +429,11 @@ class DocumentationContractTests(unittest.TestCase):
                 'La fila y la factura forman una unidad',
                 '## Layout para teléfonos y tabletas',
                 'la pantalla actual no renderiza un panel de historial',
+                'conserva el borrador, muestra una orientación humana sin revelar la ruta interna',
+            ),
+            REPO_ROOT / 'docs' / 'FRONTEND_RUNTIME.md': (
+                'no `aria-current`: **Solicitudes** sigue siendo la vista activa',
+                'Otra navegación o un nuevo envío limpian el resaltado',
             ),
             REPO_ROOT / 'docs' / 'MULTI_QUOTE_VOTING.md': (
                 'Si falta un voto o hay empate, el cierre responde `409` sin persistir factura ni fijar `selected_quotation_id`',
@@ -384,6 +446,7 @@ class DocumentationContractTests(unittest.TestCase):
             REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md': (
                 'Pulsa **Registrar gasto y factura**',
                 'la pantalla actual no muestra un panel de historial',
+                'El área y el monto seleccionados no requieren un proceso de aprobación',
             ),
             REPO_ROOT / 'docs' / 'REQUEST_TRACKING.md': (
                 'la pantalla actual de **Registro directo** confirma el ID creado, pero no renderiza ese listado',
@@ -408,13 +471,16 @@ class DocumentationContractTests(unittest.TestCase):
                 '`requests:create`',
                 'no crea `Expense`, `Approval`, `QuotationVotingInvitation`, voto, acción',
                 'un Usuario ordinario lista únicamente sus propios registros',
+                'El aviso no expone rutas internas',
             ),
             REPO_ROOT / 'specs' / '022-direct-expense-registration' / 'plan.md': (
                 'Validar el navegador en 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+                'resaltar **Registro directo** sin redirección automática',
             ),
             REPO_ROOT / 'specs' / '022-direct-expense-registration' / 'checklists' / 'acceptance.md': (
                 'no crea `Expense`, aprobación, invitación, voto, acción pendiente ni estado de Solicitud',
                 'navegador a 320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
+                'conserva el borrador, muestra una guía sin rutas internas',
             ),
         }
         for document, fragments in required_fragments.items():

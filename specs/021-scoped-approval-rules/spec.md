@@ -1,7 +1,7 @@
 # Spec 021 — Reglas de aprobación por Área, audiencia y quórum
 
 **Estado:** Implementada; modalidad sin ronda ampliada por Spec 022  
-**Constitución:** 2.25.0
+**Constitución:** 2.26.0
 **Fecha:** 2026-08-27
 
 ## Objetivo

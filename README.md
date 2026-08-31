@@ -1,6 +1,6 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.25.0**.
+> Constitución vigente: **2.26.0**.
 
 Aplicación web para registrar gastos directos y para crear, evaluar, aprobar,
 votar, seguir, corregir, cancelar, cerrar y documentar solicitudes de gasto con
@@ -281,6 +281,12 @@ de overflow horizontal, controles recortados y pérdida de foco visible.
 
 Los hashes privados como `#access-management` y `#user-tracking` requieren sesión. Sin token se limpia la ruta privada y se muestra Login; un `401` invalida la sesión almacenada.
 
+Después de 10 minutos sin actividad humana, el frontend elimina el token,
+limpia la ruta privada y muestra **Iniciar sesión**. FastAPI aplica el mismo
+límite sobre `last_activity_at` y devuelve `401`; por eso una pestaña suspendida
+o un temporizador retrasado no prolongan la sesión. `SESSION_IDLE_MINUTES=10` es
+el valor soportado por defecto y solo admite un plazo más estricto entre 5 y 10.
+
 `/reset-password#token=...` es una ruta pública limitada al cambio de
 contraseña. El token tiene propósito exclusivo, un solo uso y vigencia
 configurable; emitir uno nuevo, cambiar el correo o cambiar `active` invalida los
@@ -377,6 +383,7 @@ DATABASE_URL
 DATABASE_SCHEMA=administracion
 SECRET_KEY
 ANALYTICS_HASH_KEY
+SESSION_IDLE_MINUTES=10
 PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=30
 ENVIRONMENT=production
 CORS_ALLOWED_ORIGINS

@@ -158,6 +158,12 @@ factura desde **Registro directo → Gasto sin aprobación**. El backend revalid
 política con fronteras `(min,max]` y precedencia del Área concreta sobre `ALL`;
 la lista y validación frontend de bandas no autorizan.
 
+Si se intenta crear una Solicitud dentro de esa banda, la UI conserva el
+borrador, explica que el área y el monto no requieren aprobación y resalta
+**Registro directo** sin exponer rutas internas ni cambiar de pantalla
+automáticamente. La vista activa continúa siendo **Solicitudes** hasta que el
+Usuario confirme la navegación.
+
 El resultado es un `DirectExpense` privado con identidad propia, autor, metadata
 de factura y referencia histórica a la política. No crea `Expense`, Solicitud,
 ronda, voto, acción pendiente ni estado. La factura y la fila son atómicas. Un
@@ -219,9 +225,15 @@ provisional. Un 409 por empate o votos pendientes no persiste factura ni cierre.
 - rutas privadas requieren token;
 - token inválido/expirado/inactivo devuelve 401;
 - `session_version` permite revocación;
-- inactividad expira sesión;
+- 10 minutos sin actividad humana expiran la sesión;
 - contraseña temporal bloquea operación normal hasta cambio;
 - un 401 en frontend limpia sesión y retorna Login.
+
+El frontend elimina `access_token`, limpia la ruta privada y renderiza Login al
+alcanzar el límite. Antes de registrar actividad al volver a una pestaña
+suspendida comprueba el tiempo transcurrido. FastAPI valida `last_activity_at` y
+responde `401` de manera independiente. `SESSION_IDLE_MINUTES` vale 10 por
+defecto y solo permite endurecer el plazo entre 5 y 10 minutos.
 
 ## Restablecimiento de contraseña
 

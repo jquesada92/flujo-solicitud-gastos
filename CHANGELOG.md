@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.26.0 — 2026-08-31
+
+- cierre automático de sesión al alcanzar 10 minutos sin actividad humana, con
+  limpieza del token y de la ruta privada antes de mostrar Login;
+- validación al volver a una pestaña suspendida para impedir que el throttling
+  del navegador reactive una sesión cuyo plazo ya terminó;
+- FastAPI, Docker local, ejemplos y manifiesto de Render alineados en
+  `SESSION_IDLE_MINUTES=10`, sin permitir configuraciones superiores a 10;
+- regresiones frontend, backend y documentales para mantener sincronizado el
+  límite de inactividad.
+
 ## 2.25.0 — 2026-08-28
 
 - reconciliación de `main` con `layout_movil` sin reescribir las migraciones ya
@@ -15,6 +26,9 @@
   empate sin alterar `Expense.amount`;
 - login y `/api/auth/me` exponen `role_names` y la cabecera presenta los Roles IAM
   activos en lugar de etiquetas legacy de capacidad;
+- un intento de crear una Solicitud dentro de una banda `NO_APPROVAL` conserva
+  el borrador, muestra una guía orientada al Usuario y resalta **Registro
+  directo** sin exponer el endpoint ni redirigir automáticamente;
 - `20260828_0014_merge_main_layout_heads` une los heads inmutables
   `20260825_0012_keep_quotation_voting_open` y
   `20260828_0013_direct_expenses` en un único head Alembic.

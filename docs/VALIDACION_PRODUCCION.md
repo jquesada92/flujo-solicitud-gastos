@@ -15,6 +15,7 @@ Sin imprimir valores, confirma en Render:
 - `ENVIRONMENT=production` y `DATABASE_SCHEMA=administracion`;
 - `DATABASE_URL` directa mientras `start.sh` comparta conexión entre Alembic y runtime;
 - `SECRET_KEY`, `ANALYTICS_HASH_KEY`, `ADMIN_EMAIL` y `ADMIN_PASSWORD` propios del ambiente;
+- `SESSION_IDLE_MINUTES=10`; el backend rechaza cualquier valor superior;
 - `PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=30` o una vigencia explícitamente aprobada;
 - `PUBLIC_URL` y todos los orígenes CORS en HTTPS;
 - `EMAIL_MODE=brevo`, `BREVO_API_KEY` y `EMAIL_FROM` verificado.

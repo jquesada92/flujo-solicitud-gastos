@@ -77,6 +77,17 @@ textarea {
   padding: 8px 12px;
 }
 
+.header-actions button[data-attention="true"] {
+  background: #fbbf24;
+  color: #111827;
+  box-shadow: 0 0 0 3px rgb(251 191 36 / 35%), 0 8px 20px rgb(15 23 42 / 28%);
+}
+
+.header-actions button[data-attention="true"]:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
+
 .config-menu {
   position: relative;
 }

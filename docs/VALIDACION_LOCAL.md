@@ -130,6 +130,10 @@ La matriz global se revisa a 1180, 1024, 640, 440, 390 y 320 px. Para
 - una columna desde 320 hasta 720 px, incluida la introducción y las bandas;
 - descripción y rango de cada banda apilados hasta 440 px;
 - dos columnas en 768, 820 y 1024 px solo cuando ambas permanecen legibles;
+- desde **Solicitudes**, un Área y un monto cubiertos por `NO_APPROVAL` muestran la
+  guía sin ruta interna, conservan el borrador y resaltan el botón **Registro
+  directo** dentro de la porción visible de la banda, sin cambiar `aria-current`
+  ni navegar automáticamente;
 - Área, monto, proveedor, factura, ítem y acción principal siempre visibles.
 
 Para el Bloqueo global **Procesando…**, ejecutar una mutación demorada en 1180,
@@ -145,6 +149,8 @@ Para el Bloqueo global **Procesando…**, ejecutar una mutación demorada en 118
 ## Pruebas adversas mínimas
 
 - token inválido y acceso anónimo → 401;
+- 9 minutos 59 segundos de inactividad → sesión vigente; al alcanzar 10 minutos → `401`, token local eliminado, hash privado limpio y Login visible;
+- volver a una pestaña suspendida después de 10 minutos → Login sin reactivar ni sincronizar la sesión;
 - payload inválido → 422;
 - método no soportado → 405;
 - cinco logins fallidos y un sexto intento → 429;

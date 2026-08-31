@@ -33,7 +33,7 @@ services:
       - key: TOKEN_EXPIRE_MINUTES
         value: "480"
       - key: SESSION_IDLE_MINUTES
-        value: "30"
+        value: "10"
       - key: USER_READ_RATE_LIMIT
         value: "120"
       - key: USER_WRITE_RATE_LIMIT

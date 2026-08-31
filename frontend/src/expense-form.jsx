@@ -39,6 +39,15 @@ async function api(path, options = {}) {
   return response.json();
 }
 
+const DIRECT_EXPENSE_REQUIRED_PATH = "/api/direct-expenses";
+const DIRECT_EXPENSE_REQUIRED_MESSAGE =
+  "El área y el monto seleccionados no requieren un proceso de aprobación. Usa Registro directo para registrar el gasto y adjuntar la factura.";
+
+function isDirectExpenseRequiredError(error) {
+  return error?.status === 422
+    && String(error?.message || "").includes(DIRECT_EXPENSE_REQUIRED_PATH);
+}
+
 const emptyQuoteOptions = () => [
   { supplier: "", amount: "", item_url: "", notes: "", file: null, existing_attachment: false },
   { supplier: "", amount: "", item_url: "", notes: "", file: null, existing_attachment: false },
@@ -72,6 +81,7 @@ function restoredQuoteOptions(draft) {
 
 export default function ExpenseForm({
   onCreated,
+  onDirectExpenseSuggestionChange,
   draft,
   onCancelEdit,
   categoryOptions = [],
@@ -170,6 +180,7 @@ export default function ExpenseForm({
     event.preventDefault();
     setSaving(true);
     setMessage(null);
+    onDirectExpenseSuggestionChange?.(false);
 
     if (effectiveRequestType === "SIMPLE" && !form.item_url && !quotation && !hasExistingSimpleSupport) {
       setMessage({ type: "error", text: "Debes proporcionar una URL o adjuntar una cotización." });
@@ -260,11 +271,16 @@ export default function ExpenseForm({
       setMessage({ type: "success", text: `Solicitud ${item.display_id} enviada nuevamente al flujo.` });
       onCreated?.();
     } catch (err) {
+      const directExpenseRequired = isDirectExpenseRequiredError(err);
+      if (directExpenseRequired) onDirectExpenseSuggestionChange?.(true);
       setMessage({
         type: "error",
-        text: item
-          ? `No se pudo completar el envío de la solicitud ${item.display_id}: ${err.message}`
-          : err.message,
+        text: directExpenseRequired
+          ? DIRECT_EXPENSE_REQUIRED_MESSAGE
+          : item
+            ? `No se pudo completar el envío de la solicitud ${item.display_id}: ${err.message}`
+            : err.message,
+        directExpenseRequired,
       });
     } finally {
       setSaving(false);
@@ -491,7 +507,15 @@ export default function ExpenseForm({
         </label>
 
         <div className="full form-actions">
-          {message && <div className={`notice ${message.type}`}>{message.text}</div>}
+          {message && (
+            <div
+              id={message.directExpenseRequired ? "direct-expense-guidance" : undefined}
+              className={`notice ${message.type}`}
+              role={message.type === "error" ? "alert" : "status"}
+            >
+              {message.text}
+            </div>
+          )}
           <button className="primary" disabled={saving || !categoryOptions.length || !form.expense_category}>
             {saving ? "Guardando..." : draft ? "Guardar y reenviar" : "Crear solicitud"}
           </button>

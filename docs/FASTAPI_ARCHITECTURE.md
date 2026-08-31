@@ -20,7 +20,7 @@ app/core/                config, DB, security, rate limit
 
 ## Seguridad
 
-`current_user()` valida token, `session_version`, estado activo, inactividad y contraseña temporal.
+`current_user()` valida token, `session_version`, estado activo, inactividad y contraseña temporal. `last_activity_at` vence al alcanzar 10 minutos; `SESSION_IDLE_MINUTES` usa 10 por defecto y solo acepta valores de 5 a 10, de modo que una configuración puede endurecer el límite pero no prolongarlo.
 
 `require_permission()` resuelve permisos desde `iam_service.py`. Para Configuración, `config:read` puede satisfacer lecturas GET/HEAD protegidas históricamente por `config:manage`; las mutaciones siguen requiriendo escritura.
 

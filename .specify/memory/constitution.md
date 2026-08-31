@@ -1,8 +1,8 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.25.0
-**Vigente desde:** 2026-08-28
+**Versión:** 2.26.0
+**Vigente desde:** 2026-08-31
 
 ## 1. Propósito
 
@@ -190,6 +190,14 @@ es el máximo de todas las opciones.
 ## 9. Sesión y rutas privadas
 
 Toda pantalla protegida requiere sesión válida. Abrir directamente una ruta/hash privado sin token debe volver al Login sin montar una vista parcial. Un `401` con token almacenado invalida la sesión local y retorna al Login.
+
+La vigencia por inactividad no puede superar 10 minutos. El valor predeterminado
+es 10 y `SESSION_IDLE_MINUTES` solo puede endurecerlo dentro de 5 a 10 minutos,
+nunca ampliarlo. Al alcanzar el límite, el frontend elimina `access_token`,
+limpia la ruta privada y muestra el Login; volver a una pestaña suspendida no
+puede reactivar una sesión que ya agotó el plazo. FastAPI revalida
+`last_activity_at` y responde `401` aunque la interfaz no haya ejecutado todavía
+su temporizador.
 
 La regla aplica al menos a Accesos y Seguimiento y debe extenderse a cualquier nueva superficie privada.
 
@@ -508,7 +516,7 @@ La baseline `0001` permanece congelada después de desplegarse; los cambios fís
 ## 17. Seguridad operativa
 
 - contraseñas nuevas con Argon2 mediante `pwdlib`;
-- sesiones JWT con versión revocable e inactividad;
+- sesiones JWT con versión revocable e inactividad máxima de 10 minutos;
 - CORS explícito en producción;
 - documentos privados servidos por backend autorizado;
 - respuestas API sensibles con `Cache-Control: no-store`;

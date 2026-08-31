@@ -2,7 +2,7 @@
 
 **Estado:** Implementada pendiente de validación visual completa
 
-**Constitución:** 2.25.0
+**Constitución:** 2.26.0
 
 ## Problema
 

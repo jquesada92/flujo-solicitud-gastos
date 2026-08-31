@@ -56,6 +56,15 @@ limpiar ruta privada
 volver a Login
 ```
 
+`session-idle.js` concentra el plazo y el temporizador que usa `main.jsx`. El
+runtime reinicia ese timeout con cada interacción humana real de puntero,
+teclado, touch o scroll. Después de 10 minutos sin actividad elimina
+`access_token`, limpia el hash privado y renderiza Login. No usa un intervalo de
+sondeo: programa el vencimiento restante y, cuando la pestaña vuelve a estar
+visible, comprueba primero si el plazo ya terminó antes de aceptar esa
+interacción. El sync silencioso de `/api/auth/activity` no sustituye el límite
+autoritativo de FastAPI.
+
 El login fallido no debe crear un loop de redirección.
 
 ## Ruta pública de restablecimiento
@@ -132,6 +141,14 @@ La pestaña **Registro directo** solo se presenta con `requests:create`. Consult
 Área, proveedor, ítem, monto y factura como multipart. Un rechazo por política
 concurrentemente modificada se muestra al Usuario y no se convierte en una
 Solicitud alternativa. La factura se abre siempre por el endpoint autorizado.
+
+Cuando FastAPI rechaza la creación de una Solicitud porque el Área y el monto
+corresponden a `NO_APPROVAL`, el formulario mantiene el borrador y sustituye el
+detalle técnico por una guía para usar **Registro directo**. El botón real de la
+navegación recibe un estado de atención visual y una descripción accesible, pero
+no `aria-current`: **Solicitudes** sigue siendo la vista activa. No existe
+redirección automática; en móvil, la banda se desplaza solo hasta mantener el
+control visible. Otra navegación o un nuevo envío limpian el resaltado.
 
 De 320 a 720 px, introducción, formulario y resumen de bandas se apilan en una
 columna; hasta 440 px, cada banda apila además su descripción y rango. En 768,
