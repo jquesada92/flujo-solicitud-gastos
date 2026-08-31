@@ -1,7 +1,7 @@
 # Spec 022 — Registro directo de gastos sin aprobación
 
 **Estado:** Implementada  
-**Constitución:** 2.24.0  
+**Constitución:** 2.25.0
 **Fecha:** 2026-08-28
 
 ## Objetivo

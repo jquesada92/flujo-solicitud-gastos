@@ -1,7 +1,7 @@
 # Spec 021 — Reglas de aprobación por Área, audiencia y quórum
 
 **Estado:** Implementada; modalidad sin ronda ampliada por Spec 022  
-**Constitución:** 2.24.0  
+**Constitución:** 2.25.0
 **Fecha:** 2026-08-27
 
 ## Objetivo
@@ -107,11 +107,12 @@ política, y congela población y umbral nuevos.
 
 Sin política aplicable se invita a todos los Usuarios activos con
 `requests:approve`, excluyendo al Solicitante. Se exige el voto de los `N`
-invitados y el Solicitante no puede cerrar desde `QUOTATION_VOTING`. Con todos
-los votos y un ganador único, la solicitud pasa a `APPROVED` y usa el cierre
-ordinario. Un empate permanece abierto. Un intento de `POST` de cierre antes de
-`APPROVED` responde `409`, no escribe una factura y no fija
-`selected_quotation_id`, incluso si quien lo intenta es el Solicitante.
+invitados y un líder único. Cumplir ambas condiciones no cambia el estado: la
+solicitud permanece en `QUOTATION_VOTING` hasta que la factura la lleva
+directamente a `CLOSED`. Como no se trata de un cierre anticipado, pueden cerrar
+el Solicitante, `system_accounts` o un delegado activo. Mientras falte un voto o
+exista empate, el `POST` de cierre responde `409`, no escribe una factura y no
+fija `selected_quotation_id`.
 
 ## SIMPLE
 

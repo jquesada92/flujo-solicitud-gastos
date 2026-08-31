@@ -30,19 +30,29 @@ Una acción existe solo si el backend confirma que sigue vigente.
 `requests:approve` + aprobación PENDING asignada + solicitud en `PENDING_APPROVAL`.
 
 ### QUOTATION_VOTE
-`requests:approve` + invitación vigente + solicitud en `QUOTATION_VOTING` + voto aún pendiente.
+`requests:approve` + invitación vigente + solicitud en `QUOTATION_VOTING`.
 
-La invitación es una instantánea de la ronda. Después de votar desaparece la
-acción personal. Con regla, el detalle permite cambiar el voto mientras no exista
-factura y la Solicitud siga en `QUOTATION_VOTING`; sin regla, la ronda espera a
-todos y un ganador único. Un gasto directo nunca crea `QUOTATION_VOTE` ni otra
-acción pendiente.
+La invitación es una instantánea de la ronda. Después de votar la acción
+permanece como **Votar o cambiar voto**. Solo desaparece cuando la factura cierra
+la ronda; un empate la mantiene abierta para que un participante cambie su voto.
+Un gasto directo nunca crea `QUOTATION_VOTE` ni otra acción pendiente.
 
 ### CORRECT_REQUEST
 Solicitud propia en `NEEDS_REVISION`.
 
 ### CLOSE_REQUEST
-Solicitud `APPROVED` y actor con autoridad de cierre por recurso.
+Solicitud `SIMPLE` en `APPROVED`, o `MULTI_QUOTE` en `QUOTATION_VOTING` con
+líder único y actor habilitado. Con política, quórum habilita cierre anticipado
+solo al Solicitante; sin política deben votar todos y entonces aplican
+Solicitante, `system_accounts` o delegado activo. El endpoint revalida población,
+quórum y ausencia de empate antes de persistir la factura.
+
+### Monto de solicitudes con múltiples cotizaciones
+
+La columna **Monto** usa `tracking_amount` como valor operativo. Sin votos es el
+máximo presentado; con un líder único es el monto de esa opción; si hay empate
+es el máximo de todas las opciones. Este dato no selecciona proveedor ni altera
+el monto financiero canónico de la solicitud.
 
 ## Seguimiento de usuarios
 

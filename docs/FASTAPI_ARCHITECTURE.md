@@ -79,11 +79,11 @@ activos y se deduplican Usuarios. Sin política, `SIMPLE` usa toda la población
 IAM y `MAJORITY`; `MULTI_QUOTE` usa toda la población y exige todos los votos.
 Cargo, `GroupMember`, reglas legacy y `approver_profile_codes` no autorizan.
 
-El cierre desde `QUOTATION_VOTING` requiere la identidad de una política
-congelada, quórum alcanzado y líder único. El fallback sin política no satisface
-esa condición: el `POST` de cierre responde `409` sin guardar factura ni fijar
-ganador, aunque lo envíe el Solicitante. Solo después de todos los votos y un
-ganador único pasa a `APPROVED` y usa el cierre ordinario.
+El cierre desde `QUOTATION_VOTING` usa la instantánea de la ronda. Con política
+requiere quórum y líder único y solo lo ejecuta el Solicitante original. Sin
+política requiere todos los votos y líder único; entonces aplican las relaciones
+ordinarias de cierre. En ningún caso hay transición automática a `APPROVED`: la
+ronda permanece abierta hasta la factura.
 
 `MULTI_QUOTE` evalúa el máximo de sus opciones antes de congelar regla,
 modalidad, monto y quórum. Con regla, alcanzar el umbral y líder único habilita
@@ -95,6 +95,13 @@ la solicitud, el soporte y la ronda en una misma transacción. El endpoint de
 adjuntos compensa además la solicitud `SIMPLE` pendiente creada en la llamada
 anterior si no puede iniciar su primera ronda. Las notificaciones se despachan
 solo después del commit mediante `notify_approval_flow_started()`.
+
+`quotation_service.cast_quotation_vote()` mantiene un voto activo por invitado,
+registra cada cambio y recalcula la selección provisional. La solicitud conserva
+`QUOTATION_VOTING`: una opción líder no es una aprobación final. Las rutas de voto
+y cierre bloquean la fila de `Expense`; al cargar factura, el servicio exige
+quórum con política o población completa sin ella, además de líder único, antes
+de que `financial_actions` persista el adjunto y cambie a `CLOSED`.
 
 `direct_expenses` atiende `NO_APPROVAL` fuera de ese motor. El `POST` multipart
 requiere `requests:create`, vuelve a resolver Área/monto, valida una factura
@@ -137,6 +144,7 @@ Los contratos críticos deben tener pruebas HTTP/modelo para:
 - cardinalidades IAM;
 - cupo de Rol en asignación, reactivación y reducción del máximo;
 - workflow/capacidades;
+- empate, cambio de voto, ganador provisional y cierre atómico `MULTI_QUOTE`;
 - población IAM y ausencia de solicitudes huérfanas cuando el flujo no inicia;
 - bandas/targets/quórum, cierre anticipado y votos posteriores hasta `CLOSED`;
 - `NO_APPROVAL` sin `Expense`, atomicidad de factura y aislamiento por autor;

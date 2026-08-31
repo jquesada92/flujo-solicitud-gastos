@@ -45,26 +45,42 @@ faltan pueden votar y cualquiera puede cambiar su voto mientras no exista
 factura y el estado siga abierto; cada cambio recalcula líder y capacidad de
 cierre. Un empate nunca habilita el cierre.
 
-El cierre fija la opción ganadora vigente y la factura y pasa directamente a
-`CLOSED` como una unidad. Desde entonces cualquier voto recibe 409.
+Sin regla aplicable se requieren los votos de los `N` invitados y un líder único.
+Cumplirlos tampoco cambia el estado: la ronda permanece en
+`QUOTATION_VOTING`. Como ya no es un cierre anticipado, pueden registrar la
+factura el Solicitante original, `system_accounts` o un delegado activo de esa
+solicitud. Si falta un voto o hay empate, el cierre responde `409` sin persistir
+factura ni fijar `selected_quotation_id`.
 
-Sin regla aplicable, la ronda exige todos los votos y el Solicitante no puede
-cerrar desde `QUOTATION_VOTING`. Al completar `N`, un ganador único selecciona la
-cotización y lleva la Solicitud a `APPROVED`; un empate permanece abierto hasta
-que un participante cambie su voto. Antes de `APPROVED`, cualquier `POST` de
-cierre responde `409` sin guardar factura ni fijar `selected_quotation_id`,
-incluso si quien lo envía es el Solicitante. En ambos caminos:
+En ambos caminos:
 
-- una opción ajena se rechaza con 422;
-- un Usuario fuera de la población recibe 403;
-- votar cuando la ronda ya cerró recibe 409.
+- un líder único representa una selección provisional, nunca una aprobación;
+- un empate elimina la selección provisional y bloquea la factura;
+- cada invitado conserva **Votar o cambiar voto** y el resultado se recalcula sin
+  crear un segundo voto activo;
+- una opción ajena se rechaza con `422`;
+- un Usuario fuera de la población recibe `403`;
+- la carga de factura bloquea la solicitud y vuelve a calcular población, quórum
+  y líder antes de persistir;
+- cierre, ganador y factura son una unidad que pasa directamente a `CLOSED`;
+- votar después del cierre recibe `409`.
 
 ## Inicio y Seguimiento
 
-`QUOTATION_VOTE` aparece en Inicio solo para un invitado que aún no votó. Aunque
-la acción desaparezca tras su primer voto, el detalle conserva la opción de
-cambiarlo mientras la ronda configurada siga abierta. La Solicitud continúa
-visible en Seguimiento para Usuarios activos.
+`QUOTATION_VOTE` aparece en Inicio como **Votar o cambiar voto** para todo
+invitado mientras la ronda esté abierta, incluso después de votar. La UI marca
+el voto actual, permite escoger otra opción y avisa si existe empate o ganador
+provisional. Seguimiento conserva la visibilidad de la solicitud.
+
+En la columna **Monto**, Seguimiento usa un valor operativo: antes del primer
+voto muestra el máximo de las cotizaciones, durante la votación muestra el monto
+del líder único y, si hay empate, vuelve a mostrar el máximo presentado. Este
+valor no selecciona proveedor ni sustituye el monto financiero de cierre.
+
+Con política, el botón de cierre anticipado solo se ofrece al Solicitante cuando
+hay quórum y líder único. Sin política, se ofrece a las relaciones ordinarias de
+cierre únicamente después de todos los votos y con líder único. El backend
+siempre revalida el resultado.
 
 ## Corrección
 
@@ -81,3 +97,11 @@ activo.
 - votación abierta con tres opciones y un voto parcial.
 
 Las credenciales y el procedimiento están en [VALIDACION_LOCAL.md](VALIDACION_LOCAL.md).
+
+La migración `20260825_0012_keep_quotation_voting_open` devuelve a
+`QUOTATION_VOTING` las solicitudes múltiples antiguas en `APPROVED` que no tienen
+factura. Solicitudes ya cerradas o con factura no se modifican.
+
+Esa revisión y la rama `20260827_0012_scoped_approval_policies →
+20260828_0013_direct_expenses` permanecen inmutables. La revisión
+`20260828_0014_merge_main_layout_heads` une ambas ramas y deja un solo head.

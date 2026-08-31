@@ -15,7 +15,14 @@ actor autorizado =
 
 ### APPROVED
 
-Un actor autorizado puede adjuntar factura, registrar notas y cerrar.
+En `SIMPLE`, un actor autorizado puede adjuntar factura, registrar notas y cerrar.
+
+### QUOTATION_VOTING
+
+En `MULTI_QUOTE`, un actor autorizado puede adjuntar factura solo cuando todos
+los invitados votaron y existe un ganador único provisional. La API recalcula
+bajo bloqueo; votos pendientes o empate producen 409 sin guardar archivo. Una
+factura válida lleva la solicitud directamente a `CLOSED`.
 
 ### CLOSED
 
@@ -28,7 +35,10 @@ can_close
 can_delegate_close
 ```
 
-`can_close` exige estado `APPROVED` o `CLOSED` y relación autorizada con la solicitud. `can_delegate_close` corresponde al solicitante original cuando la delegación es operativamente válida.
+`can_close` exige `APPROVED` para `SIMPLE`, ganador provisional en
+`QUOTATION_VOTING` para `MULTI_QUOTE`, o `CLOSED` para corregir factura, además
+de la relación autorizada. `can_delegate_close` corresponde al solicitante
+original cuando esa misma operación es viable.
 
 ## Delegación
 
@@ -61,8 +71,10 @@ El backend llama al resolver de autoridad por recurso y no confía en botones vi
 
 ## Pruebas manuales
 
-1. solicitante de APPROVED puede cerrar/delegar;
-2. delegado activo puede cerrar pero no administrar delegación;
-3. tercero no delegado no puede cerrar;
-4. revocación elimina inmediatamente la autoridad del delegado;
-5. reemplazo en CLOSED conserva versión anterior y motivo.
+1. solicitante de SIMPLE/APPROVED puede cerrar/delegar;
+2. MULTI_QUOTE empatada rechaza factura y no ofrece cierre;
+3. MULTI_QUOTE con ganador provisional puede cerrar con factura;
+4. delegado activo puede cerrar pero no administrar delegación;
+5. tercero no delegado no puede cerrar;
+6. revocación elimina inmediatamente la autoridad del delegado;
+7. reemplazo en CLOSED conserva versión anterior y motivo.

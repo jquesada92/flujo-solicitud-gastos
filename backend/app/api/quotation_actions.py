@@ -23,6 +23,7 @@ def vote_quotation(
     expense = db.scalar(
         select(Expense)
         .where(or_(Expense.request_id == request_id, Expense.display_id == request_id))
+        .with_for_update()
         .options(
             selectinload(Expense.quotation_options),
             selectinload(Expense.quotation_votes),
@@ -52,6 +53,7 @@ def decide_email_quotation_vote(
     expense = db.scalar(
         select(Expense)
         .where(Expense.id == invitation.expense_id)
+        .with_for_update()
         .options(
             selectinload(Expense.quotation_options),
             selectinload(Expense.quotation_votes),

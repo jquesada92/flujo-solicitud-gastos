@@ -13,7 +13,8 @@
 - [x] Después del quórum, invitados restantes pueden votar/cambiar hasta la factura y el cierre.
 - [x] Empate no habilita cierre y un voto posterior recalcula el líder vigente.
 - [x] Cierre y factura son atómicos; después de `CLOSED`, votar responde 409.
-- [x] Sin regla, `MULTI_QUOTE` espera a todos, no permite cierre anticipado y solo un ganador único pasa a `APPROVED`.
-- [x] Sin regla, un `POST` de cierre del Solicitante desde `QUOTATION_VOTING` responde 409 sin factura ni ganador seleccionado.
+- [x] Sin regla, `MULTI_QUOTE` espera a todos, exige líder único y permanece en `QUOTATION_VOTING` hasta la factura.
+- [x] Sin regla, Solicitante, `system_accounts` o delegado activo pueden cerrar directamente a `CLOSED` solo con población completa y líder único.
+- [x] Sin regla, votos pendientes o empate responden 409 sin factura ni ganador seleccionado.
 - [x] Políticas legacy sin targets quedan inactivas/no aplicables y no habilitan cierre anticipado.
 - [x] Suite backend, migración PostgreSQL local, build frontend, navegador y contrato documental pasan.

@@ -89,6 +89,7 @@ class UserOut(BaseModel):
     can_configure: bool
     can_close: bool = False
     permission_codes: list[str] = Field(default_factory=list)
+    role_names: list[str] = Field(default_factory=list)
     is_system_account: bool = False
     must_change_password: bool
 

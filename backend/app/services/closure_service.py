@@ -7,17 +7,19 @@ from app.models.closure import ExpenseClosureDelegation
 from app.models.entities import Expense, ExpenseStatus, User
 from app.models.iam import SystemAccount
 from app.services.iam_service import is_system_account
-from app.services.quotation_service import can_requester_close_voting
+from app.services.quotation_service import can_requester_close_voting, quotation_voting_summary
 
 
-CLOSURE_ACTION_STATUSES = {
-    ExpenseStatus.APPROVED,
-    ExpenseStatus.CLOSED,
-}
-
-# Delegation is intentionally offered only when closure/invoice work is
-# actionable. This keeps the request table free of premature closure controls.
-DELEGATABLE_STATUSES = CLOSURE_ACTION_STATUSES
+def is_closure_actionable(expense: Expense) -> bool:
+    if expense.status == ExpenseStatus.CLOSED:
+        return True
+    if expense.request_type == 'MULTI_QUOTE':
+        return (
+            expense.status == ExpenseStatus.QUOTATION_VOTING
+            and expense.approval_policy_id is None
+            and expense.selected_quotation_id is not None
+        )
+    return expense.status == ExpenseStatus.APPROVED
 
 
 def is_requester(expense: Expense, user: User) -> bool:
@@ -50,8 +52,15 @@ def can_manage_closure(
     or the active per-request delegate chosen by the requester.
     """
     if expense.status == ExpenseStatus.QUOTATION_VOTING:
-        return can_requester_close_voting(db, expense, user)
-    if expense.status not in CLOSURE_ACTION_STATUSES:
+        if expense.approval_policy_id is not None:
+            # Closing before the whole population votes is a policy-only,
+            # requester-only capability. System accounts and delegates retain
+            # their ordinary authority, but do not inherit this early close.
+            return can_requester_close_voting(db, expense, user)
+        summary = quotation_voting_summary(db, expense)
+        if not summary.quorum_reached or summary.winner_option_id is None:
+            return False
+    elif not is_closure_actionable(expense):
         return False
     if is_requester(expense, user):
         return True
@@ -66,7 +75,7 @@ def can_manage_closure(
 
 def can_delegate_closure(expense: Expense, user: User) -> bool:
     """Only the original requester may create/revoke a delegation."""
-    return expense.status in DELEGATABLE_STATUSES and is_requester(expense, user)
+    return is_closure_actionable(expense) and is_requester(expense, user)
 
 
 def closure_delegation_candidates(db: Session, expense: Expense) -> list[User]:

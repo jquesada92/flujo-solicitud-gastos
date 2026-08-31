@@ -4,7 +4,7 @@
 
 **Dirigida a:** Solicitantes y miembros de Junta Directiva (JD)
 
-**Contrato vigente:** Constitución 2.24.0
+**Contrato vigente:** Constitución 2.25.0
 
 ## 1. ¿Para qué sirve la aplicación?
 
@@ -65,6 +65,11 @@ válido o ya venció”, pide uno nuevo.
 En **Inicio**, el bloque **Acciones pendientes** es la referencia principal de
 trabajo. Al seleccionar una acción, la aplicación vuelve a comprobar que siga
 vigente antes de mostrar los controles disponibles.
+
+Debajo de **Gestión de Gastos**, la cabecera muestra tu nombre y el Rol o los
+Roles que tienes asignados. Ese texto identifica Roles organizacionales como
+**Vocal**, **Presidente** o **Solicitante**; no describe Permisos con frases como
+“Puede consultar”. Si todavía no tienes un Rol, muestra **Sin rol asignado**.
 
 En celular, la navegación aparece como una banda horizontal debajo de tu nombre:
 deslízala para ver todas las opciones. Las Solicitudes se muestran como tarjetas
@@ -265,13 +270,18 @@ En una acción **Responder aprobación**:
 debe indicar concretamente qué información, monto, proveedor o soporte necesita
 corrección. JD no edita directamente una solicitud ajena.
 
-### 5.3 Votar una cotización
+### 5.3 Votar o cambiar el voto de una cotización
 
-En una acción **Votar cotización**:
+En una acción **Votar o cambiar voto**:
 
 1. compara proveedor, monto, observaciones y soportes de todas las opciones;
 2. selecciona **Votar por esta opción** en la alternativa elegida;
 3. confirma que la acción se registró correctamente.
+
+Tu opción queda marcada como **Voto actual**. Mientras la ronda continúe
+abierta puedes escoger **Cambiar voto a esta opción** en otra alternativa. El
+sistema conserva un solo voto vigente, registra cada cambio para auditoría y
+mantiene la acción disponible hasta que se cargue la factura.
 
 Con una regla configurada, la pantalla muestra el mínimo de votos requerido. Al
 alcanzarlo con un líder único, el Solicitante puede cerrar con factura, pero la
@@ -279,10 +289,16 @@ ronda sigue abierta: las demás personas invitadas pueden votar y quienes ya
 votaron pueden cambiar su opción hasta que se cargue la factura. Un empate
 mantiene la Solicitud abierta y deshabilita el cierre.
 
-Sin una regla aplicable se requieren todos los votos. Entonces una opción con la
-mayor cantidad de votos, sin empate, queda seleccionada y la Solicitud pasa a
-**Aprobada**; el Solicitante no puede cerrarla anticipadamente. Cada participante
-conserva un único voto vigente.
+Sin una regla aplicable se requieren todos los votos y un líder único. La
+solicitud continúa en **Votación de cotizaciones** hasta que el Solicitante, la
+cuenta técnica o un delegado autorizado registre la factura. Un empate mantiene
+la ronda abierta hasta que una persona invitada cambie su voto. La factura
+válida cierra directamente la solicitud.
+
+En la tabla de Solicitudes, el monto de una ronda sin votos corresponde al mayor
+monto presentado. Cuando ya existen votos muestra el monto de la opción líder;
+si hay empate muestra el mayor monto de todas las opciones. Es una referencia
+operativa y no significa que una cotización ya esté seleccionada para cierre.
 
 ### 5.4 Usar Seguimiento
 
@@ -304,7 +320,7 @@ solicitudes.
 | --- | --- |
 | **Enviada** | La solicitud fue registrada y el sistema prepara o inicia su flujo. |
 | **Pendiente de aprobación** | Espera una o más decisiones asignadas. |
-| **Votación de cotizaciones** | Espera los votos de la ronda activa. |
+| **Votación de cotizaciones** | Espera votos, permite cambiarlos o tiene un ganador provisional pendiente de factura. |
 | **Aprobada** | La decisión fue favorable; falta registrar factura y cerrar. |
 | **Rechazada** | La solicitud no fue aprobada. |
 | **Corrección solicitada** | El Solicitante debe modificarla y reenviarla. |
@@ -343,7 +359,15 @@ reemplazada por una corrección o no haber sido asignada a tu usuario.
 
 Es normal. Con regla, alcanzar el mínimo no termina la ronda: continúa hasta que
 el Solicitante adjunte la factura, y puedes cambiar tu voto mientras siga
-abierta. Sin regla, deben votar todos. Un empate tampoco permite cerrar.
+abierta. Sin regla, deben votar todos y quedar un líder único, pero la ronda
+también continúa hasta la factura. Un empate tampoco permite cerrar y la acción
+permanece disponible para cambiar el voto.
+
+### No puedo subir la factura de una solicitud con cotizaciones
+
+Con regla, verifica que se alcanzó el quórum, que hay líder único y que eres el
+Solicitante original. Sin regla, deben haber votado todos, existir líder único y
+debes ser Solicitante, cuenta técnica o delegado activo de esa solicitud.
 
 ### No veo “Registro directo” o el monto se rechaza
 
@@ -398,7 +422,7 @@ Revisar pendiente → Aprobar / Rechazar / Enviar a revisión
 
 Solicitud con varias cotizaciones
 Crear opciones → Regla: quórum + líder → Solicitante factura y cierra
-               → Sin regla: votan todos → Ganador único → Aprobada
+               → Sin regla: votan todos + líder → actor autorizado factura y cierra
 
 Gasto sin aprobación
 Registro directo → Área + proveedor + ítem + monto + factura → Registrado

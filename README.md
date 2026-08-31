@@ -1,6 +1,6 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.24.0**.
+> Constitución vigente: **2.25.0**.
 
 Aplicación web para registrar gastos directos y para crear, evaluar, aprobar,
 votar, seguir, corregir, cancelar, cerrar y documentar solicitudes de gasto con
@@ -161,6 +161,11 @@ Vista de equipo de solo lectura:
 
 Los Roles globales no generan membresía en Seguimiento.
 
+La tabla operativa de Solicitudes evita mostrar `0` en rondas `MULTI_QUOTE`: sin
+votos usa el monto máximo presentado, con líder único usa el monto de la opción
+que va ganando y ante empate usa nuevamente el máximo. Es un valor informativo
+separado del monto financiero seleccionado al cerrar.
+
 ## Solicitudes y registro directo
 
 El formulario se muestra únicamente a quien tenga `requests:create`. Tener `requests:read` no es suficiente.
@@ -204,10 +209,11 @@ En `MULTI_QUOTE`, `ANY`, `MAJORITY` y `ALL` requieren 1,
 `floor(N/2)+1` y `N` votos. Con regla, quórum y líder único habilitan cierre
 anticipado solo al Solicitante, pero la ronda continúa abierta para que todos los
 invitados voten o cambien hasta que la factura la cierre. Sin regla se requieren
-todos los votos, no hay cierre anticipado y un ganador único lleva a `APPROVED`;
-un empate permanece abierto. Mientras el fallback permanezca en
-`QUOTATION_VOTING`, un `POST` de cierre del Solicitante responde `409` sin
-guardar factura ni fijar ganador. Ver
+todos los votos y un líder único, pero la ronda también permanece en
+`QUOTATION_VOTING`; entonces el cierre ordinario puede hacerlo el Solicitante,
+`system_accounts` o un delegado activo. Ante quórum o población incompletos, o
+empate, el `POST` de cierre responde `409` sin guardar factura ni fijar ganador.
+La factura lleva directamente a `CLOSED`. Ver
 [docs/MULTI_QUOTE_VOTING.md](docs/MULTI_QUOTE_VOTING.md).
 
 Cuando una banda `NO_APPROVAL` cubre el Área y monto, **Registro directo → Gasto
@@ -237,12 +243,20 @@ can_close
 can_delegate_close
 ```
 
-El cierre ordinario desde `APPROVED` depende de ser Solicitante, Administrador
-del sistema o delegado activo; no depende de un permiso global. En una votación
-configurada con quórum y líder único, el cierre anticipado desde
-`QUOTATION_VOTING` pertenece exclusivamente al Solicitante original.
+El cierre ordinario depende de ser Solicitante, Administrador del sistema o
+delegado activo; no depende de un permiso global. En una votación configurada
+con quórum y líder único, el cierre anticipado desde `QUOTATION_VOTING`
+pertenece exclusivamente al Solicitante original. En el fallback sin regla,
+esas relaciones ordinarias pueden cerrar desde `QUOTATION_VOTING` solo después
+de todos los votos y con líder único.
 
 ## Sesión y frontend
+
+Login y `GET /api/auth/me` incluyen `role_names` con todos los Roles IAM activos
+asignados. La cabecera muestra esos nombres —varios si corresponde— y nunca las
+etiquetas de capacidad del perfil técnico legacy como “Puede consultar”. Sin Rol
+ordinario muestra **Sin rol asignado**; una cuenta técnica sin Rol visible muestra
+**Administrador del sistema**.
 
 ### Layout móvil
 
@@ -314,8 +328,10 @@ Cadena actual:
 → 20260824_0009_group_permission_inheritance
 → 20260824_0010_password_reset_links
 → 20260825_0011_role_user_limit
-→ 20260827_0012_scoped_approval_policies
-→ 20260828_0013_direct_expenses
+  ├→ 20260825_0012_keep_quotation_voting_open ───────────────┐
+  └→ 20260827_0012_scoped_approval_policies                  │
+     → 20260828_0013_direct_expenses ────────────────────────┤
+                                                             └→ 20260828_0014_merge_main_layout_heads
 ```
 
 Usuarios, Áreas, Roles y Grupos conservan versiones temporales en tablas
@@ -329,7 +345,16 @@ Los catálogos de Usuario, Área, Rol y Grupo muestran solo activos. Al volver a
 introducir la cédula, código o nombre de una entidad inactiva, el formulario
 ofrece recuperar sus datos y reactivarla con el mismo ID.
 
-`0002` fija que un Rol no puede pertenecer a más de un Grupo y un Usuario no puede tener dos Roles del mismo Grupo. `0003` fija un Cargo por Usuario. `0004` permite Roles globales sin relajar la restricción de un Rol por Grupo. `0009` agrega Permisos heredables de Grupo sin backfill de grants, conserva `role_permissions` y normaliza `permission_codes` en las instantáneas temporales abiertas. `0010` agrega `users.password_reset_version` para invalidar enlaces anteriores sin cambiar la contraseña ni las sesiones al emitir. `0011` agrega el `max_users` opcional y positivo de cada Rol; los Roles existentes continúan sin límite. `0012` agrega targets de política e instantáneas de regla/quórum por ronda, y desactiva las políticas legacy activas cuyos nuevos targets nacen vacíos. `0013` agrega `direct_expenses` sin modificar el enum ni la tabla `expenses`.
+`0002` fija que un Rol no puede pertenecer a más de un Grupo y un Usuario no
+puede tener dos Roles del mismo Grupo. `0003` fija un Cargo por Usuario. `0004`
+permite Roles globales sin relajar la restricción de un Rol por Grupo. `0009`
+agrega Permisos heredables de Grupo sin backfill de grants y conserva
+`role_permissions`. `0010` agrega `users.password_reset_version`; `0011` agrega
+el `max_users` opcional. La rama `20260825_0012` devuelve a votación solicitudes
+múltiples antiguas aprobadas sin factura. La otra rama usa `20260827_0012` para
+targets e instantáneas de política y `20260828_0013` para `direct_expenses`.
+`20260828_0014` une ambas ramas inmutables mediante dos `down_revision` y no
+agrega una mutación de dominio.
 
 ## Despliegue
 
@@ -384,7 +409,7 @@ Validación:
 
 ```powershell
 docker compose exec -T backend alembic heads
-# esperado: 20260828_0013 (head)
+# esperado: 20260828_0014 (head)
 
 cd backend
 .\.venv\Scripts\python.exe -m scripts.run_tests

@@ -74,6 +74,11 @@ Rol     → Permisos propios + herencia visible; global o agrupado
 
 El Rol global técnico `Administrador del sistema` no pertenece a ningún Grupo. El bootstrap lo asigna a la cuenta técnica como representación, pero la autorización privilegiada sigue dependiendo de `system_accounts`.
 
+La respuesta de sesión expone `role_names` con los Roles IAM activos asignados.
+La cabecera muestra todos esos nombres y no el perfil técnico legacy ni una frase
+de Permiso. Sin asignación ordinaria muestra **Sin rol asignado**; una cuenta
+técnica sin Rol visible muestra **Administrador del sistema**.
+
 Un Rol puede limitar opcionalmente su cantidad de Usuarios activos. Los Usuarios inactivos conservan su asignación sin consumir cupo; asignar a otro Usuario activo o reactivar uno que conserva el Rol se rechaza si está lleno. El máximo no puede bajarse de la ocupación activa y FastAPI serializa la comprobación sobre la fila del Rol.
 
 Crear un Rol correctamente lo agrega a la lista y restablece **Crear rol** sin
@@ -133,12 +138,17 @@ ni archivos huérfanos. Las notificaciones ocurren después del commit.
 La política, modalidad, monto evaluado y quórum quedan congelados por ronda. En
 `MULTI_QUOTE`, `ANY=1`, `MAJORITY=floor(N/2)+1` y `ALL=N`. Con política, alcanzar
 quórum y líder único habilita cierre anticipado solo al Solicitante sin cerrar la
-votación: todos los invitados pueden votar/cambiar hasta factura + `CLOSED`. Sin
-política se invita a todos los usuarios IAM elegibles, se requieren los `N` votos
-y el Solicitante no puede cerrar anticipadamente; un ganador único pasa a
-`APPROVED`. Los empates permanecen en `QUOTATION_VOTING`. Mientras el fallback
-siga en ese estado, un `POST` de cierre responde `409` sin guardar factura ni
-fijar ganador, incluso cuando lo envía el Solicitante.
+votación. Sin política se invita a todos los usuarios IAM elegibles y se exigen
+los `N` votos y un líder único antes del cierre ordinario por Solicitante,
+`system_accounts` o delegado activo. En ambos caminos la ronda permanece en
+`QUOTATION_VOTING` hasta la factura; todos los invitados conservan **Votar o
+cambiar voto** y cada cambio guarda evento. Ante quórum o población incompletos,
+o empate, el `POST` de cierre responde `409` sin factura ni ganador. Un cierre
+válido recalcula bajo bloqueo y pasa directamente a `CLOSED`, nunca a `APPROVED`.
+
+La tabla operativa expone `tracking_amount` sin alterar `Expense.amount`: máximo
+de opciones sin votos, monto del líder único cuando hay votos y máximo de todas
+las opciones cuando los líderes están empatados.
 
 ## Gasto directo sin aprobación
 
@@ -185,6 +195,9 @@ CORRECT_REQUEST
 CLOSE_REQUEST
 ```
 
+`QUOTATION_VOTE` permanece disponible para cada invitado hasta que la factura
+lleva la ronda a `CLOSED`, incluso después del primer voto.
+
 ## Clasificación
 
 ```text
@@ -197,6 +210,9 @@ expense_category
 ## Responsabilidad por recurso
 
 El backend calcula `can_cancel`, `can_correct`, `can_close`, `can_delegate_close`. Estas capacidades dependen de estado y relación con la solicitud, no de un permiso IAM global.
+
+Para solicitudes múltiples, `can_close` solo es accionable con ganador
+provisional. Un 409 por empate o votos pendientes no persiste factura ni cierre.
 
 ## Seguridad de sesión
 
@@ -261,8 +277,10 @@ Alembic:
 → 0009 group_permission_inheritance
 → 0010 password_reset_links
 → 0011 role_user_limit
-→ 0012 scoped_approval_policies
-→ 0013 direct_expenses
+  ├→ 0012 keep_quotation_voting_open ───────────────┐
+  └→ 0012 scoped_approval_policies                  │
+     → 0013 direct_expenses ────────────────────────┤
+                                                    └→ 0014 merge_main_layout_heads
 ```
 
 `0004` permite Roles globales manteniendo la protección de máximo un Rol por Usuario/Grupo.
@@ -277,10 +295,17 @@ procesos internos quedan marcados como `SYSTEM:*`.
 `0009` agrega `group_permissions` vacía y no altera `role_permissions` ni accesos preexistentes.
 `0010` agrega `users.password_reset_version` para invalidar enlaces de restablecimiento sin almacenar tokens ni rotar la contraseña durante la emisión.
 `0011` agrega `roles.max_users` nullable, exige valores positivos y añade el campo a las instantáneas temporales de Rol sin limitar Roles existentes.
-`0012` agrega targets de Rol/Grupo a las políticas, conserva regla, modalidad,
+`20260827_0012` agrega targets de Rol/Grupo a las políticas, conserva regla, modalidad,
 monto evaluado y quórum por ronda, y desactiva las políticas legacy activas cuyos
 nuevos targets nacen vacíos. `0013` crea `direct_expenses` como registro
 independiente y no modifica el enum ni la tabla `expenses`.
+
+`20260825_0012` devuelve a `QUOTATION_VOTING` las solicitudes `MULTI_QUOTE` que habían
+quedado en `APPROVED` sin factura, sin modificar solicitudes cerradas ni sus
+adjuntos.
+
+`0014` une ambos heads inmutables con dos `down_revision`; no agrega cambios de
+dominio y deja una sola cabeza Alembic.
 
 ## Recuperación de entidades inactivas
 

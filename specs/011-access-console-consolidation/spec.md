@@ -67,13 +67,21 @@ pendiente y muestra éxito o error sin revelar el token.
 
 Abrir `#access-management` sin sesión vuelve al Login antes de montar la consola. Un 401 invalida la sesión.
 
+`POST /api/auth/login` y `GET /api/auth/me` exponen `role_names` con los nombres
+ordenados de todos los Roles IAM activos asignados al Usuario. La cabecera muestra
+esos Roles, no traduce el perfil técnico legacy `user.role` a frases de capacidad.
+Si hay varios los presenta juntos; una cuenta técnica sin asignación visible usa
+**Administrador del sistema** y un Usuario ordinario sin Rol usa **Sin rol
+asignado**.
+
 ## Requests
 
 Se elimina polling sub-segundo. El gobernador global deduplica GET idénticos en vuelo, reutiliza brevemente respuestas automáticas y permite refresh explícito.
 
 ## Navegación
 
-La topbar permanece operativa y al navegar fuera de Accesos se desmonta el overlay/hash.
+La topbar permanece operativa, identifica los Roles IAM de la sesión y al navegar
+fuera de Accesos se desmonta el overlay/hash.
 
 ## Responsive
 

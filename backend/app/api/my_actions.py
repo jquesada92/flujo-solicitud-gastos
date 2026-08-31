@@ -15,13 +15,13 @@ from app.services.pending_action_service import (
     QUOTATION_VOTE,
     pending_actions_by_expense,
 )
-from app.services.quotation_service import quotation_quorum_reached, quotation_tally
+from app.services.quotation_service import quotation_voting_summary
 
 router = APIRouter()
 
 ACTION_LABELS = {
     APPROVAL_DECISION: 'Responder aprobación',
-    QUOTATION_VOTE: 'Votar cotización',
+    QUOTATION_VOTE: 'Votar o cambiar voto',
     CLOSE_REQUEST: 'Subir factura y cerrar',
     CORRECT_REQUEST: 'Corregir y reenviar',
 }
@@ -55,12 +55,15 @@ def _attachment(item) -> dict:
 
 
 def _request_payload(db: Session, expense: Expense, user: User) -> dict:
-    quotation_voter_count, quotation_vote_count, _ = quotation_tally(db, expense.id)
     general_supports = [
         _attachment(item)
         for item in expense.attachments
         if item.quotation_option_id is None and item.document_type != 'INVOICE_REPLACED'
     ]
+    current_vote = next((
+        vote for vote in expense.quotation_votes if vote.voter_user_id == user.id
+    ), None)
+    voting = quotation_voting_summary(db, expense) if expense.request_type == 'MULTI_QUOTE' else None
     return {
         'request_id': expense.request_id,
         'display_id': expense.display_id,
@@ -82,9 +85,13 @@ def _request_payload(db: Session, expense: Expense, user: User) -> dict:
             if expense.policy_evaluation_amount is not None else None
         ),
         'minimum_votes_required': expense.minimum_votes_required,
-        'quotation_voter_count': quotation_voter_count,
-        'quotation_vote_count': quotation_vote_count,
-        'quotation_quorum_reached': quotation_quorum_reached(db, expense),
+        'selected_quotation_id': expense.selected_quotation_id,
+        'current_quotation_option_id': current_vote.quotation_option_id if current_vote else None,
+        'quotation_voter_count': voting.invited_count if voting else 0,
+        'quotation_vote_count': voting.vote_count if voting else 0,
+        'quotation_quorum_reached': voting.quorum_reached if voting else False,
+        'quotation_is_complete': voting.is_complete if voting else False,
+        'quotation_has_tie': voting.is_tied if voting else False,
         'can_delegate_close': can_delegate_closure(expense, user),
         'supports': general_supports,
         'quotation_options': [

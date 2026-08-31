@@ -15,8 +15,9 @@
 7. Cerrar con factura de forma atómica, fijar el ganador y rechazar votos
    posteriores.
 8. Conservar el fallback sin regla y la atomicidad definida por la Spec 019;
-   cubrir por HTTP que el Solicitante recibe `409` al intentar cerrar desde
-   `QUOTATION_VOTING` y que no queda factura ni ganador fijado.
+   exigir todos los votos y un líder único, mantener `QUOTATION_VOTING` y cubrir
+   por HTTP el cierre ordinario directo a `CLOSED`, además del `409` sin factura
+   ni ganador cuando falte un voto o exista empate.
 9. Sustituir la UI legacy de perfiles por Roles/Grupos y modalidad, con estados
    de carga/error y comportamiento responsive.
 10. Sincronizar fuentes normativas, guías, riesgos, historia y pruebas.

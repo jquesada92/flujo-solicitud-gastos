@@ -108,8 +108,10 @@ backend/app/models/iam.py
 backend/alembic/versions/20260824_0009_group_permission_inheritance.py
 backend/alembic/versions/20260824_0010_password_reset_links.py
 backend/alembic/versions/20260825_0011_role_user_limit.py
+backend/alembic/versions/20260825_0012_keep_quotation_voting_open.py
 backend/alembic/versions/20260827_0012_scoped_approval_policies.py
 backend/alembic/versions/20260828_0013_direct_expenses.py
+backend/alembic/versions/20260828_0014_merge_main_layout_heads.py
 ```
 
 Para persistencia:
@@ -151,6 +153,16 @@ backend/tests/test_direct_expenses.py
 specs/021-scoped-approval-rules/
 specs/022-direct-expense-registration/
 specs/019-iam-approval-flow-atomicity/
+```
+
+Para votación de cotizaciones y cierre:
+
+```text
+backend/app/services/quotation_service.py
+backend/app/api/quotation_actions.py
+backend/app/api/financial_actions.py
+backend/tests/test_multi_quote_open_voting.py
+specs/013-multi-quote-voting/
 ```
 
 Para gates y operación segura:

@@ -28,13 +28,6 @@ const descriptor = (value) => String(value || "")
   .replaceAll("_", " ")
   .toLowerCase()
   .replace(/^./, (letter) => letter.toUpperCase());
-const roles = [
-  ["REQUESTER", "Puede solicitar"],
-  ["APPROVER", "Puede aprobar"],
-  ["VIEWER", "Puede consultar"],
-  ["ADMIN", "Administrador"],
-];
-const roleName = (role) => roles.find(([value]) => value === role)?.[1] || descriptor(role);
 const userTitles = [
   ["PRESIDENTE", "Presidente"],
   ["VICEPRESIDENTE", "Vicepresidente"],
@@ -821,6 +814,9 @@ function ClosurePanel({ expense, onDone, onCancel }) {
   const replacing = expense.status === "CLOSED";
   const closingActiveVote = expense.request_type === "MULTI_QUOTE"
     && expense.status === "QUOTATION_VOTING";
+  const activeVoteClosureMessage = expense.approval_policy_id != null
+    ? "El umbral y un líder único ya fueron alcanzados. La votación seguirá abierta hasta que confirmes este cierre con la factura."
+    : "Todos los participantes votaron y existe un líder único. La votación seguirá abierta hasta que confirmes este cierre con la factura.";
   const [invoice, setInvoice] = useState(null),
     [notes, setNotes] = useState(""),
     [saving, setSaving] = useState(false),
@@ -854,7 +850,7 @@ function ClosurePanel({ expense, onDone, onCancel }) {
           {replacing
             ? "Adjunta la factura correcta. La anterior se conservará para auditoría."
             : closingActiveVote
-              ? "El umbral y un líder único ya fueron alcanzados. Los demás participantes pueden votar hasta que confirmes este cierre con la factura."
+              ? activeVoteClosureMessage
               : "Adjunta la factura final para cerrar esta solicitud aprobada."}
         </span>
       </div>
@@ -929,7 +925,7 @@ function QuotationPolicyStatus({ expense }) {
     {hasPolicy && minimum !== null ? (
       <span>{votes} de {participants} voto(s) · mínimo para cerrar: {minimum}{expense.quotation_quorum_reached ? " · umbral alcanzado" : ""}</span>
     ) : (
-      <span>Todos los votantes deben responder; no hay cierre anticipado.</span>
+      <span>Todos los votantes deben responder antes de agregar la factura y cerrar.</span>
     )}
   </div>;
 }
@@ -965,14 +961,26 @@ const flowEventName = (event) => ({
   EXPENSE_CANCELLED: "Solicitud cancelada",
 })[event] || descriptor(event);
 
-function FlowProgressViewer({ expense, onClose }) {
+function FlowProgressViewer({ expense, currentUserEmail, canApprove, onChangeVote, onClose }) {
   const metrics = expenseFlowMetrics(expense);
   const multiQuote = expense.request_type === "MULTI_QUOTE";
+  const currentVote = multiQuote ? expense.quotation_votes.find((vote) => vote.voter_email?.toLowerCase() === currentUserEmail?.toLowerCase()) : null;
+  const voteCounts = multiQuote ? expense.quotation_options.map((option) => expense.quotation_votes.filter((vote) => vote.quotation_option_id === option.id).length) : [];
+  const highestVoteCount = voteCounts.length ? Math.max(...voteCounts) : 0;
+  const leadingOptionCount = highestVoteCount > 0
+    ? voteCounts.filter((count) => count === highestVoteCount).length
+    : 0;
+  const tied = multiQuote && leadingOptionCount > 1;
+  const hasProvisionalWinner = multiQuote && leadingOptionCount === 1;
+  const canVote = expense.can_vote === true;
   return <div className="confirm-overlay" role="presentation" onMouseDown={onClose}>
     <section className="confirm-dialog flow-progress-dialog" role="dialog" aria-modal="true" aria-labelledby="flow-progress-title" onMouseDown={(event) => event.stopPropagation()}>
       <div className="card-heading"><div><p className="eyebrow">AVANCE DEL FLUJO</p><h2 id="flow-progress-title">{expense.display_id}</h2><span className="muted">{expense.title}</span></div><button className="secondary" onClick={onClose}>Cerrar</button></div>
       <div className="flow-summary"><strong>{metrics.percentage}% respondido</strong><span>{metrics.answered} respuesta(s) · {metrics.pending} pendiente(s) · {metrics.total} participante(s)</span><div className="flow-progress-track"><span style={{width:`${metrics.percentage}%`}} /></div></div>
       <QuotationPolicyStatus expense={expense} />
+      {tied && <div className="notice error">La votación está empatada y no permite registrar la factura. Los aprobadores pueden cambiar su voto.</div>}
+      {hasProvisionalWinner && <div className="notice success">Existe un ganador provisional. La votación se cerrará al registrar la factura.</div>}
+      {canVote && currentVote && expense.status === "QUOTATION_VOTING" && <button className="primary" onClick={onChangeVote}>Cambiar mi voto</button>}
       <div className="flow-response-list">{multiQuote ? expense.quotation_votes.map((vote) => { const option = expense.quotation_options.find((item) => item.id === vote.quotation_option_id); return <article key={`${vote.voter_email}-${vote.quotation_option_id}`} className="flow-response-card">
         <div><strong>{vote.voter_name || vote.voter_email}</strong><span>{titleName(vote.voter_role)}</span></div>
         <StatusBadge status="APPROVED"/>
@@ -988,8 +996,9 @@ function FlowProgressViewer({ expense, onClose }) {
   </div>;
 }
 
-function ExpenseDetailViewer({ expense, categoryName, subcategoryName, canApprove, onVoted, onClose }) {
+function ExpenseDetailViewer({ expense, categoryName, subcategoryName, canApprove, currentUserEmail, onVoted, onClose }) {
   const canVote = expense.can_vote === true;
+  const hasCurrentVote = expense.quotation_votes?.some((item) => item.voter_email?.toLowerCase() === currentUserEmail?.toLowerCase());
   const vote = async (optionId) => {
     await api(`/api/expenses/${expense.internal_request_id || expense.request_id}/quotation-vote`, { method: "POST", body: JSON.stringify({ quotation_option_id: optionId }) });
     onVoted?.(); onClose();
@@ -1009,7 +1018,7 @@ function ExpenseDetailViewer({ expense, categoryName, subcategoryName, canApprov
         <div><dt>Última actualización</dt><dd>{flowEventName(expense.last_event_type)}<span className="subtext">{approvalTimestamp(expense.last_event_at)}</span></dd></div>
       </dl>
       <QuotationPolicyStatus expense={expense} />
-      {expense.request_type === "MULTI_QUOTE" && <div className="quotation-audit-list"><h3>Cotizaciones presentadas</h3>{expense.quotation_options.map((option) => { const count = expense.quotation_votes.filter((item) => item.quotation_option_id === option.id).length; return <article className={`quote-option-card ${expense.selected_quotation_id === option.id ? "selected" : ""}`} key={option.id}><div><strong>Opción {option.option_number}: {option.supplier}</strong><span className="subtext">${Number(option.amount).toLocaleString(undefined,{minimumFractionDigits:2})} · {count} voto(s)</span>{option.notes && <span className="subtext">{option.notes}</span>}</div>{option.item_url && <a href={option.item_url} target="_blank" rel="noreferrer">Ver cotización</a>}{canVote && expense.status === "QUOTATION_VOTING" && <button className="primary" onClick={() => vote(option.id)}>Votar por esta opción</button>}</article> })}</div>}
+      {expense.request_type === "MULTI_QUOTE" && <div className="quotation-audit-list"><h3>Cotizaciones presentadas</h3>{expense.quotation_options.map((option) => { const count = expense.quotation_votes.filter((item) => item.quotation_option_id === option.id).length; const isCurrentVote = expense.quotation_votes.some((item) => item.quotation_option_id === option.id && item.voter_email?.toLowerCase() === currentUserEmail?.toLowerCase()); return <article className={`quote-option-card ${expense.selected_quotation_id === option.id ? "selected" : ""}`} key={option.id}><div><strong>Opción {option.option_number}: {option.supplier}</strong><span className="subtext">${Number(option.amount).toLocaleString(undefined,{minimumFractionDigits:2})} · {count} voto(s)</span>{isCurrentVote && <span className="subtext">Tu voto actual</span>}{option.notes && <span className="subtext">{option.notes}</span>}</div>{option.item_url && <a href={option.item_url} target="_blank" rel="noreferrer">Ver cotización</a>}{canVote && expense.status === "QUOTATION_VOTING" && <button className="primary" disabled={isCurrentVote} onClick={() => vote(option.id)}>{isCurrentVote ? "Voto actual" : hasCurrentVote ? "Cambiar voto a esta opción" : "Votar por esta opción"}</button>}</article> })}</div>}
       <div className="description-box"><strong>Descripción / justificación</strong><p>{expense.description}</p></div>
       <div className="expense-detail-references"><span><strong>ID:</strong> {expense.display_id}</span><span><strong>Flujo:</strong> {expense.flow_id}</span></div>
     </section>
@@ -1021,6 +1030,7 @@ function ExpenseTable({
   canEdit,
   canApprove,
   canClose,
+  currentUserEmail,
   onEdit,
   onChanged,
   categoryOptions = [],
@@ -1100,8 +1110,8 @@ function ExpenseTable({
   return (
     <section className="card">
       {viewing && <AttachmentViewer file={viewing} onClose={() => setViewing(null)} />}
-      {flowViewing && <FlowProgressViewer expense={flowViewing} onClose={() => setFlowViewing(null)} />}
-      {detailViewing && <ExpenseDetailViewer expense={detailViewing} categoryName={categoryName} subcategoryName={subcategoryName} canApprove={canApprove} onVoted={onChanged} onClose={() => setDetailViewing(null)} />}
+      {flowViewing && <FlowProgressViewer expense={flowViewing} currentUserEmail={currentUserEmail} canApprove={canApprove} onChangeVote={() => { setDetailViewing(flowViewing); setFlowViewing(null); }} onClose={() => setFlowViewing(null)} />}
+      {detailViewing && <ExpenseDetailViewer expense={detailViewing} categoryName={categoryName} subcategoryName={subcategoryName} canApprove={canApprove} currentUserEmail={currentUserEmail} onVoted={onChanged} onClose={() => setDetailViewing(null)} />}
       <div className="card-heading">
         <div>
           <p className="eyebrow">SEGUIMIENTO</p>
@@ -1263,17 +1273,17 @@ function ExpenseTable({
                         </button>
                       ))
                     ) : x.status === "QUOTATION_VOTING" && x.can_close ? (
-                      <span className="closure-ready">Umbral alcanzado · lista para agregar factura</span>
+                      <span className="closure-ready">{x.approval_policy_id != null ? "Umbral alcanzado" : "Todos votaron"} · lista para agregar factura</span>
                     ) : x.status === "QUOTATION_VOTING" && x.approval_policy_id != null ? (
                       <span className="muted">{Number(x.quotation_vote_count) || 0} de {Number(x.minimum_votes_required) || 0} voto(s) mínimos</span>
                     ) : x.status === "QUOTATION_VOTING" ? (
-                      <span className="muted">Disponible cuando todos voten y se apruebe</span>
+                      <span className="muted">Disponible cuando todos voten y exista un ganador único</span>
                     ) : <span className="muted">Disponible al cerrar</span>}
                     {x.status === "CLOSED" && !x.attachments.some((a) => a.document_type === "INVOICE") && <span className="muted">Sin factura registrada</span>}
                   </td>
                   <td className="amount-cell" data-label="Monto">
                     $
-                    {Number(x.amount).toLocaleString(undefined, {
+                    {Number(x.tracking_amount ?? x.amount).toLocaleString(undefined, {
                       minimumFractionDigits: 2,
                     })}
                   </td>
@@ -3465,6 +3475,11 @@ function App() {
     localStorage.removeItem("access_token");
     setUser(null);
   };
+  const headerRoleLabel = user.role_names?.length
+    ? user.role_names.join(" · ")
+    : user.is_system_account
+      ? "Administrador del sistema"
+      : "Sin rol asignado";
   const navigateTo = (nextTab) => {
     if (nextTab === tab || !confirmDiscardChanges()) return;
     setTab(nextTab);
@@ -3517,8 +3532,8 @@ function App() {
           <div className="brand-mark">PH</div>
           <div>
             <strong>Gestión de Gastos</strong>
-            <span>
-              {user.name} · {roleName(user.role)}
+            <span className="session-role-summary">
+              {user.name} · {headerRoleLabel}
             </span>
           </div>
         </div>
@@ -3592,6 +3607,7 @@ function App() {
               canEdit={canCreate}
               canApprove={canApprove}
               canClose={true}
+              currentUserEmail={user.email}
               onEdit={startRevision}
               onChanged={() => setRefresh((x) => x + 1)}
               categoryOptions={categoryOptions}

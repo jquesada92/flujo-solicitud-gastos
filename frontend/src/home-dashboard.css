@@ -224,6 +224,24 @@
   color: #166534;
 }
 
+.pending-action-warning,
+.pending-action-info {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.pending-action-warning {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.pending-action-info {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
 .pending-supports {
   flex-direction: column;
   align-items: flex-start;
@@ -256,6 +274,11 @@
   border: 1px solid #dbe3ef;
   border-radius: 14px;
   background: #f8fafc;
+}
+
+.pending-quote-card.current-vote {
+  border-color: #2563eb;
+  background: #eff6ff;
 }
 
 .pending-quote-heading {

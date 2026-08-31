@@ -12,6 +12,34 @@ from alembic.script import ScriptDirectory
 
 class MigrationTopologyTests(unittest.TestCase):
     @staticmethod
+    def _render_migration_sql(
+        filename: str,
+        *,
+        url: str,
+        schema: str | None,
+        operation: str,
+    ) -> str:
+        backend_dir = Path(__file__).resolve().parents[1]
+        migration_path = backend_dir / 'alembic' / 'versions' / filename
+        spec = importlib.util.spec_from_file_location(
+            f'migration_{filename}_{operation}_{schema or "default"}',
+            migration_path,
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f'No se pudo cargar la migracion {filename}')
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+
+        output = StringIO()
+        context = MigrationContext.configure(
+            url=url,
+            opts={'as_sql': True, 'literal_binds': True, 'output_buffer': output},
+        )
+        with Operations.context(context), patch.object(migration, '_schema', return_value=schema):
+            getattr(migration, operation)()
+        return output.getvalue()
+
+    @staticmethod
     def _render_group_permission_sql(*, url: str, schema: str | None, operation: str) -> str:
         backend_dir = Path(__file__).resolve().parents[1]
         migration_path = (
@@ -42,10 +70,15 @@ class MigrationTopologyTests(unittest.TestCase):
         config.set_main_option('script_location', str(backend_dir / 'alembic'))
         script = ScriptDirectory.from_config(config)
 
-        self.assertEqual(script.get_heads(), ['20260828_0013'])
+        self.assertEqual(script.get_heads(), ['20260828_0014'])
         revisions = {revision.revision: revision.down_revision for revision in script.walk_revisions()}
+        self.assertEqual(
+            revisions['20260828_0014'],
+            ('20260825_0012', '20260828_0013'),
+        )
         self.assertEqual(revisions['20260828_0013'], '20260827_0012')
         self.assertEqual(revisions['20260827_0012'], '20260825_0011')
+        self.assertEqual(revisions['20260825_0012'], '20260825_0011')
         self.assertEqual(revisions['20260825_0011'], '20260824_0010')
         self.assertEqual(revisions['20260824_0010'], '20260824_0009')
         self.assertEqual(revisions['20260824_0009'], '20260821_0008')
@@ -57,6 +90,32 @@ class MigrationTopologyTests(unittest.TestCase):
         self.assertEqual(revisions['20260821_0003'], '20260820_0002')
         self.assertEqual(revisions['20260820_0002'], '20260820_0001')
         self.assertIsNone(revisions['20260820_0001'])
+
+    def test_multi_quote_open_voting_has_forward_data_migration(self):
+        backend_dir = Path(__file__).resolve().parents[1]
+        migration = (
+            backend_dir / 'alembic' / 'versions'
+            / '20260825_0012_keep_quotation_voting_open.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("revision = '20260825_0012'", migration)
+        self.assertIn("down_revision = '20260825_0011'", migration)
+        self.assertIn("expenses.c.request_type == 'MULTI_QUOTE'", migration)
+        self.assertIn("expenses.c.status == sa.cast('APPROVED', status_type)", migration)
+        self.assertIn("attachments.c.document_type == 'INVOICE'", migration)
+        self.assertIn("values(status=sa.cast('QUOTATION_VOTING', status_type))", migration)
+        self.assertIn("name='expensestatus'", migration)
+
+        upgrade_sql = self._render_migration_sql(
+            '20260825_0012_keep_quotation_voting_open.py',
+            url='postgresql+psycopg://',
+            schema='administracion',
+            operation='upgrade',
+        )
+        self.assertIn('UPDATE administracion.expenses', upgrade_sql)
+        self.assertIn('administracion.expense_attachments', upgrade_sql)
+        self.assertIn("'MULTI_QUOTE'", upgrade_sql)
+        self.assertIn("'QUOTATION_VOTING'", upgrade_sql)
+        self.assertIn('administracion.expensestatus', upgrade_sql)
 
     def test_initial_schema_remains_clean_fresh_install_baseline(self):
         backend_dir = Path(__file__).resolve().parents[1]

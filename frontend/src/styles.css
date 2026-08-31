@@ -44,6 +44,10 @@ textarea {
   margin-top: 2px;
 }
 
+.topbar .session-role-summary {
+  overflow-wrap: anywhere;
+}
+
 .brand-mark {
   display: grid;
   place-items: center;
@@ -1267,11 +1271,16 @@ dd {
     min-width: 0;
   }
 
-  .topbar>div:first-child strong,
-  .topbar span {
+  .topbar>div:first-child strong {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .topbar .session-role-summary {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
   }
 
   .brand-mark {

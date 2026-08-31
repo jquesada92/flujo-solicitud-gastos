@@ -1,6 +1,6 @@
 # Prompt maestro de reconstrucción
 
-> Constitución vigente: **2.24.0**.
+> Constitución vigente: **2.25.0**.
 
 Reconstruye **Flujo de Control de Gastos** como una aplicación web neutral respecto al tipo de organización, lista para desplegar con React/Vite, FastAPI, SQLAlchemy, Alembic y PostgreSQL/Neon.
 
@@ -206,9 +206,20 @@ Crea una pantalla privada, de solo lectura, para seguimiento del equipo:
 
 Los Roles globales no crean membresía ni filas por Grupo en Seguimiento. No permitas editar IAM desde Seguimiento.
 
+En la tabla operativa de Solicitudes, calcula un monto de Seguimiento separado
+de `Expense.amount` para `MULTI_QUOTE`: máximo presentado cuando no hay votos,
+monto del líder cuando existe uno único y máximo presentado cuando hay empate.
+No selecciones proveedor ni ganador solo para completar esta visualización.
+
 ## 8. Sesión y rutas privadas
 
 Una ruta privada sin sesión debe redirigir al Login antes de montar su contenido. Un 401 recibido con token almacenado debe limpiar la sesión y retornar al Login.
+
+Incluye en login y `GET /api/auth/me` los nombres ordenados de todos los Roles IAM
+activos asignados al Usuario. La cabecera debe mostrar esos nombres, no traducir
+el perfil técnico legacy `user.role` a capacidades como “Puede consultar”. Si el
+Usuario ordinario no tiene Rol muestra **Sin rol asignado**; para una cuenta
+técnica sin Rol visible usa **Administrador del sistema**.
 
 Protege al menos Accesos y Seguimiento y aplica el mismo patrón a cualquier nueva pantalla privada.
 
@@ -291,12 +302,15 @@ Para `MULTI_QUOTE`, exige soporte en cada opción y congela política, modalidad
 monto máximo evaluado, población y quórum. Sobre `N` invitados, `ANY=1`,
 `MAJORITY=floor(N/2)+1` y `ALL=N`. Con política, alcanzar quórum y líder único
 habilita cierre anticipado solo al Solicitante, pero conserva
-`QUOTATION_VOTING`: todos los invitados pueden votar o cambiar hasta que la
-factura cierre la solicitud. Un empate no habilita cierre. Sin política, invita
-a toda la población IAM, exige todos los votos y solo un ganador único lleva a
-`APPROVED`; el Solicitante no puede cerrar anticipadamente. Mientras el fallback
-siga en `QUOTATION_VOTING`, un `POST` de cierre debe responder `409` sin guardar
-factura ni fijar ganador.
+`QUOTATION_VOTING`. Todos los invitados conservan **Votar o cambiar voto** hasta
+que la factura cierre la solicitud. Un empate no habilita cierre. Sin política,
+invita a toda la población IAM y exige todos los votos y un líder único, pero
+también permanece en `QUOTATION_VOTING` hasta la factura; entonces el cierre
+ordinario puede hacerlo el Solicitante, `system_accounts` o un delegado activo.
+Ante quórum o población incompletos, o empate, el `POST` de cierre responde `409`
+sin guardar factura ni fijar ganador. El cierre recalcula el resultado bajo
+bloqueo y pasa directamente a `CLOSED`; nunca restaura una transición automática
+a `APPROVED`.
 
 Para una banda `NO_APPROVAL` aplicable, implementa **Registro directo → Gasto
 sin aprobación** con Área, proveedor, ítem/descripción, monto positivo y factura.
@@ -421,8 +435,10 @@ Cadena:
 → 20260824_0009_group_permission_inheritance
 → 20260824_0010_password_reset_links
 → 20260825_0011_role_user_limit
-→ 20260827_0012_scoped_approval_policies
-→ 20260828_0013_direct_expenses
+  ├→ 20260825_0012_keep_quotation_voting_open ───────────────┐
+  └→ 20260827_0012_scoped_approval_policies                  │
+     → 20260828_0013_direct_expenses ────────────────────────┤
+                                                             └→ 20260828_0014_merge_main_layout_heads
 ```
 
 Toda creación o modificación relevante de Usuario, Área, Rol y Grupo se registra
@@ -434,7 +450,16 @@ La fila identifica actor, timestamp, tipo de evento, campos cambiados y valores
 Las listas GUI excluyen inactivos. Los formularios consultan recuperación por
 cédula o clave/nombre y reactivan el ID existente con confirmación del usuario.
 
-`0001` crea la instalación limpia. `0002` impide múltiples Grupos por Rol y dos Roles del mismo Grupo por Usuario. `0003` garantiza un Cargo por Usuario. `0004` permite Roles sin Grupo manteniendo la protección para Roles agrupados. `0009` agrega `group_permissions` vacía, sin cambiar accesos existentes ni `role_permissions`. `0010` agrega `users.password_reset_version` para invalidar emisiones anteriores sin rotar credenciales ni sesiones. `0011` agrega cupo opcional a Roles. `0012` agrega targets de política e instantáneas por ronda y desactiva políticas legacy activas con targets nuevos vacíos. `0013` crea `direct_expenses` sin alterar tipos o estados de `Expense`.
+`0001` crea la instalación limpia. `0002` impide múltiples Grupos por Rol y dos
+Roles del mismo Grupo por Usuario. `0003` garantiza un Cargo por Usuario. `0004`
+permite Roles sin Grupo manteniendo la protección para Roles agrupados. `0009`
+agrega `group_permissions` vacía, sin cambiar accesos existentes ni
+`role_permissions`. `0010` agrega `users.password_reset_version`; `0011` agrega
+el cupo opcional de Rol. La rama `20260825_0012` devuelve a
+`QUOTATION_VOTING` solicitudes múltiples en `APPROVED` sin factura. La otra rama
+usa `20260827_0012` para targets e instantáneas de política y `20260828_0013`
+para `direct_expenses`. `20260828_0014` une ambas ramas mediante dos
+`down_revision`, sin reescribirlas ni agregar una mutación de dominio.
 
 ## 16. Correo
 
@@ -518,7 +543,7 @@ Gates:
 
 ```text
 docker compose exec -T backend alembic heads
-# esperado: 20260828_0013 (head)
+# esperado: 20260828_0014 (head)
 
 cd backend
 .\.venv\Scripts\python.exe -m scripts.run_tests

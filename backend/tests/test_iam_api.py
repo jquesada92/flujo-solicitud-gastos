@@ -226,6 +226,31 @@ class IamApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertFalse(response.json()['is_system_account'])
 
+    def test_login_and_me_return_active_assigned_iam_role_names(self):
+        with self.Session() as db:
+            first = Role(code='board-vocal', name='Vocal', active=True, system_managed=False)
+            second = Role(code='global-requester', name='Solicitante', active=True, system_managed=False)
+            inactive = Role(code='old-role', name='Rol anterior', active=False, system_managed=False)
+            db.add_all([first, second, inactive])
+            db.flush()
+            db.add_all([
+                UserRoleAssignment(user_id=self.normal_user_id, role_id=first.id),
+                UserRoleAssignment(user_id=self.normal_user_id, role_id=second.id),
+                UserRoleAssignment(user_id=self.normal_user_id, role_id=inactive.id),
+            ])
+            db.commit()
+
+        login = self.client.post(
+            '/api/auth/login',
+            json={'email': 'member@example.com', 'password': 'Test-password-123!'},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        self.assertEqual(login.json()['user']['role_names'], ['Solicitante', 'Vocal'])
+
+        me = self.client.get('/api/auth/me', headers=self.auth(login.json()['access_token']))
+        self.assertEqual(me.status_code, 200, me.text)
+        self.assertEqual(me.json()['role_names'], ['Solicitante', 'Vocal'])
+
     def test_system_account_can_join_approval_population_outside_production(self):
         with self.Session() as db:
             users = users_with_permission(db, 'requests:approve')

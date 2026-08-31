@@ -16,10 +16,7 @@ from app.models.entities import (
 from app.schemas.expense import ExpenseOut
 from app.services.closure_service import can_manage_closure, is_requester
 from app.services.document_service import read_upload, write_document
-from app.services.quotation_service import (
-    apply_current_quotation_leader,
-    can_requester_close_voting,
-)
+from app.services.quotation_service import require_unique_winner_for_closure
 
 router = APIRouter()
 
@@ -63,24 +60,20 @@ def close_expense(
     )
     if not expense:
         raise HTTPException(status_code=404, detail='Solicitud no encontrada')
-    if expense.status not in (ExpenseStatus.APPROVED, ExpenseStatus.QUOTATION_VOTING):
+    if expense.request_type == 'MULTI_QUOTE':
+        if expense.status != ExpenseStatus.QUOTATION_VOTING:
+            raise HTTPException(status_code=409, detail='La votación de cotizaciones ya no está abierta')
+        require_unique_winner_for_closure(db, expense)
+        if expense.approval_policy_id is not None:
+            if not is_requester(expense, user):
+                raise HTTPException(
+                    status_code=403,
+                    detail='Solo el solicitante original puede cerrar una votación al alcanzar el umbral',
+                )
+        else:
+            _require_closure_actor(db, expense, user)
+    elif expense.status != ExpenseStatus.APPROVED:
         raise HTTPException(status_code=409, detail='Solo se pueden cerrar solicitudes aprobadas')
-    if expense.status == ExpenseStatus.QUOTATION_VOTING:
-        if not is_requester(expense, user):
-            raise HTTPException(
-                status_code=403,
-                detail='Solo el solicitante original puede cerrar una votación al alcanzar el umbral',
-            )
-        if not can_requester_close_voting(db, expense, user):
-            raise HTTPException(
-                status_code=409,
-                detail='La votación todavía no alcanza el umbral requerido con un líder único',
-            )
-        if apply_current_quotation_leader(db, expense) is None:
-            raise HTTPException(
-                status_code=409,
-                detail='La votación no tiene un líder único para cerrar la solicitud',
-            )
     else:
         _require_closure_actor(db, expense, user)
 

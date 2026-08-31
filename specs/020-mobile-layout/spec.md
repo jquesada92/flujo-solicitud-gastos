@@ -1,8 +1,8 @@
 # Spec 020 — Layout móvil transversal
 
-**Estado:** Implementada
+**Estado:** Implementada pendiente de validación visual completa
 
-**Constitución:** 2.24.0
+**Constitución:** 2.25.0
 
 ## Problema
 

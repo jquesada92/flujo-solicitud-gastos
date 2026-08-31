@@ -11,9 +11,15 @@
 - [x] cada usuario mantiene un voto activo.
 - [x] cambios de voto conservan evento.
 - [x] con regla, quórum y líder único habilitan cierre anticipado sin cerrar la votación.
-- [x] sin regla, la ronda espera a todos y un ganador único lleva a APPROVED.
-- [x] empate conserva QUOTATION_VOTING y no habilita cierre.
+- [x] sin regla, la ronda espera a todos y un ganador único habilita el cierre ordinario sin pasar a `APPROVED`.
+- [x] ambos caminos conservan `QUOTATION_VOTING` hasta factura y `CLOSED`.
+- [x] empate conserva `QUOTATION_VOTING`, limpia la selección provisional y no habilita cierre.
+- [x] quórum/población insuficiente o empate bloquean la factura sin persistirla.
 - [x] invitados restantes pueden votar/cambiar hasta la factura y CLOSED.
+- [x] Inicio mantiene `QUOTATION_VOTE` como **Votar o cambiar voto** incluso después del primer voto.
+- [x] factura válida recalcula bajo bloqueo, fija el ganador y lleva directamente a `CLOSED`.
+- [x] voto posterior al cierre recibe 409.
 - [x] corrección reinicia política, quórum, población, votos y flow_id activos.
-- [x] Inicio muestra QUOTATION_VOTE solo mientras esté pendiente.
 - [x] Docker local contiene votación abierta y voto parcial visibles.
+- [x] monto operativo muestra máximo sin votos, líder único o máximo ante empate sin alterar `Expense.amount`.
+- [ ] PostgreSQL local confirma `20260828_0014` como `current=head` único.

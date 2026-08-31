@@ -1,7 +1,7 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.24.0
+**Versión:** 2.25.0
 **Vigente desde:** 2026-08-28
 
 ## 1. Propósito
@@ -182,6 +182,11 @@ Responde a: **“¿Cómo está la carga del equipo?”**
 
 Los Roles globales no crean filas de membresía en Seguimiento. Es de solo lectura y no modifica accesos.
 
+En la tabla operativa de Solicitudes, el monto visible de una ronda
+`MULTI_QUOTE` abierta es informativo y no modifica `Expense.amount`: sin votos
+es el máximo presentado; con líder único es el monto de esa opción; con empate
+es el máximo de todas las opciones.
+
 ## 9. Sesión y rutas privadas
 
 Toda pantalla protegida requiere sesión válida. Abrir directamente una ruta/hash privado sin token debe volver al Login sin montar una vista parcial. Un `401` con token almacenado invalida la sesión local y retorna al Login.
@@ -284,16 +289,18 @@ ALL      → N
 
 Una ronda `MULTI_QUOTE` con regla exige soporte válido en cada opción y permanece
 en `QUOTATION_VOTING` aun después de alcanzar el umbral. Solo con el quórum
-completo y un líder único el Solicitante original obtiene cierre anticipado; los
-demás invitados pueden votar o cambiar su voto mientras no exista factura y la
-solicitud no esté `CLOSED`. Un empate nunca habilita ese cierre.
+completo y un líder único el Solicitante original obtiene cierre anticipado; la
+cuenta técnica y los delegados no reciben esa capacidad anticipada. Todos los
+invitados conservan **Votar o cambiar voto** mientras no exista factura y la
+solicitud no esté `CLOSED`. Un empate nunca habilita el cierre.
 
 Sin regla aplicable, `MULTI_QUOTE` congela a todos los Usuarios activos con
 `requests:approve`, excluye al Solicitante y requiere el voto de toda la
-población. Con todos los votos y un ganador único pasa a `APPROVED`; un empate
-permanece en `QUOTATION_VOTING`. El Solicitante no puede cerrar anticipadamente
-este fallback: cualquier `POST` de cierre mientras continúe en
-`QUOTATION_VOTING` responde `409` sin guardar factura ni fijar ganador.
+población. Incluso con todos los votos y un líder único permanece en
+`QUOTATION_VOTING` hasta la factura. Como ese cierre ya no es anticipado, pueden
+ejecutarlo el Solicitante original, `system_accounts` o un delegado activo de la
+solicitud. Si falta un voto o existe empate, el `POST` de cierre responde `409`
+sin guardar factura ni fijar ganador.
 
 Una ronda `SIMPLE` usa la misma resolución de targets cuando existe regla. Sin
 regla, incluye a todos los Usuarios activos con permiso efectivo
@@ -335,6 +342,10 @@ CLOSE_REQUEST
 
 Son tareas contextuales, no Permisos IAM.
 
+`QUOTATION_VOTE` permanece disponible para cada invitado mientras la ronda siga
+en `QUOTATION_VOTING`, aunque ya haya votado, porque representa **votar o cambiar
+el voto**. Desaparece al cerrar la solicitud.
+
 ## 13. Aprobación, revisión y corrección
 
 Una decisión de aprobación puede ser `APPROVED`, `REJECTED` o `REVISION_REQUESTED`.
@@ -372,12 +383,15 @@ OR delegado activo de esa solicitud
 
 `requests:close` no participa.
 
-La única excepción de estado es una ronda `MULTI_QUOTE` con regla aplicable,
-quórum alcanzado y líder único: mientras siga en `QUOTATION_VOTING`, solo el
-Solicitante original puede adjuntar la factura y cerrarla. La cuenta técnica y un
-delegado no reciben esa capacidad anticipada; conservan el cierre ordinario desde
-`APPROVED`/`CLOSED`. El cierre y el archivo forman una sola unidad de éxito,
-congelan el resultado final y hacen que cualquier voto posterior reciba `409`.
+En `MULTI_QUOTE`, `QUOTATION_VOTING` permanece vigente hasta la factura. Con una
+regla aplicable, quórum y líder único habilitan cierre anticipado exclusivamente
+al Solicitante original. Sin regla, el cierre exige que todos los invitados
+hayan votado y exista un líder único; entonces aplican las relaciones ordinarias
+anteriores. FastAPI recalcula población, quórum y resultado bajo bloqueo; ante
+votos insuficientes o empate responde `409` sin persistir archivo ni ganador.
+El cierre y la factura forman una sola unidad de éxito, llevan directamente a
+`CLOSED`, congelan el resultado final y hacen que cualquier voto posterior
+reciba `409`.
 
 ## 15. Cuenta técnica
 
@@ -431,8 +445,10 @@ Cadena Alembic vigente:
 → 20260824_0009_group_permission_inheritance
 → 20260824_0010_password_reset_links
 → 20260825_0011_role_user_limit
-→ 20260827_0012_scoped_approval_policies
-→ 20260828_0013_direct_expenses
+  ├→ 20260825_0012_keep_quotation_voting_open ───────────────┐
+  └→ 20260827_0012_scoped_approval_policies                  │
+     → 20260828_0013_direct_expenses ────────────────────────┤
+                                                             └→ 20260828_0014_merge_main_layout_heads
 ```
 
 `20260824_0009_group_permission_inheritance` agrega `group_permissions` vacía para no alterar accesos existentes durante la migración. La tabla relaciona Grupo y Permiso de forma única; no introduce denegaciones ni modifica `role_permissions`.
@@ -457,6 +473,14 @@ vacíos, sin modificar las rondas históricas ya abiertas.
 `direct_expenses` y habilita la modalidad `NO_APPROVAL` sin alterar el enum de
 tipos o estados de `Expense`. La referencia a la política es histórica y no
 introduce una FK destructiva.
+
+`20260825_0012_keep_quotation_voting_open` devuelve a `QUOTATION_VOTING` las
+solicitudes `MULTI_QUOTE` que habían quedado prematuramente en `APPROVED` sin
+factura. No altera solicitudes cerradas ni adjuntos existentes.
+
+`20260828_0014_merge_main_layout_heads` une las dos ramas desplegadas sobre
+`20260825_0011` mediante dos `down_revision`. No reescribe ninguna revisión
+histórica ni introduce por sí misma cambios de dominio; deja un único head.
 
 Usuarios, Áreas, Roles y Grupos mantienen historial temporal versionado. Cada
 alta crea una fila cuyo `active_from` coincide con `created_at`; toda modificación
@@ -577,7 +601,7 @@ Validaciones mínimas:
 ```text
 docker compose up -d --build
 docker compose exec -T backend alembic heads
-# esperado: 20260828_0013
+# esperado: 20260828_0014
 
 cd backend
 .\.venv\Scripts\python.exe -m scripts.run_tests
@@ -600,9 +624,12 @@ edición y reactivación conservan su ID y un fallo conserva el borrador.
 Para reglas de aprobación y `MULTI_QUOTE`, la aceptación debe cubrir bandas
 `(min,max]` sin superposición por Área, evaluación por el máximo de las opciones,
 targets de Rol/Grupo sin crear autoridad, expansión y deduplicación de Usuarios,
-quórum `ANY`/`MAJORITY`/`ALL`, líder único, votos restantes hasta factura/cierre
-y el fallback sin regla que espera a toda la población y no habilita cierre
-anticipado al Solicitante.
+quórum `ANY`/`MAJORITY`/`ALL`, líder único y votos/cambios disponibles hasta
+factura/cierre. Con regla debe acreditar cierre anticipado exclusivo del
+Solicitante; sin regla, espera a toda la población, permanece en
+`QUOTATION_VOTING` y permite cierre ordinario solo con líder único. También debe
+cubrir `tracking_amount` como máximo sin votos, monto del líder único o máximo
+ante empate, sin alterar `Expense.amount`.
 
 Para `NO_APPROVAL` y gastos directos, la aceptación debe cubrir regla sin
 targets, resolución `(min,max]` con precedencia de Área, permiso

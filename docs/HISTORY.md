@@ -1,5 +1,19 @@
 # Historia funcional
 
+## 2026-08-28 — reconciliación de main y layout móvil
+
+- La Constitución evoluciona a 2.25.0 y combina reglas de aprobación por banda,
+  gasto directo y bloqueo global con la votación abierta hasta factura.
+- Toda ronda `MULTI_QUOTE` permanece en `QUOTATION_VOTING`: con política puede
+  cerrar anticipadamente solo el Solicitante al alcanzar quórum y líder único;
+  sin política exige todos los votos y líder único antes del cierre ordinario.
+- Los invitados conservan **Votar o cambiar voto** hasta `CLOSED`, y
+  `tracking_amount` mantiene el monto operativo separado de `Expense.amount`.
+- La sesión conserva `role_names` y la cabecera muestra los Roles IAM activos.
+- Alembic mantiene inmutables las dos ramas `20260825_0012` y `20260827_0012 →
+  20260828_0013`; `20260828_0014_merge_main_layout_heads` las une en un solo
+  head sin una mutación adicional de dominio.
+
 ## 2026-08-28 — bloqueo global de guardado y alta segura de Roles
 
 - La Constitución evoluciona a 2.24.0 y define el Bloqueo global de
@@ -50,6 +64,25 @@
 - La Spec 021 y Alembic `20260827_0012` incorporan el contrato sin convertir
   targets en autoridad IAM.
 
+## 2026-08-26 — votación abierta hasta factura y sin cierre en empate
+
+- La Constitución evoluciona a 2.21.0.
+- Completar los votos ya no mueve una solicitud múltiple a `APPROVED`; un
+  ganador único queda provisional en `QUOTATION_VOTING`.
+- Cada invitado puede cambiar su voto hasta la factura y cada cambio mantiene
+  trazabilidad inmutable.
+- Empates y votos pendientes bloquean el cierre; la factura recalcula el
+  resultado bajo bloqueo y lleva directamente a `CLOSED` solo con ganador único.
+- La revisión `20260825_0012_keep_quotation_voting_open` normaliza solicitudes
+  anteriores aprobadas sin factura.
+- El monto operativo de solicitudes múltiples deja de aparecer como cero: usa
+  máximo sin votos, monto del líder único y máximo ante empate, separado de la
+  selección financiera final.
+- La sesión expone los nombres de Roles IAM activos y la cabecera sustituye las
+  etiquetas legacy de capacidad por el Rol o los Roles realmente asignados.
+- Interfaz, guía de usuario, arquitectura, contrato, Spec 013, pruebas y
+  guardrails de agentes quedan sincronizados con la nueva regla.
+
 ## 2026-08-25 — layout móvil transversal
 
 - La Constitución evoluciona a 2.20.0 y extiende el contrato responsive a toda
@@ -59,7 +92,7 @@
 - Inicio, Accesos, Seguimiento, formularios, menús, modales y visores respetan
   ancho, altura dinámica y áreas seguras del dispositivo.
 - La Spec 020 y sus pruebas protegen el layout móvil sin cambiar permisos ni
-  reglas del flujo.
+  reglas del flujo; la validación visual completa sigue como gate explícito.
 
 ## 2026-08-25 — aprobadores IAM y creación atómica
 

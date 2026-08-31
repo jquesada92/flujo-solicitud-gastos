@@ -155,8 +155,18 @@ una tarea con alcance explícito.
 - En `MULTI_QUOTE`, `ANY`, `MAJORITY` y `ALL` requieren respectivamente 1,
   `floor(N/2)+1` y `N` votos. Con política, quórum y líder único habilitan cierre
   anticipado solo al Solicitante; la ronda permanece abierta para votos/cambios
-  hasta factura + `CLOSED`. Sin política se requieren todos los votos, no hay
-  cierre anticipado y un ganador único lleva a `APPROVED`.
+  hasta factura + `CLOSED`. Sin política se requieren todos los votos y un líder
+  único; la ronda también permanece en `QUOTATION_VOTING` hasta la factura y el
+  cierre ordinario puede hacerlo Solicitante, `system_accounts` o delegado activo.
+- Cada invitado conserva **Votar o cambiar voto** mientras la ronda siga abierta,
+  aunque ya haya votado. Un cambio conserva evento, un empate bloquea el cierre y
+  la factura debe recalcular población, quórum y resultado bajo bloqueo antes de
+  pasar directamente a `CLOSED`; nunca restaurar la transición automática a
+  `APPROVED` ni ocultar la acción después del primer voto.
+- El monto operativo mostrado para `MULTI_QUOTE` es máximo sin votos, monto del
+  líder único cuando existe y máximo ante empate. Debe exponerse separado de
+  `Expense.amount`: nunca fijar proveedor o selección financiera solo para evitar
+  que la tabla muestre cero.
 - `NO_APPROVAL` es una modalidad de política, no un tipo o estado de Solicitud.
   Sus reglas no tienen targets y solo habilitan **Registro directo** para un
   Usuario con `requests:create` cuando Área y monto pertenecen a su banda
@@ -220,6 +230,13 @@ Registro directo sin aprobación:
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m unittest tests.test_direct_expenses -v
+```
+
+Votación de cotizaciones o cierre con factura:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m unittest tests.test_multi_quote_open_voting -v
 ```
 
 No sustituir el runner por discovery directo: `scripts.run_tests` evita leer

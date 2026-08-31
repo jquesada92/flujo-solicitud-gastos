@@ -1,3 +1,4 @@
+import ast
 import re
 import unittest
 from pathlib import Path
@@ -17,9 +18,7 @@ ROOT_DOCUMENTS = (
 
 MARKDOWN_LINK = re.compile(r'(?<!!)\[[^\]]+\]\(([^)]+)\)')
 REVISION = re.compile(r"(?m)^revision\s*=\s*['\"]([^'\"]+)['\"]")
-DOWN_REVISION = re.compile(
-    r"(?m)^down_revision\s*=\s*(?:['\"]([^'\"]+)['\"]|None)"
-)
+DOWN_REVISION = re.compile(r'(?m)^down_revision\s*=\s*(.+)$')
 
 
 def read(path: Path) -> str:
@@ -92,7 +91,7 @@ class DocumentationContractTests(unittest.TestCase):
                 self.assertIn(f'**Constitución:** {version}', read(spec_path))
 
     def test_alembic_chain_has_one_documented_head(self):
-        migrations: dict[str, tuple[str | None, Path]] = {}
+        migrations: dict[str, tuple[tuple[str, ...], Path]] = {}
         for path in VERSIONS_DIR.glob('*.py'):
             source = read(path)
             revision_match = REVISION.search(source)
@@ -101,9 +100,20 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertIsNotNone(down_match, path.name)
             revision = revision_match.group(1)
             self.assertNotIn(revision, migrations, f'Revisión duplicada: {revision}')
-            migrations[revision] = (down_match.group(1), path)
+            down_value = ast.literal_eval(down_match.group(1))
+            if down_value is None:
+                parents: tuple[str, ...] = ()
+            elif isinstance(down_value, str):
+                parents = (down_value,)
+            else:
+                parents = tuple(down_value)
+            migrations[revision] = (parents, path)
 
-        referenced = {down for down, _ in migrations.values() if down is not None}
+        referenced = {
+            parent
+            for parents, _ in migrations.values()
+            for parent in parents
+        }
         missing_parents = sorted(referenced - migrations.keys())
         self.assertEqual(missing_parents, [], f'down_revision inexistente: {missing_parents}')
         heads = sorted(set(migrations) - referenced)
@@ -224,6 +234,12 @@ class DocumentationContractTests(unittest.TestCase):
             'nunca dejar una fila `Expense` huérfana',
             '`NO_APPROVAL` es una modalidad de política',
             'sin crear `Expense`, ronda, voto ni acción pendiente',
+            'la ronda también permanece en `QUOTATION_VOTING` hasta la factura',
+            'Cada invitado conserva **Votar o cambiar voto** mientras la ronda siga abierta',
+            'un empate bloquea el cierre',
+            'nunca restaurar la transición automática a `APPROVED`',
+            'El monto operativo mostrado para `MULTI_QUOTE` es máximo sin votos',
+            'separado de `Expense.amount`',
         )
         for fragment in access_fragments + reset_fragments + workflow_fragments:
             with self.subTest(fragment=fragment):
@@ -308,7 +324,8 @@ class DocumentationContractTests(unittest.TestCase):
     def test_scoped_rules_and_direct_expenses_are_synchronized(self):
         required_fragments = {
             REPO_ROOT / '.specify' / 'memory' / 'constitution.md': (
-                'El Solicitante no puede cerrar anticipadamente este fallback',
+                'permanece en `QUOTATION_VOTING` hasta la factura',
+                'pueden ejecutarlo el Solicitante original, `system_accounts` o un delegado activo',
                 'responde `409` sin guardar factura ni fijar ganador',
                 'no inserta `Expense`, aprobación, invitación, voto, acción pendiente ni estado de Solicitud',
             ),
@@ -318,14 +335,15 @@ class DocumentationContractTests(unittest.TestCase):
                 'solicitud nueva sin ronda iniciable no queda persistida',
                 '`NO_APPROVAL` no admite targets ni abre una ronda',
                 'nunca crea `Expense`, Solicitud, aprobación, voto o acción pendiente',
-                'un `POST` de cierre del Solicitante responde `409` sin guardar factura ni fijar ganador',
+                'el `POST` de cierre responde `409` sin guardar factura ni fijar ganador',
             ),
             REPO_ROOT / 'PROMPT_RECONSTRUCCION.md': (
-                'un `POST` de cierre debe responder `409` sin guardar factura ni fijar ganador',
+                'el `POST` de cierre responde `409` sin guardar factura ni fijar ganador',
                 'No crees `Expense`, aprobación, invitación, voto, acción pendiente, `flow_id` ni estado',
             ),
             REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
-                'un `POST` de cierre responde `409` sin guardar factura ni fijar ganador',
+                'el `POST` de cierre responde `409` sin factura ni ganador',
+                'pasa directamente a `CLOSED`, nunca a `APPROVED`',
                 'No crea `Expense`, Solicitud, ronda, voto, acción pendiente ni estado',
             ),
             REPO_ROOT / 'docs' / 'CONFIGURATION_ACCESS.md': (
@@ -344,7 +362,8 @@ class DocumentationContractTests(unittest.TestCase):
                 'sin `Expense`, `ExpenseAttachment` ni archivo físico huérfano',
                 '`NO_APPROVAL` fuera de banda',
                 'otro Usuario no puede listar/descargarlo',
-                'el `POST` de cierre del Solicitante antes de `APPROVED` responde `409` sin factura ni ganador',
+                'antes de cumplir ambos, el cierre responde `409`',
+                '`system_accounts` o delegado activo cierra directamente a `CLOSED`',
                 '320, 360, 390, 412, 440, 600, 640, 768, 820 y 1024 px',
             ),
             REPO_ROOT / 'docs' / 'DIRECT_EXPENSES.md': (
@@ -355,11 +374,12 @@ class DocumentationContractTests(unittest.TestCase):
                 'la pantalla actual no renderiza un panel de historial',
             ),
             REPO_ROOT / 'docs' / 'MULTI_QUOTE_VOTING.md': (
-                'cualquier `POST` de cierre responde `409` sin guardar factura ni fijar `selected_quotation_id`',
+                'Si falta un voto o hay empate, el cierre responde `409` sin persistir factura ni fijar `selected_quotation_id`',
+                'la ronda permanece en `QUOTATION_VOTING`',
             ),
             REPO_ROOT / 'docs' / 'FASTAPI_ARCHITECTURE.md': (
-                'El fallback sin política no satisface esa condición',
-                'el `POST` de cierre responde `409` sin guardar factura ni fijar ganador',
+                'Sin política requiere todos los votos y líder único',
+                'En ningún caso hay transición automática a `APPROVED`',
             ),
             REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md': (
                 'Pulsa **Registrar gasto y factura**',
@@ -373,13 +393,16 @@ class DocumentationContractTests(unittest.TestCase):
                 'Seleccionar un Grupo expande todos sus Roles activos',
                 'Sin política aplicable se invita a todos los Usuarios activos',
                 'Se exige el voto de los `N` invitados',
-                'el Solicitante no puede cerrar desde `QUOTATION_VOTING`',
+                'la solicitud permanece en `QUOTATION_VOTING` hasta que la factura',
+                'pueden cerrar el Solicitante, `system_accounts` o un delegado activo',
             ),
             REPO_ROOT / 'specs' / '021-scoped-approval-rules' / 'plan.md': (
-                'cubrir por HTTP que el Solicitante recibe `409`',
+                'mantener `QUOTATION_VOTING`',
+                'cierre ordinario directo a `CLOSED`',
             ),
             REPO_ROOT / 'specs' / '021-scoped-approval-rules' / 'checklists' / 'acceptance.md': (
-                'un `POST` de cierre del Solicitante desde `QUOTATION_VOTING` responde 409 sin factura ni ganador seleccionado',
+                'permanece en `QUOTATION_VOTING` hasta la factura',
+                'votos pendientes o empate responden 409 sin factura ni ganador seleccionado',
             ),
             REPO_ROOT / 'specs' / '022-direct-expense-registration' / 'spec.md': (
                 '`requests:create`',
@@ -408,6 +431,79 @@ class DocumentationContractTests(unittest.TestCase):
         for document, stale_fragment in stale_history_claims.items():
             with self.subTest(document=document.name, stale_fragment=stale_fragment):
                 self.assertNotIn(stale_fragment, read(document))
+
+    def test_multi_quote_docs_keep_voting_open_until_invoice(self):
+        required_fragments = {
+            REPO_ROOT / '.specify' / 'memory' / 'constitution.md': (
+                'permanece en `QUOTATION_VOTING` aun después de alcanzar el umbral',
+                'Un empate nunca habilita el cierre',
+                'llevan directamente a `CLOSED`',
+            ),
+            REPO_ROOT / 'specs' / '013-multi-quote-voting' / 'spec.md': (
+                'Todo invitado conserva **Votar o cambiar voto**',
+                'la factura la lleva directamente a `CLOSED`',
+                'Sin votos muestra el máximo',
+                'líderes están empatados muestra nuevamente el máximo',
+            ),
+            REPO_ROOT / 'docs' / 'MULTI_QUOTE_VOTING.md': (
+                '**Votar o cambiar voto**',
+                'Si falta un voto o hay empate, el cierre responde `409`',
+                'antes del primer voto muestra el máximo',
+                'si hay empate, vuelve a mostrar el máximo',
+            ),
+            REPO_ROOT / 'specs' / '008-request-closure-delegation' / 'spec.md': (
+                'MULTI_QUOTE + QUOTATION_VOTING + población completa + ganador único provisional',
+                'votos pendientes o empate responden 409 sin',
+                'a `CLOSED`',
+            ),
+            REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
+                '→ 0012 keep_quotation_voting_open',
+                '`20260825_0012` devuelve a `QUOTATION_VOTING`',
+            ),
+            REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md': (
+                '**Votar o cambiar voto**',
+                'mantiene la acción disponible hasta que se cargue la factura',
+            ),
+            REPO_ROOT / 'docs' / 'VALIDACION_LOCAL.md': (
+                '`MULTI_QUOTE` con todos los votos empatados',
+                'recalcula el líder sin pasar a `APPROVED`',
+            ),
+        }
+        for document, fragments in required_fragments.items():
+            source = re.sub(r'\s+', ' ', read(document))
+            for fragment in fragments:
+                with self.subTest(document=document.name, fragment=fragment):
+                    self.assertIn(fragment, source)
+
+    def test_session_header_uses_assigned_iam_roles(self):
+        required_fragments = {
+            REPO_ROOT / 'specs' / '011-access-console-consolidation' / 'spec.md': (
+                '`role_names`',
+                'todos los Roles IAM activos asignados',
+                'no traduce el perfil técnico legacy `user.role`',
+            ),
+            REPO_ROOT / 'README.md': (
+                '`role_names`',
+                'nunca las etiquetas de capacidad del perfil técnico legacy',
+            ),
+            REPO_ROOT / 'PROMPT_RECONSTRUCCION.md': (
+                'los nombres ordenados de todos los Roles IAM activos',
+                'no traducir el perfil técnico legacy `user.role`',
+            ),
+            REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
+                'La respuesta de sesión expone `role_names`',
+                'no el perfil técnico legacy ni una frase de Permiso',
+            ),
+            REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md': (
+                'la cabecera muestra tu nombre y el Rol o los Roles',
+                'no describe Permisos con frases como',
+            ),
+        }
+        for document, fragments in required_fragments.items():
+            source = re.sub(r'\s+', ' ', read(document))
+            for fragment in fragments:
+                with self.subTest(document=document.name, fragment=fragment):
+                    self.assertIn(fragment, source)
 
     def test_environment_examples_use_current_safe_defaults(self):
         backend_examples = (

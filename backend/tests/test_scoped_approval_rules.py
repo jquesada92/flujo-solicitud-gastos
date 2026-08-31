@@ -334,6 +334,23 @@ class ScopedApprovalRuleTests(unittest.TestCase):
         self.assertEqual(detail.json()['request']['minimum_votes_required'], 3)
         self.assertTrue(detail.json()['request']['quotation_quorum_reached'])
 
+        voter_dashboard = self.client.get(
+            '/api/expenses/dashboard', headers=self._auth(self.board_tokens[0])
+        )
+        voter_pending = {
+            row['request_id']: row['actions']
+            for row in voter_dashboard.json()['pending_items']
+        }
+        self.assertIn('QUOTATION_VOTE', voter_pending[request_id])
+
+        technical_close = self.client.post(
+            f'/api/expenses/{request_id}/close',
+            headers=self._auth(self.admin_token),
+            files={'invoice': ('invoice.pdf', PDF, 'application/pdf')},
+            data={'notes': 'La cuenta técnica no hereda el cierre anticipado'},
+        )
+        self.assertEqual(technical_close.status_code, 403, technical_close.text)
+
         remaining_view = self.client.get('/api/expenses', headers=self._auth(self.board_tokens[3]))
         remaining_item = next(row for row in remaining_view.json() if row['request_id'] == request_id)
         self.assertTrue(remaining_item['can_vote'])
@@ -420,7 +437,26 @@ class ScopedApprovalRuleTests(unittest.TestCase):
 
         final_vote = self._vote(request_id, self.admin_token, option_id)
         self.assertEqual(final_vote.status_code, 200, final_vote.text)
-        self.assertEqual(final_vote.json()['status'], 'APPROVED')
+        self.assertEqual(final_vote.json()['status'], 'QUOTATION_VOTING')
+        self.assertEqual(final_vote.json()['selected_quotation_id'], option_id)
+
+        ready_view = self.client.get('/api/expenses', headers=self._auth(self.requester_token))
+        ready = next(row for row in ready_view.json() if row['request_id'] == request_id)
+        self.assertTrue(ready['can_close'])
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            invoice_path = Path(temporary_directory) / 'fallback-invoice.pdf'
+            invoice_path.write_bytes(PDF)
+            with patch('app.api.financial_actions.write_document', return_value=invoice_path):
+                closed = self.client.post(
+                    f'/api/expenses/{request_id}/close',
+                    headers=self._auth(self.admin_token),
+                    files={'invoice': ('invoice.pdf', PDF, 'application/pdf')},
+                    data={'notes': 'Cierre ordinario por cuenta técnica tras completar el fallback'},
+                )
+        self.assertEqual(closed.status_code, 200, closed.text)
+        self.assertEqual(closed.json()['status'], 'CLOSED')
+        self.assertEqual(closed.json()['selected_quotation_id'], option_id)
 
 
 if __name__ == '__main__':

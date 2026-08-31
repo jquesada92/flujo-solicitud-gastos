@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.25.0 — 2026-08-28
+
+- reconciliación de `main` con `layout_movil` sin reescribir las migraciones ya
+  publicadas en ninguna rama;
+- todas las rondas `MULTI_QUOTE` permanecen en `QUOTATION_VOTING` hasta la
+  factura: con política, quórum y líder único habilitan cierre anticipado solo al
+  Solicitante; sin política se exigen todos los votos y un líder único antes del
+  cierre ordinario por Solicitante, `system_accounts` o delegado activo;
+- los invitados conservan **Votar o cambiar voto** hasta `CLOSED`, con evento por
+  cada cambio, recálculo transaccional y rechazo `409` ante empate o votos
+  insuficientes;
+- `tracking_amount` muestra máximo sin votos, monto del líder único o máximo ante
+  empate sin alterar `Expense.amount`;
+- login y `/api/auth/me` exponen `role_names` y la cabecera presenta los Roles IAM
+  activos en lugar de etiquetas legacy de capacidad;
+- `20260828_0014_merge_main_layout_heads` une los heads inmutables
+  `20260825_0012_keep_quotation_voting_open` y
+  `20260828_0013_direct_expenses` en un único head Alembic.
+
 ## 2.24.0 — 2026-08-28
 
 - pantalla global **Procesando…** para mutaciones `POST`/`PUT`/`PATCH`/`DELETE`,
@@ -59,8 +78,8 @@
 - filtros, tableros, Accesos y Seguimiento apilables con textos largos legibles;
 - menús, confirmaciones, acciones pendientes y visores ajustados a `100dvh`,
   `safe-area` y objetivos táctiles de al menos 44 px;
-- nueva Spec 020, contrato estático y validación de navegador en 1180, 1024,
-  640, 440, 390 y 320 px.
+- nueva Spec 020 y contrato estático; la aceptación visual completa permanece
+  pendiente hasta revisar navegador en todos los anchos exigidos.
 
 ## 2.19.0 — 2026-08-25
 

@@ -116,16 +116,18 @@ function ApprovalAction({ request, busy, onSubmit }) {
 
 function QuotationVoteAction({ request, busy, onVote, onError }) {
   return <section className="pending-action-block">
-    <div><p className="pending-action-eyebrow">VOTACIÓN DE COTIZACIONES</p><h3>Selecciona una opción</h3><p className="pending-action-muted">Puedes votar o cambiar tu voto mientras el flujo siga abierto.</p></div>
+    <div><p className="pending-action-eyebrow">VOTACIÓN DE COTIZACIONES</p><h3>{request.current_quotation_option_id ? "Puedes cambiar tu voto" : "Selecciona una opción"}</h3><p className="pending-action-muted">Puedes votar o cambiar tu voto mientras el flujo siga abierto.</p></div>
+    {request.quotation_has_tie && <div className="pending-action-warning">La votación está empatada. Debe quedar un ganador único antes de registrar la factura.</div>}
+    {!request.quotation_has_tie && request.selected_quotation_id && <div className="pending-action-info">Hay un ganador provisional. La votación seguirá abierta hasta que se registre la factura.</div>}
     <div className="pending-quote-grid">{request.quotation_options.map((option) => (
-      <article className="pending-quote-card" key={option.id}>
+      <article className={`pending-quote-card ${request.current_quotation_option_id === option.id ? "current-vote" : ""}`} key={option.id}>
         <div className="pending-quote-heading"><strong>Opción {option.option_number}: {option.supplier}</strong><span>${Number(option.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
         {option.notes && <p>{option.notes}</p>}
         <div className="pending-supports">
           {option.item_url && <a href={option.item_url} target="_blank" rel="noreferrer">Ver cotización en línea</a>}
           <SupportLinks supports={option.supports} onError={onError} />
         </div>
-        <button className="pending-action-primary" disabled={busy} onClick={() => onVote(option.id)}>Votar por esta opción</button>
+        <button className="pending-action-primary" disabled={busy || request.current_quotation_option_id === option.id} onClick={() => onVote(option.id)}>{request.current_quotation_option_id === option.id ? "Voto actual" : request.current_quotation_option_id ? "Cambiar voto a esta opción" : "Votar por esta opción"}</button>
       </article>
     ))}</div>
   </section>;
@@ -139,7 +141,7 @@ function CloseRequestAction({ request, busy, onCloseRequest, onDelegationChanged
     if (invoice) onCloseRequest(invoice, notes);
   };
   return <section className="pending-action-block">
-    <div><p className="pending-action-eyebrow">CIERRE DE SOLICITUD</p><h3>Sube la factura y cierra el expediente</h3>{request.status === "QUOTATION_VOTING" && <p className="pending-action-muted">El umbral y un líder único ya fueron alcanzados. Los demás participantes pueden votar hasta que confirmes el cierre.</p>}</div>
+    <div><p className="pending-action-eyebrow">CIERRE DE SOLICITUD</p><h3>Sube la factura y cierra el expediente</h3>{request.status === "QUOTATION_VOTING" && <p className="pending-action-muted">{request.approval_policy_id != null ? "El umbral y un líder único ya fueron alcanzados." : "Todos los participantes votaron y existe un líder único."} La votación seguirá abierta hasta que confirmes el cierre.</p>}</div>
     <form className="pending-action-form" onSubmit={submit}>
       <label className="pending-action-field">Factura<input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" required onChange={(event) => setInvoice(event.target.files?.[0] || null)} /></label>
       <label className="pending-action-field">Notas de cierre<textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Opcional" /></label>
@@ -170,7 +172,7 @@ function QuotationRoundSummary({ request }) {
     {request.approval_policy_id != null ? (
       <span>{votes} de {participants} voto(s) · mínimo para cerrar: {Number(request.minimum_votes_required) || 0}</span>
     ) : (
-      <span>Sin regla aplicable: deben votar todos y no existe cierre anticipado.</span>
+      <span>Sin regla aplicable: deben votar todos antes de agregar la factura y cerrar.</span>
     )}
   </div>;
 }

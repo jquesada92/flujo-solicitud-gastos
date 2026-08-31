@@ -95,6 +95,7 @@ cd backend
 .\.venv\Scripts\python.exe -m scripts.run_tests
 .\.venv\Scripts\python.exe -m unittest tests.test_direct_expenses -v
 .\.venv\Scripts\python.exe -m unittest tests.test_documentation_contract -v
+.\.venv\Scripts\python.exe -m unittest tests.test_multi_quote_open_voting -v
 
 cd ..\frontend
 npm ci
@@ -113,7 +114,7 @@ docker compose exec -T backend alembic current
 docker compose exec -T backend alembic heads
 ```
 
-Ambos deben indicar `20260828_0013 (head)`.
+Ambos deben indicar `20260828_0014 (head)` como único head.
 
 Las tablas, tipos ENUM, contadores e `alembic_version` deben resolverse dentro de `administracion`. Toda consulta SQL cruda debe usar el nombre calificado derivado del modelo; no debe depender de `search_path`.
 
@@ -164,8 +165,17 @@ Para el Bloqueo global **Procesando…**, ejecutar una mutación demorada en 118
   Rol/Grupo sin incluir Usuarios sin `requests:approve`;
 - con regla, quórum y líder único habilitan cierre solo al Solicitante y los
   demás invitados pueden votar/cambiar hasta factura + `CLOSED`;
-- sin regla, `MULTI_QUOTE` exige todos los votos y el `POST` de cierre del
-  Solicitante antes de `APPROVED` responde `409` sin factura ni ganador;
+- sin regla, `MULTI_QUOTE` exige todos los votos y líder único; antes de cumplir
+  ambos, el cierre responde `409`, y al cumplirlos Solicitante,
+  `system_accounts` o delegado activo cierra directamente a `CLOSED`;
+- `MULTI_QUOTE` con todos los votos empatados conserva `QUOTATION_VOTING`, no
+  tiene selección y rechaza factura con `409`;
+- un invitado conserva **Votar o cambiar voto** después del primer voto; cambiarlo
+  mantiene un voto activo, agrega evento y recalcula el líder sin pasar a
+  `APPROVED`;
+- `tracking_amount` usa máximo sin votos, monto del líder único o máximo ante
+  empate sin modificar `Expense.amount`;
+- votar después del cierre responde `409`;
 - `NO_APPROVAL` fuera de banda, sin `requests:create` o con Área inactiva →
   rechazo sin `DirectExpense`, `Expense` ni archivo físico;
 - gasto directo válido → fila + factura sin `Expense`, aprobación, invitación,
