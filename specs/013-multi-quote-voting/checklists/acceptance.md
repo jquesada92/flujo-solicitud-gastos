@@ -22,4 +22,4 @@
 - [x] corrección reinicia política, quórum, población, votos y flow_id activos.
 - [x] Docker local contiene votación abierta y voto parcial visibles.
 - [x] monto operativo muestra máximo sin votos, líder único o máximo ante empate sin alterar `Expense.amount`.
-- [ ] PostgreSQL local confirma `20260828_0014` como `current=head` único.
+- [ ] PostgreSQL local confirma `20260831_0016` como `current=head` único.

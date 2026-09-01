@@ -4,7 +4,7 @@
 
 **Dirigida a:** Solicitantes y miembros de Junta Directiva (JD)
 
-**Contrato vigente:** Constitución 2.26.0
+**Contrato vigente:** Constitución 2.30.0
 
 ## 1. ¿Para qué sirve la aplicación?
 
@@ -95,6 +95,28 @@ En **Configuración → Accesos → Roles**, después de crear un Rol correctame
 el registro aparece en la lista y **Crear rol** queda vacío y sin selección. Ese
 estado indica que la siguiente captura creará un Rol nuevo. Al editar o reactivar
 un Rol existente, en cambio, el editor conserva ese Rol seleccionado.
+
+### 3.2 Consultar quién cambió la configuración
+
+Si tienes lectura de Configuración, abre **Configuración → Auditoría**. No existe
+la vista **Todos**: la pantalla abre en **Flujos** y puedes consultar Flujos,
+Usuarios, Accesos, Áreas o Reglas, además de buscar por persona o valor. Cada
+evento indica quién actuó y si fue una **Creación**,
+**Actualización** o **Eliminación**.
+
+Al entrar se muestran los últimos 7 días calendario. Usa **Desde** y **Hasta**
+para mover o ampliar el rango cuando necesites investigar cambios anteriores;
+ambas fechas se incluyen. El botón **Últimos 7 días** restaura el período
+predeterminado. Cada página muestra hasta 10 registros; usa **Anterior** y
+**Siguiente** para navegar sin acumular eventos. Cambiar sección, búsqueda o
+fechas vuelve a la primera página; **Actualizar** conserva los criterios.
+
+En una actualización, revisa **Valor anterior** y **Valor actual** debajo de
+cada campo. Por ejemplo, al sustituir el Rol de un Usuario verás los nombres en
+**Roles asignados** antes y después del cambio. “Usuario desactivado” significa
+que conserva su identidad e historial y puede recuperarse; no es un borrado
+físico. En celular, cada evento aparece como una tarjeta con la misma
+información.
 
 ## 4. Instructivo para Solicitantes
 

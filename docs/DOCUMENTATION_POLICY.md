@@ -112,6 +112,8 @@ backend/alembic/versions/20260825_0012_keep_quotation_voting_open.py
 backend/alembic/versions/20260827_0012_scoped_approval_policies.py
 backend/alembic/versions/20260828_0013_direct_expenses.py
 backend/alembic/versions/20260828_0014_merge_main_layout_heads.py
+backend/alembic/versions/20260831_0015_audit_change_feed.py
+backend/alembic/versions/20260831_0016_retire_legacy_audit_tables.py
 ```
 
 Para persistencia:

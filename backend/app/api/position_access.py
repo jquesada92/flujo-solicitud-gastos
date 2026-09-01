@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import require_permission
+from app.models.audit_capture import prepare_entity_revision, record_entity_revision
 from app.models.iam import Position, PositionRole, Role
 from app.schemas.iam import PositionOut
 
@@ -68,9 +69,14 @@ def assign_role_to_position(position_id: int, role_id: int, db: Session = Depend
 @router.delete('/positions/{position_id}/roles/{role_id}', response_model=PositionOut)
 def remove_role_from_position(position_id: int, role_id: int, db: Session = Depends(get_db)):
     position = _position(db, position_id)
+    role = _role(db, role_id)
+    prepare_entity_revision(db, Position, position.id)
+    prepare_entity_revision(db, Role, role.id)
     db.execute(delete(PositionRole).where(
         PositionRole.position_id == position.id,
         PositionRole.role_id == role_id,
     ))
+    record_entity_revision(db, Position, position.id)
+    record_entity_revision(db, Role, role.id)
     db.commit()
     return _out(db, position)

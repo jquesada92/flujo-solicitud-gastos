@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.privacy import analytics_identifier
 from app.core.security import hash_password, normalize_email, require_permission
+from app.models.audit_capture import prepare_entity_revision, record_entity_revision
 from app.models.entities import User, UserRole
 from app.models.iam import (
     GroupMember,
@@ -229,6 +230,9 @@ def _replace_assignments(
                 detail='La membresía de grupo se modifica asignando un rol del grupo',
             )
 
+    if role_ids is not None or position_ids is not None:
+        prepare_entity_revision(db, User, user.id)
+
     if role_ids is not None:
         # Role assignment is atomic. Group membership is rebuilt only from the
         # subset of roles that belong to a group; global roles remain ungrouped.
@@ -241,6 +245,9 @@ def _replace_assignments(
         positions = _validate_positions(db, position_ids)
         db.execute(delete(UserPosition).where(UserPosition.user_id == user.id))
         db.add_all(UserPosition(user_id=user.id, position_id=item.id) for item in positions)
+
+    if role_ids is not None or position_ids is not None:
+        record_entity_revision(db, User, user.id)
 
 
 def _sync_legacy_display_fields(db: Session, user: User) -> None:

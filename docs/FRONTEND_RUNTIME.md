@@ -134,6 +134,34 @@ En Reglas, `NO_APPROVAL` oculta/deshabilita targets y se envía con listas
 vacías; `ANY`, `MAJORITY` y `ALL` exigen al menos un Rol/Grupo. Las validaciones
 de overlap o elegibilidad mostradas por la UI no sustituyen FastAPI.
 
+## Auditoría
+
+`Audit()` precarga **Desde/Hasta** con hoy y los seis días anteriores en
+`VITE_TIME_ZONE`, configurada con la misma zona de `APP_TIME_ZONE`. Consulta
+`/api/audit/events` al montar, al aplicar fechas, al
+cambiar una categoría o búsqueda y al pulsar **Actualizar**; no usa polling. El
+rango es editable y puede recuperar historia anterior a 45 días. No existe la
+vista **Todos**: la pantalla abre en **Flujos** y ofrece únicamente **Flujos**,
+**Usuarios**, **Accesos**, **Áreas** y **Reglas**.
+
+La acción específica usa `event_type`, mientras la insignia
+Creación/Actualización/Eliminación usa `change_type`. La comparación visible se
+construye exclusivamente desde `changes` y etiqueta cada lado como **Valor
+anterior** y **Valor actual**.
+
+El navegador recibe hasta 10 registros ya ordenados desde `audit_change_feed` y
+utiliza el cursor opaco `occurred_at|event_sequence`; no descarga fuentes
+separadas ni reconstruye diferencias. **Anterior** y **Siguiente** reemplazan la
+página visible sin acumular filas. Cambiar sección, búsqueda o fechas descarta
+el historial de cursores y vuelve a la primera página. **Actualizar** conserva
+fechas, categoría y búsqueda, y también vuelve a la primera página.
+
+`audit-utils.js` calcula las siete fechas sin derivar “hoy” desde UTC y formatea
+sin perder `false`, `0`, `null`, listas u objetos. Las listas de Roles se
+muestran por nombre. Desde 720 px, `mobile-layout.css` apila los filtros y
+convierte cada evento en una tarjeta etiquetada; hasta 440 px apila los dos
+valores. Ninguna adaptación móvil elimina actor, acción o diferencias.
+
 ## Registro directo
 
 La pestaña **Registro directo** solo se presenta con `requests:create`. Consulta

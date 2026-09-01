@@ -5,8 +5,7 @@ from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import require_permission
-from app.core.privacy import mask_email
-from app.models.entities import ApprovalPolicy, ApprovalPolicyChangeEvent, ExpenseArea, User
+from app.models.entities import ApprovalPolicy, ExpenseArea, User
 from app.services.approval_policy_service import (
     APPROVAL_MODES,
     NO_APPROVAL_MODE,
@@ -58,9 +57,6 @@ def output(p):
             'approval_mode':p.approval_mode,'approver_profile_codes':p.approver_profile_codes,
             'approver_role_ids':p.approver_role_ids or [],'approver_group_ids':p.approver_group_ids or [],
             'active':p.active}
-
-def snapshot(p):
-    return output(p)
 
 def validate(db, data, exclude_id=None):
     if data.expense_type != 'ALL':
@@ -127,29 +123,18 @@ def list_approver_targets(db:Session=Depends(get_db),_:User=Depends(require_perm
 @router.post('/policies',status_code=201)
 def create_policy(data:PolicyInput,db:Session=Depends(get_db),actor:User=Depends(require_permission('can_configure'))):
     validate(db,data); item=ApprovalPolicy(**data.model_dump()); db.add(item); db.flush()
-    db.add(ApprovalPolicyChangeEvent(event_type='POLICY_CREATED', policy_id=item.id, policy_name=item.name,
-        actor_user_id=actor.id, actor_email=mask_email(actor.email) or '***',
-        changed_fields=list(data.model_dump().keys()), before_state=None, after_state=snapshot(item)))
     db.commit(); db.refresh(item); return output(item)
 
 @router.put('/policies/{policy_id}')
 def update_policy(policy_id:int,data:PolicyInput,db:Session=Depends(get_db),actor:User=Depends(require_permission('can_configure'))):
     item=db.get(ApprovalPolicy,policy_id)
     if not item: raise HTTPException(404,'Regla no encontrada')
-    validate(db,data,policy_id); before=snapshot(item)
+    validate(db,data,policy_id)
     for key,value in data.model_dump().items(): setattr(item,key,value)
-    after=snapshot(item); changed=[key for key in data.model_dump() if before[key] != after[key]]
-    db.add(ApprovalPolicyChangeEvent(event_type='POLICY_UPDATED', policy_id=item.id, policy_name=item.name,
-        actor_user_id=actor.id, actor_email=mask_email(actor.email) or '***',
-        changed_fields=changed, before_state=before, after_state=after))
     db.commit();db.refresh(item);return output(item)
 
 @router.delete('/policies/{policy_id}',status_code=204)
 def delete_policy(policy_id:int,db:Session=Depends(get_db),actor:User=Depends(require_permission('can_configure'))):
     item=db.get(ApprovalPolicy,policy_id)
     if not item: raise HTTPException(404,'Regla no encontrada')
-    before=snapshot(item)
-    db.add(ApprovalPolicyChangeEvent(event_type='POLICY_DELETED', policy_id=item.id, policy_name=item.name,
-        actor_user_id=actor.id, actor_email=mask_email(actor.email) or '***',
-        changed_fields=list(before.keys()), before_state=before, after_state=None))
     db.delete(item);db.commit()

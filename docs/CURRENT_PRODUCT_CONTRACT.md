@@ -105,6 +105,29 @@ mantiene hasta terminar la última mutación concurrente; `finally` lo retira en
 éxito, error HTTP, aborto o red. Las lecturas y `/api/auth/activity` no lo
 activan. Desde 320 px respeta `safe-area`, no crea overflow y no es descartable.
 
+Auditoría consulta por defecto las siete fechas calendario inclusivas desde hoy
+menos seis días hasta hoy en `APP_TIME_ZONE`. **Desde/Hasta** permite mover o
+ampliar el rango para investigar historia anterior, sin recorte fijo de 45 días.
+La pantalla no ofrece **Todos**: abre en **Flujos** y presenta únicamente
+**Flujos**, **Usuarios**, **Accesos**, **Áreas** y **Reglas**.
+Cada evento presenta fecha, entidad, elemento, actor, acción específica y
+`change_type` normalizado como Creación, Actualización o Eliminación. `changes`
+conserva por campo `before/after`; la UI los muestra como **Valor anterior** y
+**Valor actual**.
+Una sustitución de Rol de Usuario se lee desde `audit_change_feed` y compara las
+listas `assigned_roles`. El feed recibe la instantánea y la diferencia en la
+misma transacción de negocio; Auditoría ejecuta una sola consulta ordenada por
+`occurred_at,event_sequence`, sin cargar todos los Usuarios ni fusionar fuentes
+en memoria. Cada sección muestra hasta 10 registros por página; **Anterior** y
+**Siguiente** reemplazan la página visible mediante cursor, sin acumulación,
+`OFFSET` ni conteo total. Cambiar sección, búsqueda o fechas vuelve a la primera
+página; **Actualizar** conserva los criterios aplicados y también la reinicia.
+
+Una desactivación permanece una actualización identificada como tal. La API
+excluye contraseñas, hashes, tokens y secretos y enmascara correo, teléfono e
+identificación históricos. Desde 720 px hacia abajo las filas son tarjetas
+completas sin perder actor, acción ni diferencias.
+
 **Divergencia conocida:** el contrato anterior sigue exigiendo un selector por Grupo y selección múltiple de Roles globales. La ficha actual de `iam-admin.jsx` expone temporalmente un único selector total y reduce el borrador a `role_ids[0]`. Esto no modifica la cardinalidad normativa y no debe copiarse en una reconstrucción; la corrección debe representar y preservar todos los Roles ya asignados antes de guardar.
 
 ## Flujo
@@ -293,16 +316,18 @@ Alembic:
   └→ 0012 scoped_approval_policies                  │
      → 0013 direct_expenses ────────────────────────┤
                                                     └→ 0014 merge_main_layout_heads
+                                                       → 0015 audit_change_feed
+                                                       → 0016 retire_legacy_audit_tables
 ```
 
 `0004` permite Roles globales manteniendo la protección de máximo un Rol por Usuario/Grupo.
-`0005` agrega períodos para Usuario, Área, Rol y Grupo. `0006` incorpora la
-instantánea JSON: cada modificación cierra la versión anterior y abre una fila
-nueva con llave propia. Usuario conserva cédula, contacto y Roles; Rol conserva
-el Grupo asociado.
-`0007` agrega actor, timestamp, tipo de evento, campos modificados y valores
-anterior/nuevo. Las operaciones autenticadas usan al usuario de la sesión y los
-procesos internos quedan marcados como `SYSTEM:*`.
+`0005` a `0008` son revisiones históricas inmutables que crearon y completaron
+períodos por entidad. `0015` copia set-based esa historia y los eventos de
+dominio a `audit_change_feed`, valida los conteos y protege el feed como
+append-only. `0016` comprueba nuevamente la copia y elimina sin `CASCADE` las
+cuatro tablas de períodos y los eventos redundantes de Usuario, perfil, regla y
+factura. Los pasos de aprobación y votos se conservan como evidencia operativa
+y también se proyectan al feed.
 `0008` normaliza toda vigencia y evento a timestamps con zona horaria UTC.
 `0009` agrega `group_permissions` vacía y no altera `role_permissions` ni accesos preexistentes.
 `0010` agrega `users.password_reset_version` para invalidar enlaces de restablecimiento sin almacenar tokens ni rotar la contraseña durante la emisión.
@@ -317,7 +342,9 @@ quedado en `APPROVED` sin factura, sin modificar solicitudes cerradas ni sus
 adjuntos.
 
 `0014` une ambos heads inmutables con dos `down_revision`; no agrega cambios de
-dominio y deja una sola cabeza Alembic.
+dominio. `0015 → 0016` deja `20260831_0016` como única cabeza Alembic. El
+downgrade de `0016` es irreversible: recuperar el layout anterior requiere el
+respaldo previo al corte y la imagen anterior, no tablas vacías reconstruidas.
 
 ## Recuperación de entidades inactivas
 

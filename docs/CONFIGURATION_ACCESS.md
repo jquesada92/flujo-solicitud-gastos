@@ -126,6 +126,36 @@ solo puede guardarse con sus listas de Rol/Grupo vacías. La regla habilita
 `MAJORITY` sobre toda la población IAM y `MULTI_QUOTE` espera a todos; no existe
 fallback de registro directo.
 
+## Auditoría
+
+La pantalla presenta por defecto los eventos inmutables de los últimos 7 días
+calendario en la zona horaria de la aplicación. **Desde/Hasta** incluye ambas
+fechas y permite mover o ampliar el rango para investigar historia anterior,
+sin límite fijo de 45 días. No existe la vista agregada **Todos**: la pantalla
+abre en **Flujos** y ofrece **Flujos**, **Usuarios**, **Accesos**, **Áreas** y
+**Reglas**. Cada registro distingue **Creación**,
+**Actualización** y **Eliminación**, además de la acción específica como “Roles
+del usuario actualizados” o “Regla eliminada”.
+
+Las actualizaciones muestran cada campo con **Valor anterior** y **Valor
+actual**. La asignación de Roles usa `audit_change_feed.changes.assigned_roles`;
+por eso sustituir un Rol debe presentar los nombres anteriores y los actuales.
+Desactivar una entidad se describe como desactivación y conserva
+`change_type=UPDATE`, ya que la recuperación mantiene su identidad.
+
+La pantalla consulta una sola fuente mediante cursor estable y muestra hasta 10
+registros por página. **Anterior**/**Siguiente** reemplazan la página visible sin
+acumular filas; cambiar sección, búsqueda o fechas vuelve a la primera página y
+**Actualizar** conserva los criterios aplicados mientras también la reinicia.
+No combina en el servidor tablas de Usuario, Área, Rol, Grupo, perfil o regla.
+El feed se agrega en la transacción original y la base rechaza que su historia
+sea actualizada, borrada o truncada.
+
+La API excluye contraseñas, hashes, tokens y secretos, y enmascara correo,
+teléfono e identificación históricos. `config:read` permite esta consulta de
+solo lectura. En anchos de hasta 720 px cada evento es una tarjeta completa; a
+440 px la comparación se apila sin ocultar campos.
+
 ## Modo lectura
 
 Un usuario con `config:read` puede consultar la información autorizada de Configuración sin mutarla. El backend sigue siendo la barrera real: cualquier intento de escritura devuelve 403 si no existe autoridad de escritura.
@@ -170,6 +200,7 @@ GET            /api/iam/permissions
 GET            /api/iam/me/permissions
 GET            /api/rules/approver-targets
 GET/POST/PUT/DELETE /api/rules/policies...
+GET            /api/audit/events
 ```
 
 `iam_access_policy.py` bloquea rutas legacy que permitirían bypass del modelo.
@@ -205,4 +236,7 @@ GET/POST/PUT/DELETE /api/rules/policies...
 - la emisión confirmada es inmediata y no altera cambios staged de IAM;
 - el correo de restablecimiento contiene un enlace de uso único y no una contraseña;
 - emitir no rota credenciales/sesiones y el fallo de correo hace rollback;
-- consumir aplica Argon2, revoca sesiones, invalida enlaces y vuelve al Login sin auto-login.
+- consumir aplica Argon2, revoca sesiones, invalida enlaces y vuelve al Login sin auto-login;
+- cambiar el Rol de un Usuario aparece en Auditoría con lista anterior y actual;
+- creación, actualización y eliminación son etiquetas visibles y no solo colores;
+- las diferencias históricas no exponen secretos ni PII sin enmascarar.

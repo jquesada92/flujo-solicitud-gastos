@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.users import _apply_user_changes
 from app.core.database import get_db
 from app.core.security import require_permission
+from app.models.audit_capture import prepare_entity_revision, record_entity_revision
 from app.models.entities import AccessProfile, User
 from app.models.iam import Permission, Position, UserPosition
 from app.schemas.user import UserBulkUpdate, UserOut
@@ -58,11 +59,13 @@ def _replace_canonical_position(
     if current_ids == target_ids:
         return False
 
+    prepare_entity_revision(db, User, user.id)
     db.execute(delete(UserPosition).where(UserPosition.user_id == user.id))
     db.add_all(
         UserPosition(user_id=user.id, position_id=position_id)
         for position_id in sorted(target_ids)
     )
+    record_entity_revision(db, User, user.id)
     return True
 
 

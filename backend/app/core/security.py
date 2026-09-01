@@ -192,6 +192,7 @@ def current_user(
         user_id=user.id,
         identifier=user.email,
         identity_document=user.identity_document,
+        label=user.full_name,
     )
     return apply_effective_permissions_to_user(db, user)
 

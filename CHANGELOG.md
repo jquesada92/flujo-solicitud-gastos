@@ -1,5 +1,49 @@
 # Changelog
 
+## 2.30.0 — 2026-09-01
+
+- Auditoría elimina la vista agregada **Todos**, abre en **Flujos** y conserva
+  únicamente las secciones Flujos, Usuarios, Accesos, Áreas y Reglas;
+- cada sección muestra hasta 10 registros por página mediante
+  **Anterior**/**Siguiente**, con cursor keyset que reemplaza las filas visibles
+  sin acumular páginas, usar `OFFSET` ni contar todo el historial;
+- cambiar sección, búsqueda o fechas vuelve a la primera página y
+  **Actualizar** conserva los criterios mientras reinicia la paginación.
+
+## 2.29.0 — 2026-09-01
+
+- Auditoría precarga hoy y los seis días anteriores en la zona horaria de la
+  aplicación mediante los filtros editables **Desde/Hasta**;
+- el rango se conserva en Todos, Flujos, Usuarios, Accesos, Áreas, Reglas,
+  búsqueda, actualización y paginación, y cambiarlo vuelve a la primera página;
+- la API valida ambos límites, filtra el intervalo calendario en base de datos y
+  permite investigar historia anterior sin el recorte fijo de 45 días.
+
+## 2.28.0 — 2026-08-31
+
+- `audit_change_feed` consolida en una sola fuente append-only los cambios de
+  configuración, acceso y flujo con diferencias preparadas al escribir;
+- `GET /api/audit/events` pasa de múltiples consultas, carga global de Usuarios
+  y orden en memoria a una consulta con filtro, índice y paginación keyset;
+- `20260831_0015` rellena y valida el feed en PostgreSQL; `20260831_0016` retira
+  sin `CASCADE` ocho tablas de auditoría redundantes;
+- pasos de aprobación y votos conservan sus tablas operativas y se proyectan al
+  feed dentro de la misma transacción;
+- el retiro físico es irreversible: volver al layout anterior requiere el
+  respaldo previo al corte y la imagen anterior.
+
+## 2.27.0 — 2026-08-31
+
+- Auditoría integra los períodos canónicos de Usuario, Área, Rol y Grupo con los
+  eventos existentes de flujos, perfiles y reglas;
+- cambiar un Rol de Usuario aparece como `USER_ROLES_UPDATED` con Roles
+  anteriores y actuales;
+- cada evento distingue Creación, Actualización o Eliminación y muestra
+  diferencias por campo con Valor anterior/Valor actual;
+- la respuesta enmascara correo, teléfono e identificación y excluye secretos;
+- la tabla de Auditoría se convierte en tarjetas completas desde 720 px y añade
+  semántica accesible, pruebas HTTP y contratos frontend.
+
 ## 2.26.0 — 2026-08-31
 
 - cierre automático de sesión al alcanzar 10 minutos sin actividad humana, con

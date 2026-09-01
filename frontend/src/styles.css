@@ -1722,6 +1722,7 @@ dd {
   margin: 1rem 0;
 }
 
+.audit-date-filter,
 .audit-search {
   display: flex;
   align-items: end;
@@ -1732,14 +1733,146 @@ dd {
   background: #f7f8fa;
 }
 
+.audit-date-filter label,
 .audit-search label { flex: 1; }
+.audit-date-filter input,
 .audit-search input { width: 100%; }
+.audit-date-filter button,
 .audit-search button { height: 38px; }
 
-.audit-load-more {
+.audit-result-status {
+  margin: 0 0 12px;
+  font-size: 12px;
+}
+
+.audit-table {
+  min-width: 1040px;
+}
+
+.audit-table th,
+.audit-table td {
+  vertical-align: top;
+}
+
+.audit-table td[data-label="Acción"] {
+  min-width: 150px;
+}
+
+.audit-table td[data-label="Acción"] .subtext {
+  display: block;
+  margin-top: 6px;
+}
+
+.audit-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.audit-action--create {
+  border-color: #a7d9c0;
+  background: #eaf8f0;
+  color: #17613d;
+}
+
+.audit-action--update {
+  border-color: #b9cae7;
+  background: #eef4ff;
+  color: #284f87;
+}
+
+.audit-action--delete {
+  border-color: #efb1b1;
+  background: #fff0f0;
+  color: #9f2929;
+}
+
+.audit-changes-cell {
+  min-width: 360px;
+  white-space: normal;
+}
+
+.audit-change-list {
+  display: grid;
+  gap: 9px;
+}
+
+.audit-change {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding-bottom: 9px;
+  border-bottom: 1px solid #e7eaf0;
+}
+
+.audit-change:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.audit-change > strong {
+  color: #273349;
+  font-size: 11px;
+}
+
+.audit-value-comparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 7px;
+}
+
+.audit-value {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: #f5f7fa;
+  overflow-wrap: anywhere;
+}
+
+.audit-value small {
+  color: #6d7789;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.audit-value--before {
+  box-shadow: inset 3px 0 #d59a9a;
+}
+
+.audit-value--after {
+  box-shadow: inset 3px 0 #74b592;
+}
+
+.audit-change-arrow {
+  align-self: center;
+  color: #7b8597;
+  font-weight: 800;
+}
+
+.audit-pagination {
   display: flex;
+  align-items: center;
   justify-content: center;
+  gap: 10px;
   padding: 18px 0 4px;
+}
+
+.audit-pagination span {
+  color: #596579;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 .document-overlay {
   position: fixed;

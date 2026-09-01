@@ -104,4 +104,6 @@ factura. Solicitudes ya cerradas o con factura no se modifican.
 
 Esa revisión y la rama `20260827_0012_scoped_approval_policies →
 20260828_0013_direct_expenses` permanecen inmutables. La revisión
-`20260828_0014_merge_main_layout_heads` une ambas ramas y deja un solo head.
+`20260828_0014_merge_main_layout_heads` une ambas ramas; la cadena continúa con
+`20260831_0015_audit_change_feed → 20260831_0016_retire_legacy_audit_tables`,
+que deja `20260831_0016` como único head.

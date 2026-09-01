@@ -1,10 +1,24 @@
 # Riesgos y divergencias conocidas
 
-Última revisión: 2026-08-28.
+Última revisión: 2026-09-01.
 
 Este registro evita que una persona o IA convierta una limitación actual en una regla falsa. Los documentos normativos siguen describiendo el comportamiento correcto; una divergencia se corrige en código y pruebas, no rebajando el contrato.
 
 ## Bloqueos críticos
+
+### Valor anterior vacío al sustituir Roles de un Usuario
+
+La sustitución de Roles mediante la ruta canónica puede capturar un estado
+intermedio sin asignaciones: el `DELETE` por SQL Core elimina el Rol anterior y
+el alta ORM del nuevo Rol dispara la instantánea antes de completar la
+sustitución. El evento `USER_ROLES_UPDATED` conserva el Rol actual, pero puede
+mostrar `assigned_roles.before=[]` aunque existiera un Rol anterior.
+
+La corrección debe preparar la revisión del Usuario antes de cualquier borrado
+de asignaciones y conservar el registro final después de aplicar el conjunto
+nuevo. No rebajar la Spec 024 ni la comparación anterior/actual para aceptar el
+estado vacío. El filtro de fechas de Auditoría no causa ni corrige esta
+divergencia.
 
 ### Asignación de Roles en la ficha de Usuario
 

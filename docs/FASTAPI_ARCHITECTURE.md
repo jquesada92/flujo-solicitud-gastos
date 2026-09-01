@@ -69,6 +69,41 @@ no consumen cupo.
 
 `iam_access_policy.py` se registra antes del router IAM de compatibilidad para bloquear rutas que contradigan el modelo actual.
 
+## Auditoría
+
+`audit_change_feed` es el read model append-only de auditoría. Los listeners de
+la unidad de trabajo detectan entidades y relaciones modificadas, calculan una
+instantánea agregada una vez y agregan el evento dentro de la misma transacción.
+Las rutas que mutan relaciones mediante SQL Core llaman
+`record_entity_revision()` después del cambio. Eventos de dominio como pasos de
+aprobación y votos se proyectan al feed conservando sus tablas operativas.
+
+Cada salida incluye `event_type`, `change_type`, `changed_fields` y `changes`
+con `{before, after}`. Un cambio de Rol de Usuario se obtiene de
+`audit_change_feed.changes.assigned_roles`. La serialización aplica una lista de
+exclusión de secretos y enmascara correo, teléfono e identificación antes de
+responder. `details` se conserva por compatibilidad, pero recibe el mismo
+saneamiento.
+
+`GET /api/audit/events` hace una sola consulta sobre el feed. Sin fechas usa
+hoy menos seis días hasta hoy, ambos inclusivos, en `APP_TIME_ZONE`;
+`date_from`/`date_to` permiten cualquier rango histórico válido y deben llegar
+juntas. El backend transforma sus medianoches locales a un intervalo UTC
+semiabierto, filtra directamente `occurred_at` y pagina con keyset por
+`(occurred_at,event_sequence)`. La base aplica rango, categoría, orden y
+`limit + 1`; el límite predeterminado es 10 y Python solo sanea y serializa la
+página devuelta. `Audit()` siempre envía una categoría concreta y `limit=10`;
+`kind=ALL` permanece únicamente como compatibilidad HTTP, no como sección de la
+pantalla. La navegación usa cursor, sin `OFFSET` ni consulta de conteo total. No
+existe recorte fijo de 45 días, fan-out por fuente, carga global de Usuarios,
+merge ni orden completo en memoria.
+
+`20260831_0015` crea índices por fecha/tipo/entidad, rellena las fuentes
+existentes con operaciones set-based de PostgreSQL, valida conteos y agrega
+guards contra `UPDATE`, `DELETE` y `TRUNCATE`. `20260831_0016` vuelve a validar
+las ocho fuentes redundantes y las elimina sin `CASCADE`. Esa revisión es
+irreversible; el rollback físico requiere respaldo e imagen anteriores.
+
 ## Inicio de flujos
 
 `approval_policy_service` resuelve bandas `(min,max]` con precedencia del Área
@@ -150,6 +185,8 @@ Los contratos críticos deben tener pruebas HTTP/modelo para:
 - `NO_APPROVAL` sin `Expense`, atomicidad de factura y aislamiento por autor;
 - schema PostgreSQL;
 - frontend contracts cuando haya bridges transitorios.
+- auditoría de cambio de Rol, diferencias anterior/actual, eliminación,
+  paginación y ausencia de secretos/identificadores sin enmascarar;
 - emisión/consumo de restablecimiento: autorización, expiración, uso único,
   reemplazo, rollback, rate limits, Argon2, revocación y ausencia de auto-login.
 

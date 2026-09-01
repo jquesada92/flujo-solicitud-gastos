@@ -1,5 +1,46 @@
 # Historia funcional
 
+## 2026-09-01 — paginación acotada de Auditoría
+
+- La Constitución evoluciona a 2.30.0 y elimina de la pantalla de Auditoría la
+  vista agregada **Todos**; **Flujos** pasa a ser la sección inicial.
+- Las cinco secciones muestran hasta 10 eventos por página con navegación
+  **Anterior**/**Siguiente** por cursor, sin acumular filas ni contar todo el
+  historial.
+- Cambiar sección, búsqueda o fechas reinicia la página; **Actualizar** conserva
+  los criterios aplicados y vuelve a la primera.
+
+## 2026-09-01 — rango investigable de Auditoría
+
+- La Constitución evoluciona a 2.29.0 y sustituye la ventana fija de 45 días
+  por siete fechas calendario predeterminadas con **Desde/Hasta** editable.
+- Todas las categorías comparten el rango; cambiarlo reinicia el cursor y
+  actualizar o cargar más conserva las fechas aplicadas.
+- FastAPI transforma los días de `APP_TIME_ZONE` a límites UTC indexables y
+  permite consultar períodos históricos anteriores sin un corte fijo.
+
+## 2026-08-31 — change feed canónico de Auditoría
+
+- La Constitución evoluciona a 2.28.0 y sustituye las tablas temporales por
+  `audit_change_feed` como única fuente del listado de Auditoría.
+- El backend calcula cada diferencia una vez en la transacción original; la API
+  pagina una consulta indexada sin fan-out, carga global de Usuarios ni orden
+  completo en memoria.
+- `20260831_0015` conserva la historia desplegada mediante backfill y validación
+  de conteos; `20260831_0016` retira sin `CASCADE` ocho fuentes redundantes.
+- Los eventos operativos de aprobación y voto permanecen y se proyectan al
+  feed. El corte físico es irreversible y requiere respaldo para restaurarse.
+
+## 2026-08-31 — auditoría detallada y cambios de Rol visibles
+
+- La Constitución evoluciona a 2.27.0 y la Spec 024 fija el contrato visible de
+  creación, actualización, eliminación y diferencias por campo.
+- La API de Auditoría incorpora las tablas temporales canónicas; sustituir un
+  Rol muestra `assigned_roles` anterior y actual con el actor correspondiente.
+- La serialización protege secretos y enmascara PII histórica antes de responder.
+- La pantalla muestra ambas columnas de valores y usa tarjetas completas en
+  anchos estrechos.
+
 ## 2026-08-31 — cierre de sesión por inactividad
 
 - La Constitución evoluciona a 2.26.0 y fija 10 minutos como límite máximo de
