@@ -6,11 +6,11 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
 from app.core.security import current_user
+from app.models.audit_feed import record_change_event
 from app.models.entities import (
     Expense,
     ExpenseAttachment,
     ExpenseStatus,
-    InvoiceChangeEvent,
     User,
 )
 from app.schemas.expense import ExpenseOut
@@ -149,13 +149,24 @@ def replace_invoice(
         )
         db.add(replacement)
         db.flush()
-        db.add(InvoiceChangeEvent(
-            expense_id=expense.id,
-            previous_attachment_id=previous.id,
-            new_attachment_id=replacement.id,
-            actor_email=user.email,
-            reason=reason.strip(),
-        ))
+        record_change_event(
+            db,
+            kind='FLOW',
+            entity_type='INVOICE',
+            entity_id=expense.id,
+            event_type='INVOICE_REPLACED',
+            change_type='UPDATE',
+            subject=expense.display_id,
+            before_state={'attachment_id': previous.id},
+            after_state={'attachment_id': replacement.id},
+            event_context={
+                'reason': reason.strip(),
+                'previous_original_name': previous.original_name,
+                'new_original_name': replacement.original_name,
+            },
+            source_type='invoice_replacement',
+            fallback_actor_identifier=user.email,
+        )
         db.commit()
     except Exception:
         db.rollback()

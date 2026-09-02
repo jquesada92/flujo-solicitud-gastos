@@ -54,6 +54,8 @@ class DatabaseSchemaContractTests(unittest.TestCase):
                 '20260827_0012_scoped_approval_policies.py',
                 '20260828_0013_direct_expenses.py',
                 '20260828_0014_merge_main_layout_heads.py',
+                '20260831_0015_audit_change_feed.py',
+                '20260831_0016_retire_legacy_audit_tables.py',
             ],
         )
 
@@ -119,6 +121,39 @@ class DatabaseSchemaContractTests(unittest.TestCase):
             "down_revision = ('20260825_0012', '20260828_0013')",
             merged_heads,
         )
+        audit_feed = (
+            VERSIONS_DIR / '20260831_0015_audit_change_feed.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("revision = '20260831_0015'", audit_feed)
+        self.assertIn("down_revision = '20260828_0014'", audit_feed)
+        self.assertIn("'audit_change_feed'", audit_feed)
+        self.assertIn('SOURCE_TABLES = (', audit_feed)
+        self.assertIn('LOCK TABLE {locked_sources} IN ACCESS EXCLUSIVE MODE', audit_feed)
+        self.assertIn('ON CONFLICT (source_type, source_id) DO NOTHING', audit_feed)
+        self.assertIn('Audit change feed backfill mismatch for {table}', audit_feed)
+        self.assertIn('CREATE TRIGGER audit_change_feed_immutable', audit_feed)
+        self.assertIn('CREATE TRIGGER audit_change_feed_no_truncate', audit_feed)
+
+        retired_audit = (
+            VERSIONS_DIR / '20260831_0016_retire_legacy_audit_tables.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("revision = '20260831_0016'", retired_audit)
+        self.assertIn("down_revision = '20260831_0015'", retired_audit)
+        retired_tables = (
+            'invoice_change_events',
+            'approval_policy_change_events',
+            'access_profile_change_events',
+            'user_change_events',
+            'group_activity_periods',
+            'role_activity_periods',
+            'area_activity_periods',
+            'user_activity_periods',
+        )
+        for table in retired_tables:
+            self.assertIn(f"    '{table}',", retired_audit)
+        self.assertIn('op.drop_table(table, schema=_schema())', retired_audit)
+        self.assertNotIn('cascade=True', retired_audit)
+        self.assertIn('Irreversible audit consolidation', retired_audit)
         self.assertIn("down_revision = '20260820_0002'", single_position)
 
         global_roles = (VERSIONS_DIR / '20260821_0004_allow_global_roles.py').read_text(encoding='utf-8')

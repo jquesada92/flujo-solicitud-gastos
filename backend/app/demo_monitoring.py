@@ -13,16 +13,15 @@ from sqlalchemy.orm import selectinload
 from app.api.expenses import UPLOAD_DIR, _next_display_id
 from app.core.database import SessionLocal
 from app.core.audit_context import set_system_audit_actor
-from app.core.privacy import analytics_identifier, mask_email
+from app.core.privacy import analytics_identifier
 from app.core.security import hash_password
 from app.models.entities import (
-    Approval, ApprovalPolicy, ApprovalPolicyChangeEvent, ApprovalStatus,
+    Approval, ApprovalPolicy, ApprovalStatus,
     Expense, ExpenseArea, ExpenseAttachment, ExpenseStatus, ExpenseSubcategory,
-    QuotationOption, QuotationVotingInvitation, User,
-    UserChangeEvent, UserRole,
+    QuotationOption, QuotationVotingInvitation, User, UserRole,
 )
 from app.models.iam import Permission, Role, RolePermission, UserRoleAssignment
-import app.models.activity_periods  # noqa: F401  Register transactional history hooks.
+import app.models.audit_capture  # noqa: F401  Register canonical audit capture hooks.
 from app.services.approval_engine import apply_decision, start_approval_flow
 from app.services.iam_service import users_with_permission
 from app.services.quotation_service import cast_quotation_vote
@@ -76,10 +75,6 @@ def ensure_user(db, identity, name, email, title, can_request, can_approve):
             active=True, can_request=can_request, can_approve=can_approve, can_view=True,
             can_configure=False, must_change_password=False)
         db.add(user); db.flush()
-        admin = db.scalar(select(User).where(User.role == UserRole.ADMIN).order_by(User.id))
-        db.add(UserChangeEvent(event_type='USER_CREATED', user_id=user.id, user_email=mask_email(user.email),
-            actor_user_id=admin.id, actor_email=mask_email(admin.email), changed_fields=['demo_fixture'],
-            before_state=None, after_state={'name': name, 'title': title, 'active': True, 'demo': True}))
 
     permission_codes = ['requests:read']
     if can_request: permission_codes.append('requests:create')
@@ -175,12 +170,7 @@ def main():
                 min_amount=Decimal('0.00'), max_amount=None, approval_mode='ANY',
                 approver_profile_codes=['TESORERO'], active=True)
             db.add(policy); db.flush()
-            state = {'name': policy.name, 'expense_type': 'ALL', 'min_amount': '0.00',
-                     'max_amount': None, 'approval_mode': 'ANY',
-                     'approver_profile_codes': ['TESORERO'], 'active': True}
-            db.add(ApprovalPolicyChangeEvent(event_type='POLICY_CREATED', policy_id=policy.id,
-                policy_name=policy.name, actor_user_id=admin.id, actor_email=mask_email(admin.email),
-                changed_fields=list(state), before_state=None, after_state=state)); db.commit()
+            db.commit()
 
         for title, category, subcategory, amount, supplier, url, target in DEMO_CASES:
             if db.scalar(select(Expense).where(Expense.title == title)): continue

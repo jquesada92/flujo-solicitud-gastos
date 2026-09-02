@@ -114,7 +114,19 @@ docker compose exec -T backend alembic current
 docker compose exec -T backend alembic heads
 ```
 
-Ambos deben indicar `20260828_0014 (head)` como único head.
+Ambos deben indicar `20260831_0016 (head)` como único head.
+
+La consolidación de Auditoría se valida en PostgreSQL local, no solo en SQLite:
+
+- `audit_change_feed` existe y las ocho tablas retiradas ya no aparecen;
+- `approval_step_events` y `quotation_vote_events` continúan presentes;
+- cambiar un Rol agrega una fila `USER_ROLES_UPDATED` en la misma transacción;
+- un `UPDATE`, `DELETE` o `TRUNCATE` directo del feed es rechazado;
+- `GET /api/audit/events` usa una consulta paginada y un cursor
+  `occurred_at|event_sequence` estable;
+- la revisión `0016` declara su downgrade irreversible; se inspecciona esa
+  salvaguarda sin ejecutar un downgrade. Recuperar el layout previo exige
+  restaurar un respaldo controlado y desplegar la imagen anterior.
 
 Las tablas, tipos ENUM, contadores e `alembic_version` deben resolverse dentro de `administracion`. Toda consulta SQL cruda debe usar el nombre calificado derivado del modelo; no debe depender de `search_path`.
 
@@ -146,18 +158,46 @@ Para el Bloqueo global **Procesando…**, ejecutar una mutación demorada en 118
 - éxito, error HTTP y fallo de red la retiran y presentan el resultado;
 - `GET` y `POST /api/auth/activity` nunca la muestran.
 
+Para **Configuración → Auditoría**, cambiar un Usuario de un Rol de prueba a
+otro dentro del Compose local y comprobar en 1180, 1024, 640, 440, 390 y 320 px:
+
+- al entrar, **Desde/Hasta** cubre hoy y los seis días anteriores en la zona de
+  la aplicación, no aparece **Todos**, **Flujos** es la sección inicial y las
+  cinco secciones respetan el rango;
+- ampliar el rango a una fecha anterior a 45 días recupera su evento, sin
+  descargar ni ordenar todo el historial;
+- cada página muestra como máximo 10 registros y **Anterior**/**Siguiente** no
+  acumulan ni duplican eventos;
+- cambiar sección, búsqueda o fechas vuelve a la primera página; **Actualizar**
+  conserva los criterios elegidos y también reinicia la página;
+- aparece “Roles del usuario actualizados” sin recarga automática continua;
+- **Roles asignados** muestra el nombre anterior y el actual;
+- creación, actualización y eliminación tienen texto además de color;
+- una desactivación se identifica como tal y no como borrado físico;
+- desde 720 px cada evento es una tarjeta sin overflow ni datos ocultos;
+- correo, teléfono e identificación están enmascarados y no aparecen secretos.
+
 ## Pruebas adversas mínimas
 
 - token inválido y acceso anónimo → 401;
 - 9 minutos 59 segundos de inactividad → sesión vigente; al alcanzar 10 minutos → `401`, token local eliminado, hash privado limpio y Login visible;
 - volver a una pestaña suspendida después de 10 minutos → Login sin reactivar ni sincronizar la sesión;
 - payload inválido → 422;
+- Auditoría con una sola fecha o con **Desde** posterior a **Hasta** → 422;
 - método no soportado → 405;
 - cinco logins fallidos y un sexto intento → 429;
 - cinco consumos públicos fallidos de restablecimiento en 15 minutos y el siguiente intento → 429;
 - token de restablecimiento expirado, reemplazado o reutilizado → rechazo sin cambio de contraseña;
 - Rol con cupo lleno → asignación y reactivación rechazadas; Usuario inactivo asignado no consume cupo;
 - reducción del máximo de Rol por debajo de su ocupación activa → 409 sin cambio persistido;
+- cambiar un Rol asignado → Auditoría devuelve `USER_ROLES_UPDATED` con
+  `changes.assigned_roles.before/after` y actor correcto;
+- evento de regla eliminada → `change_type=DELETE`, valores anteriores presentes
+  y valores actuales vacíos;
+- inspección de schema → no existen `user_activity_periods`,
+  `area_activity_periods`, `role_activity_periods`, `group_activity_periods`,
+  `user_change_events`, `access_profile_change_events`,
+  `approval_policy_change_events` ni `invoice_change_events`;
 - crear Rol A → lista actualizada + editor vacío/sin selección; crear Rol B a
   continuación → segundo `POST`, nunca `PATCH` sobre A;
 - fallo al crear Rol → overlay liberado y borrador intacto; editar/reactivar →

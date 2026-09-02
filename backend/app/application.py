@@ -34,7 +34,8 @@ from app.api import (
 from app.core.config import get_settings
 from app.core.rate_limit import authenticated_subject, consume_user_request, password_reset_subject, policy_for_request
 from app.core.security import require_permission
-import app.models.activity_periods  # noqa: F401  Ensures temporal-history hooks are registered.
+import app.models.audit_feed  # noqa: F401  Registers the canonical feed model.
+import app.models.audit_capture  # noqa: F401  Registers transactional capture hooks.
 
 
 @asynccontextmanager

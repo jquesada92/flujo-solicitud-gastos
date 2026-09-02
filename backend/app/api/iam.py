@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import current_user, require_permission
+from app.models.audit_capture import prepare_entity_revision, record_entity_revision
 from app.models.entities import User
 from app.models.iam import (
     GroupMember,
@@ -309,8 +310,12 @@ def assign_role_to_group(group_id: int, role_id: int, db: Session = Depends(get_
 
 @router.delete('/groups/{group_id}/roles/{role_id}', response_model=GroupOut, dependencies=[Depends(require_permission('config:manage'))])
 def remove_role_from_group(group_id: int, role_id: int, db: Session = Depends(get_db)):
-    group = _group(db, group_id)
+    group, role = _group(db, group_id), _role(db, role_id)
+    prepare_entity_revision(db, UserGroup, group.id)
+    prepare_entity_revision(db, Role, role.id)
     db.execute(delete(GroupRole).where(GroupRole.group_id == group.id, GroupRole.role_id == role_id))
+    record_entity_revision(db, UserGroup, group.id)
+    record_entity_revision(db, Role, role.id)
     db.commit()
     return _group_out(db, group)
 
@@ -326,8 +331,12 @@ def add_group_member(group_id: int, user_id: int, db: Session = Depends(get_db))
 
 @router.delete('/groups/{group_id}/members/{user_id}', response_model=GroupOut, dependencies=[Depends(require_permission('config:manage'))])
 def remove_group_member(group_id: int, user_id: int, db: Session = Depends(get_db)):
-    group = _group(db, group_id)
+    group, user = _group(db, group_id), _user(db, user_id)
+    prepare_entity_revision(db, UserGroup, group.id)
+    prepare_entity_revision(db, User, user.id)
     db.execute(delete(GroupMember).where(GroupMember.group_id == group.id, GroupMember.user_id == user_id))
+    record_entity_revision(db, UserGroup, group.id)
+    record_entity_revision(db, User, user.id)
     db.commit()
     return _group_out(db, group)
 
@@ -355,8 +364,10 @@ def assign_direct_role(user_id: int, role_id: int, db: Session = Depends(get_db)
 
 @router.delete('/users/{user_id}/roles/{role_id}', dependencies=[Depends(require_permission('config:manage'))])
 def remove_direct_role(user_id: int, role_id: int, db: Session = Depends(get_db)):
-    _user(db, user_id)
+    user = _user(db, user_id)
+    prepare_entity_revision(db, User, user.id)
     db.execute(delete(UserRoleAssignment).where(UserRoleAssignment.user_id == user_id, UserRoleAssignment.role_id == role_id))
+    record_entity_revision(db, User, user.id, event_type='USER_ROLES_UPDATED')
     db.commit()
     return {'status': 'ok'}
 
@@ -373,7 +384,9 @@ def grant_direct_permission(user_id: int, permission_code: str, db: Session = De
 @router.delete('/users/{user_id}/permissions/{permission_code}', dependencies=[Depends(require_permission('config:manage'))])
 def revoke_direct_permission(user_id: int, permission_code: str, db: Session = Depends(get_db)):
     user, permission = _user(db, user_id), _permission(db, permission_code)
+    prepare_entity_revision(db, User, user.id)
     db.execute(delete(UserPermission).where(UserPermission.user_id == user.id, UserPermission.permission_id == permission.id))
+    record_entity_revision(db, User, user.id, event_type='USER_ACCESS_UPDATED')
     db.commit()
     return {'status': 'ok'}
 
@@ -438,7 +451,11 @@ def assign_position(user_id: int, position_id: int, db: Session = Depends(get_db
 
 @router.delete('/users/{user_id}/positions/{position_id}', dependencies=[Depends(require_permission('config:manage'))])
 def remove_position(user_id: int, position_id: int, db: Session = Depends(get_db)):
-    _user(db, user_id)
+    user, position = _user(db, user_id), _position(db, position_id)
+    prepare_entity_revision(db, User, user.id)
+    prepare_entity_revision(db, Position, position.id)
     db.execute(delete(UserPosition).where(UserPosition.user_id == user_id, UserPosition.position_id == position_id))
+    record_entity_revision(db, User, user.id)
+    record_entity_revision(db, Position, position.id)
     db.commit()
     return {'status': 'ok'}

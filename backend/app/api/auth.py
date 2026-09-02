@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.audit_context import set_audit_actor
 from app.core.database import get_db
-from app.core.privacy import mask_email
 from app.core.security import (
     apply_effective_permissions_to_user,
     create_token,
@@ -19,7 +19,8 @@ from app.core.security import (
     verify_password,
     verify_password_and_upgrade,
 )
-from app.models.entities import User, UserChangeEvent
+from app.models.audit_feed import override_entity_event
+from app.models.entities import User
 from app.models.iam import SystemAccount
 from app.schemas.auth import LoginResponse, TokenResponse
 from app.schemas.user import ChangePasswordRequest, LoginRequest, PasswordResetRequest, PasswordResetResponse, UserOut
@@ -142,30 +143,23 @@ def reset_password(payload: PasswordResetRequest, db: Session = Depends(get_db))
     ):
         raise HTTPException(status_code=400, detail=INVALID_PASSWORD_RESET_DETAIL)
 
-    previous_state = {
-        'must_change_password': user.must_change_password,
-        'password_reset_version': user.password_reset_version,
-        'session_version': user.session_version,
-    }
+    set_audit_actor(
+        db,
+        user_id=user.id,
+        identifier=user.email,
+        identity_document=user.identity_document,
+        label=user.full_name,
+    )
     user.password_hash = hash_password(payload.new_password)
     user.must_change_password = False
     user.password_reset_version += 1
     user.session_version += 1
-    next_state = {
-        'must_change_password': user.must_change_password,
-        'password_reset_version': user.password_reset_version,
-        'session_version': user.session_version,
-    }
-    db.add(UserChangeEvent(
+    override_entity_event(
+        db,
+        entity_type=User,
+        entity_id=user.id,
         event_type='USER_PASSWORD_RESET_COMPLETED',
-        user_id=user.id,
-        user_email=mask_email(user.email) or '***',
-        actor_user_id=user.id,
-        actor_email=mask_email(user.email) or '***',
-        changed_fields=['password_reset_completed', 'sessions_revoked'],
-        before_state=previous_state,
-        after_state=next_state,
-    ))
+    )
     try:
         db.commit()
     except Exception:

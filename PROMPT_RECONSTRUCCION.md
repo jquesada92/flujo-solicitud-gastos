@@ -1,6 +1,6 @@
 # Prompt maestro de reconstrucción
 
-> Constitución vigente: **2.26.0**.
+> Constitución vigente: **2.30.0**.
 
 Reconstruye **Flujo de Control de Gastos** como una aplicación web neutral respecto al tipo de organización, lista para desplegar con React/Vite, FastAPI, SQLAlchemy, Alembic y PostgreSQL/Neon.
 
@@ -157,6 +157,30 @@ cambios**. Evita doble envío y nunca muestres el token en la respuesta o la UI.
 - `areas:manage`: mutaciones de Área + Categoría.
 
 Nunca conviertas `config:read` en autoridad de escritura.
+
+En **Configuración → Auditoría**, consulta exclusivamente `audit_change_feed`.
+Precarga **Desde/Hasta** con las siete fechas calendario inclusivas desde hoy
+menos seis días hasta hoy en `APP_TIME_ZONE`. El rango es editable y puede
+ampliarse para investigar historia anterior, sin un recorte fijo de 45 días. No
+ofrezcas la vista agregada **Todos**: muestra únicamente **Flujos**, **Usuarios**,
+**Accesos**, **Áreas** y **Reglas**, con **Flujos** como sección inicial. Cada
+fila debe decir **Creación**, **Actualización** o **Eliminación**, identificar
+elemento y actor y mostrar por campo **Valor anterior** y **Valor actual**. En
+particular, un cambio de Roles de Usuario usa `assigned_roles` anterior/actual
+del feed bajo `USER_ROLES_UPDATED`.
+
+Captura cada cambio auditable una sola vez y dentro de la misma transacción de
+negocio. Filtra el rango en base antes de paginar por
+`occurred_at,event_sequence` mediante una consulta indexada; no cargues todos
+los Usuarios ni consultes, fusiones y ordenes múltiples tablas en Python.
+Cada sección muestra hasta 10 registros por página. **Anterior** y **Siguiente**
+navegan mediante cursor y reemplazan la página visible, sin acumular filas,
+`OFFSET` ni conteo total. Cambiar sección, búsqueda o fechas vuelve a la primera
+página; **Actualizar** conserva los criterios aplicados y también la reinicia.
+
+No expongas contraseñas, hashes, tokens ni secretos. Enmascara correo, teléfono
+e identificación que existan en instantáneas históricas. En móvil convierte los
+eventos en tarjetas completas sin ocultar sus diferencias.
 
 ## 5. Cuenta técnica
 
@@ -454,14 +478,15 @@ Cadena:
   └→ 20260827_0012_scoped_approval_policies                  │
      → 20260828_0013_direct_expenses ────────────────────────┤
                                                              └→ 20260828_0014_merge_main_layout_heads
+                                                                → 20260831_0015_audit_change_feed
+                                                                → 20260831_0016_retire_legacy_audit_tables
 ```
 
-Toda creación o modificación relevante de Usuario, Área, Rol y Grupo se registra
-en su tabla temporal. El alta usa exactamente `created_at`; cada cambio cierra
-la versión abierta y crea otra con una instantánea JSON. Nunca se sobrescribe
-historia y el JSON conserva el estado `active` de cada intervalo.
-La fila identifica actor, timestamp, tipo de evento, campos cambiados y valores
-`before/after`. Nunca incluye credenciales, hashes, tokens o secretos.
+Toda creación, actualización o eliminación relevante se registra en
+`audit_change_feed` con actor, timestamp, entidad, tipo de evento, instantánea y
+valores `before/after`. La captura ocurre en la transacción original y omite
+actualizaciones sin diferencias. Nunca incluye credenciales, hashes, tokens o
+secretos.
 Las listas GUI excluyen inactivos. Los formularios consultan recuperación por
 cédula o clave/nombre y reactivan el ID existente con confirmación del usuario.
 
@@ -475,6 +500,10 @@ el cupo opcional de Rol. La rama `20260825_0012` devuelve a
 usa `20260827_0012` para targets e instantáneas de política y `20260828_0013`
 para `direct_expenses`. `20260828_0014` une ambas ramas mediante dos
 `down_revision`, sin reescribirlas ni agregar una mutación de dominio.
+`20260831_0015` crea y rellena el feed con SQL set-based; `20260831_0016`
+verifica la copia y retira sin `CASCADE` ocho tablas de auditoría redundantes.
+El downgrade de `0016` es irreversible y requiere respaldo previo más la imagen
+anterior.
 
 ## 16. Correo
 
@@ -558,7 +587,7 @@ Gates:
 
 ```text
 docker compose exec -T backend alembic heads
-# esperado: 20260828_0014 (head)
+# esperado: 20260831_0016 (head)
 
 cd backend
 .\.venv\Scripts\python.exe -m scripts.run_tests

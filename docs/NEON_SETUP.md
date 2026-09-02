@@ -65,9 +65,11 @@ Antes de producción se debe ensayar el head completo sobre una rama Neon o un P
   └→ 20260827_0012_scoped_approval_policies                  │
      → 20260828_0013_direct_expenses ────────────────────────┤
                                                              └→ 20260828_0014_merge_main_layout_heads
+                                                                → 20260831_0015_audit_change_feed
+                                                                → 20260831_0016_retire_legacy_audit_tables
 ```
 
-`alembic heads` debe devolver únicamente `20260828_0014`.
+`alembic heads` debe devolver únicamente `20260831_0016`.
 
 `0004` permite asignaciones de Roles globales (sin Grupo) y conserva el guard de máximo un Rol del mismo Grupo por Usuario.
 
@@ -84,6 +86,12 @@ en `APPROVED` sin factura, para conservar abierta la ronda hasta el cierre real.
 La rama paralela `20260827_0012 → 20260828_0013` incorpora reglas de aprobación
 por scope y gastos directos. `20260828_0014` declara ambos heads como padres sin
 alterar datos ni schema; las tres revisiones anteriores permanecen inmutables.
+
+`20260831_0015` crea y rellena `audit_change_feed` con operaciones set-based,
+valida conteos por fuente y lo protege como append-only. `20260831_0016`
+comprueba la copia de ocho fuentes redundantes y las elimina sin `CASCADE`. Esta
+última revisión es irreversible: una recuperación necesita restaurar el respaldo
+previo al corte y desplegar la imagen anterior; no ejecutar `alembic downgrade`.
 
 La baseline exige el schema de aplicación vacío en una instalación nueva. Una vez desplegada, no se reescribe; se agregan revisiones.
 

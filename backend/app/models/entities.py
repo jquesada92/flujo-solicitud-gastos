@@ -71,31 +71,6 @@ class User(Base):
         return ' '.join(part.strip() for part in parts if part and part.strip()) or self.name
 
 
-class UserChangeEvent(Base):
-    """Immutable audit trail for user access and permission changes."""
-
-    __tablename__ = 'user_change_events'
-    __table_args__ = (
-        Index('ix_user_change_events_user_time', 'user_id', 'occurred_at'),
-    )
-
-    event_sequence: Mapped[int] = mapped_column(
-        BigInteger().with_variant(Integer, 'sqlite'),
-        primary_key=True,
-        autoincrement=True,
-    )
-    event_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
-    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
-    user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='RESTRICT'), nullable=False, index=True)
-    user_email: Mapped[str] = mapped_column(String(255), nullable=False)
-    actor_user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='RESTRICT'), nullable=False)
-    actor_email: Mapped[str] = mapped_column(String(255), nullable=False)
-    changed_fields: Mapped[list] = mapped_column(JSON, nullable=False)
-    before_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    after_state: Mapped[dict] = mapped_column(JSON, nullable=False)
-
-
 class AccessProfile(Base):
     __tablename__ = 'access_profiles'
 
@@ -110,22 +85,6 @@ class AccessProfile(Base):
     max_users: Mapped[int | None] = mapped_column(Integer, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-
-
-class AccessProfileChangeEvent(Base):
-    __tablename__ = 'access_profile_change_events'
-
-    event_sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    event_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
-    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
-    profile_id: Mapped[int] = mapped_column(ForeignKey('access_profiles.id', ondelete='RESTRICT'), nullable=False, index=True)
-    profile_code: Mapped[str] = mapped_column(String(70), nullable=False)
-    actor_user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='RESTRICT'), nullable=False)
-    actor_email: Mapped[str] = mapped_column(String(255), nullable=False)
-    changed_fields: Mapped[list] = mapped_column(JSON, nullable=False)
-    before_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    after_state: Mapped[dict] = mapped_column(JSON, nullable=False)
 
 
 class Expense(Base):
@@ -347,18 +306,6 @@ class ExpenseAttachment(Base):
     expense = relationship('Expense', back_populates='attachments')
 
 
-class InvoiceChangeEvent(Base):
-    __tablename__ = 'invoice_change_events'
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    expense_id: Mapped[int] = mapped_column(ForeignKey('expenses.id', ondelete='RESTRICT'), nullable=False, index=True)
-    previous_attachment_id: Mapped[int] = mapped_column(ForeignKey('expense_attachments.id', ondelete='RESTRICT'), nullable=False)
-    new_attachment_id: Mapped[int] = mapped_column(ForeignKey('expense_attachments.id', ondelete='RESTRICT'), nullable=False)
-    actor_email: Mapped[str] = mapped_column(String(255), nullable=False)
-    reason: Mapped[str] = mapped_column(Text, nullable=False)
-    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-
-
 class ApprovalRule(Base):
     __tablename__ = 'approval_rules'
 
@@ -388,28 +335,6 @@ class ApprovalPolicy(Base):
     approver_group_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-
-
-class ApprovalPolicyChangeEvent(Base):
-    """Append-only history for approval-rule configuration changes."""
-
-    __tablename__ = 'approval_policy_change_events'
-
-    event_sequence: Mapped[int] = mapped_column(
-        BigInteger().with_variant(Integer, 'sqlite'),
-        primary_key=True,
-        autoincrement=True,
-    )
-    event_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
-    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
-    policy_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    policy_name: Mapped[str] = mapped_column(String(120), nullable=False)
-    actor_user_id: Mapped[int] = mapped_column(ForeignKey('users.id', ondelete='RESTRICT'), nullable=False)
-    actor_email: Mapped[str] = mapped_column(String(255), nullable=False)
-    changed_fields: Mapped[list] = mapped_column(JSON, nullable=False)
-    before_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    after_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class Approval(Base):

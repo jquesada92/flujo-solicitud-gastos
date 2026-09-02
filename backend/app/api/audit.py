@@ -1,118 +1,187 @@
-from datetime import datetime
+import os
+from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import Text as SqlText, and_, cast, func, or_, select, text
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.privacy import mask_email, mask_tail
 from app.core.security import require_permission
-from app.models.entities import (
-    AccessProfileChangeEvent,
-    ApprovalPolicyChangeEvent,
-    ApprovalStepEvent,
-    User,
-    UserChangeEvent,
-)
+from app.models.audit_feed import AuditChangeFeed, is_sensitive_field
 
 router = APIRouter(dependencies=[Depends(require_permission('can_configure'))])
 
+DEFAULT_AUDIT_WINDOW_DAYS = 7
+AUDIT_PAGE_SIZE = 10
+APP_TIME_ZONE = os.getenv('APP_TIME_ZONE', 'America/Panama')
 
-def _period_filter(column):
-    return column >= func.now() - text("INTERVAL '45 days'"), column <= func.now()
+
+def _date_range_bounds(
+    date_from: date | None,
+    date_to: date | None,
+    *,
+    now: datetime | None = None,
+) -> tuple[datetime, datetime, datetime]:
+    """Translate inclusive application dates into an indexed UTC interval."""
+
+    app_zone = ZoneInfo(APP_TIME_ZONE)
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    current = current.astimezone(timezone.utc)
+    today = current.astimezone(app_zone).date()
+
+    if (date_from is None) != (date_to is None):
+        raise HTTPException(
+            status_code=422,
+            detail='Indica juntas las fechas Desde y Hasta',
+        )
+    effective_to = date_to or today
+    effective_from = date_from or (today - timedelta(days=DEFAULT_AUDIT_WINDOW_DAYS - 1))
+    if effective_from > effective_to:
+        raise HTTPException(
+            status_code=422,
+            detail='La fecha Desde no puede ser posterior a la fecha Hasta',
+        )
+    if effective_to == date.max:
+        raise HTTPException(status_code=422, detail='La fecha Hasta no es válida')
+
+    range_start = datetime.combine(
+        effective_from,
+        time.min,
+        tzinfo=app_zone,
+    ).astimezone(timezone.utc)
+    range_end = datetime.combine(
+        effective_to + timedelta(days=1),
+        time.min,
+        tzinfo=app_zone,
+    ).astimezone(timezone.utc)
+    return range_start, range_end, current
 
 
-def _page_rows(db, model, limit, cursor_value, search_filter=None):
-    stmt = select(model).where(*_period_filter(model.occurred_at))
-    if search_filter is not None:
-        stmt = stmt.where(search_filter)
-    if cursor_value:
-        cursor_time, cursor_id = cursor_value
-        stmt = stmt.where(or_(
-            model.occurred_at < cursor_time,
-            and_(model.occurred_at == cursor_time, model.event_id < cursor_id),
-        ))
-    return db.scalars(stmt.order_by(model.occurred_at.desc(), model.event_id.desc()).limit(limit + 1)).all()
+def _parse_cursor(cursor: str | None) -> tuple[datetime, int] | None:
+    if not cursor:
+        return None
+    try:
+        timestamp, sequence = cursor.rsplit('|', 1)
+        parsed = datetime.fromisoformat(timestamp)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed_sequence = int(sequence)
+        if parsed_sequence < 1:
+            raise ValueError('invalid sequence')
+        return parsed, parsed_sequence
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail='Cursor de auditoría inválido') from exc
+
+
+def _safe_value(field: str, value):
+    if value is None:
+        return None
+    normalized = field.strip().lower()
+    if normalized.endswith('email') and isinstance(value, str):
+        return mask_email(value)
+    if normalized in {'identity_document', 'actor_identity_document'} and isinstance(value, str):
+        return mask_tail(value)
+    if normalized == 'phone' and isinstance(value, str):
+        return mask_tail(value)
+    if isinstance(value, list):
+        return [_safe_value(field, item) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: _safe_value(key, item)
+            for key, item in value.items()
+            if not is_sensitive_field(key)
+        }
+    return value
+
+
+def _safe_mapping(value: dict | None) -> dict | None:
+    if value is None:
+        return None
+    return {
+        field: _safe_value(field, item)
+        for field, item in value.items()
+        if not is_sensitive_field(field)
+    }
+
+
+def _safe_changes(changes: dict | None) -> dict:
+    return {
+        field: {
+            'before': _safe_value(field, values.get('before')),
+            'after': _safe_value(field, values.get('after')),
+        }
+        for field, values in (changes or {}).items()
+        if not is_sensitive_field(field) and isinstance(values, dict)
+    }
 
 
 @router.get('/events')
 def list_audit_events(
-    kind: str = Query('ALL', pattern='^(ALL|FLOW|USER|PERMISSION|RULE)$'),
-    limit: int = Query(50, ge=1, le=100),
-    cursor: str | None = Query(default=None, max_length=100),
+    kind: str = Query('ALL', pattern='^(ALL|FLOW|USER|PERMISSION|AREA|RULE)$'),
+    limit: int = Query(AUDIT_PAGE_SIZE, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=200),
     q: str | None = Query(default=None, max_length=120),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    cursor_value = None
-    if cursor:
-        timestamp, event_id = cursor.rsplit('|', 1)
-        cursor_value = (datetime.fromisoformat(timestamp), event_id)
-    users = db.scalars(select(User)).all()
-    user_names_by_id = {user.id: user.full_name for user in users}
-    user_names_by_email = {user.email.lower(): user.full_name for user in users}
+    """Read one indexed, keyset-paginated change feed query."""
 
-    def actor_name(user_id=None, email=None):
-        if user_id and user_id in user_names_by_id:
-            return user_names_by_id[user_id]
-        if email and email.lower() in user_names_by_email:
-            return user_names_by_email[email.lower()]
-        return 'Sistema'
+    cursor_value = _parse_cursor(cursor)
+    range_start, range_end, now = _date_range_bounds(date_from, date_to)
+    stmt = select(AuditChangeFeed).where(
+        AuditChangeFeed.visible.is_(True),
+        AuditChangeFeed.occurred_at >= range_start,
+        AuditChangeFeed.occurred_at < range_end,
+        AuditChangeFeed.occurred_at <= now,
+    )
+    if kind != 'ALL':
+        stmt = stmt.where(AuditChangeFeed.kind == kind)
+    term = q.strip() if q and q.strip() else None
+    if term:
+        stmt = stmt.where(AuditChangeFeed.search_text.ilike(f'%{term}%'))
+    if cursor_value:
+        cursor_time, cursor_sequence = cursor_value
+        stmt = stmt.where(or_(
+            AuditChangeFeed.occurred_at < cursor_time,
+            and_(
+                AuditChangeFeed.occurred_at == cursor_time,
+                AuditChangeFeed.event_sequence < cursor_sequence,
+            ),
+        ))
 
-    term = f"%{q.strip()}%" if q and q.strip() else None
-    events = []
-    if kind in ('ALL', 'FLOW'):
-        search_filter = or_(
-            ApprovalStepEvent.display_id.ilike(term), ApprovalStepEvent.request_id.ilike(term),
-            ApprovalStepEvent.approver_email.ilike(term), ApprovalStepEvent.approver_role.ilike(term),
-            ApprovalStepEvent.actor_email.ilike(term), cast(ApprovalStepEvent.payload, SqlText).ilike(term),
-        ) if term else None
-        rows = _page_rows(db, ApprovalStepEvent, limit, cursor_value, search_filter)
-        events.extend({
-            'event_id': row.event_id, 'occurred_at': row.occurred_at, 'kind': 'FLOW',
-            'event_type': row.event_type, 'subject': row.display_id,
-            'actor': actor_name(email=row.actor_email),
-            'changed_fields': ['status'],
-            'details': {'paso': row.step, 'cargo': row.approver_role,
-                        'estado_anterior': row.previous_status, 'estado_nuevo': row.new_status,
-                        'estado_solicitud': row.expense_status},
-        } for row in rows)
-    if kind in ('ALL', 'USER'):
-        search_filter = or_(UserChangeEvent.user_email.ilike(term), UserChangeEvent.actor_email.ilike(term),
-                            cast(UserChangeEvent.before_state, SqlText).ilike(term),
-                            cast(UserChangeEvent.after_state, SqlText).ilike(term)) if term else None
-        rows = _page_rows(db, UserChangeEvent, limit, cursor_value, search_filter)
-        events.extend({
-            'event_id': row.event_id, 'occurred_at': row.occurred_at, 'kind': 'USER',
-            'event_type': row.event_type, 'subject': user_names_by_id.get(row.user_id, 'Usuario'),
-            'actor': actor_name(user_id=row.actor_user_id),
-            'changed_fields': row.changed_fields, 'details': row.after_state,
-        } for row in rows)
-    if kind in ('ALL', 'PERMISSION'):
-        search_filter = or_(AccessProfileChangeEvent.profile_code.ilike(term), AccessProfileChangeEvent.actor_email.ilike(term),
-                            cast(AccessProfileChangeEvent.before_state, SqlText).ilike(term),
-                            cast(AccessProfileChangeEvent.after_state, SqlText).ilike(term)) if term else None
-        rows = _page_rows(db, AccessProfileChangeEvent, limit, cursor_value, search_filter)
-        events.extend({
-            'event_id': row.event_id, 'occurred_at': row.occurred_at, 'kind': 'PERMISSION',
-            'event_type': row.event_type, 'subject': row.profile_code,
-            'actor': actor_name(user_id=row.actor_user_id),
-            'changed_fields': row.changed_fields, 'details': row.after_state,
-        } for row in rows)
-    if kind in ('ALL', 'RULE'):
-        search_filter = or_(ApprovalPolicyChangeEvent.policy_name.ilike(term), ApprovalPolicyChangeEvent.actor_email.ilike(term),
-                            cast(ApprovalPolicyChangeEvent.before_state, SqlText).ilike(term),
-                            cast(ApprovalPolicyChangeEvent.after_state, SqlText).ilike(term)) if term else None
-        rows = _page_rows(db, ApprovalPolicyChangeEvent, limit, cursor_value, search_filter)
-        events.extend({
-            'event_id': row.event_id, 'occurred_at': row.occurred_at, 'kind': 'RULE',
-            'event_type': row.event_type, 'subject': row.policy_name,
-            'actor': actor_name(user_id=row.actor_user_id),
-            'changed_fields': row.changed_fields, 'details': row.after_state or row.before_state,
-        } for row in rows)
-    events.sort(key=lambda item: (item['occurred_at'], item['event_id']), reverse=True)
-    page = events[:limit]
-    has_more = len(events) > limit
+    rows = list(db.scalars(
+        stmt.order_by(
+            AuditChangeFeed.occurred_at.desc(),
+            AuditChangeFeed.event_sequence.desc(),
+        ).limit(limit + 1)
+    ).all())
+    has_more = len(rows) > limit
+    page = rows[:limit]
+    items = []
+    for row in page:
+        changes = _safe_changes(row.changes)
+        items.append({
+            'event_id': row.event_id,
+            'occurred_at': row.occurred_at,
+            'kind': row.kind,
+            'entity_type': row.entity_type,
+            'event_type': row.event_type,
+            'change_type': row.change_type,
+            'subject': row.subject,
+            'actor': row.actor_label,
+            'changed_fields': list(changes),
+            'changes': changes,
+            'details': _safe_mapping(row.snapshot),
+            'context': _safe_mapping(row.event_context),
+        })
+
     next_cursor = None
     if has_more and page:
         last = page[-1]
-        next_cursor = f"{last['occurred_at'].isoformat()}|{last['event_id']}"
-    return {'items': page, 'next_cursor': next_cursor, 'has_more': has_more}
+        next_cursor = f'{last.occurred_at.isoformat()}|{last.event_sequence}'
+    return {'items': items, 'next_cursor': next_cursor, 'has_more': has_more}

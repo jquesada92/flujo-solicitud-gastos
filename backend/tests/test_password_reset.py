@@ -26,7 +26,8 @@ from app.core.config import Settings, get_settings
 from app.core.database import Base, get_db
 from app.core.rate_limit import PASSWORD_RESET_POLICY, clear_rate_limits, password_reset_subject, policy_for_request
 from app.core.security import create_password_reset_token, create_token, hash_password, verify_password
-from app.models.entities import User, UserChangeEvent, UserRole
+from app.models.audit_feed import AuditChangeFeed
+from app.models.entities import User, UserRole
 from app.models.iam import Permission, SystemAccount
 from app.services import email_service
 
@@ -134,8 +135,8 @@ class PasswordResetTests(unittest.TestCase):
 
         with self.Session() as db:
             member = db.get(User, self.member_id)
-            event = db.scalar(select(UserChangeEvent).where(
-                UserChangeEvent.event_type == 'USER_PASSWORD_RESET_LINK_ISSUED'
+            event = db.scalar(select(AuditChangeFeed).where(
+                AuditChangeFeed.event_type == 'USER_PASSWORD_RESET_LINK_ISSUED'
             ))
             self.assertEqual(member.password_hash, self.original_password_hash)
             self.assertEqual(member.session_version, self.original_session_version)
@@ -144,8 +145,7 @@ class PasswordResetTests(unittest.TestCase):
             self.assertIsNotNone(event)
             audit_json = json.dumps({
                 'changed_fields': event.changed_fields,
-                'before': event.before_state,
-                'after': event.after_state,
+                'changes': event.changes,
             })
         self.assertNotIn(token, audit_json)
         self.assertNotIn(self.original_password_hash, audit_json)
@@ -179,8 +179,8 @@ class PasswordResetTests(unittest.TestCase):
 
         with self.Session() as db:
             member = db.get(User, self.member_id)
-            event = db.scalar(select(UserChangeEvent).where(
-                UserChangeEvent.event_type == 'USER_PASSWORD_RESET_COMPLETED'
+            event = db.scalar(select(AuditChangeFeed).where(
+                AuditChangeFeed.event_type == 'USER_PASSWORD_RESET_COMPLETED'
             ))
             self.assertTrue(verify_password('New-password-123!', member.password_hash))
             self.assertFalse(verify_password('Original-password-123!', member.password_hash))
@@ -190,8 +190,7 @@ class PasswordResetTests(unittest.TestCase):
             self.assertIsNotNone(event)
             audit_json = json.dumps({
                 'changed_fields': event.changed_fields,
-                'before': event.before_state,
-                'after': event.after_state,
+                'changes': event.changes,
             })
         self.assertNotIn(second_token, audit_json)
         self.assertNotIn('password_hash', audit_json)
@@ -278,8 +277,8 @@ class PasswordResetTests(unittest.TestCase):
 
         with self.Session() as db:
             member = db.get(User, self.member_id)
-            events = list(db.scalars(select(UserChangeEvent).where(
-                UserChangeEvent.event_type == 'USER_PASSWORD_RESET_LINK_ISSUED'
+            events = list(db.scalars(select(AuditChangeFeed).where(
+                AuditChangeFeed.event_type == 'USER_PASSWORD_RESET_LINK_ISSUED'
             )).all())
             self.assertEqual(member.password_reset_version, 1)
             self.assertEqual(member.password_hash, self.original_password_hash)

@@ -9,7 +9,7 @@ import app.models.classification  # noqa: F401
 import app.models.closure  # noqa: F401
 import app.models.entities  # noqa: F401
 import app.models.iam  # noqa: F401
-import app.models.activity_periods  # noqa: F401
+import app.models.audit_feed  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

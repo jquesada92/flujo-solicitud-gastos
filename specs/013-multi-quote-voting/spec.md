@@ -77,11 +77,13 @@ abierta sin reescribir migraciones desplegadas.
 
 La revisión `20260828_0014_merge_main_layout_heads` une esa rama con
 `20260827_0012_scoped_approval_policies → 20260828_0013_direct_expenses` y deja
-un único head sin reescribir ninguna revisión anterior.
+la convergencia sin reescribir ninguna revisión anterior. Las revisiones
+`20260831_0015_audit_change_feed → 20260831_0016_retire_legacy_audit_tables`
+continúan esa cadena y dejan un único head.
 
 ## Validación local
 
 La prueba automatizada `tests.test_multi_quote_open_voting` cubre empate, cambio
 de voto, selección provisional, bloqueo de factura y cierre. PostgreSQL local
-debe confirmar `20260828_0014` como único head. `app.demo_monitoring` conserva escenarios
+debe confirmar `20260831_0016` como único head. `app.demo_monitoring` conserva escenarios
 visibles de ronda sin votos y voto parcial cuando se solicita esa validación mutante.

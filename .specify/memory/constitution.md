@@ -1,8 +1,8 @@
 # Constitución del proyecto
 
 **Proyecto:** Flujo de Control de Gastos  
-**Versión:** 2.26.0
-**Vigente desde:** 2026-08-31
+**Versión:** 2.30.0
+**Vigente desde:** 2026-09-01
 
 ## 1. Propósito
 
@@ -151,6 +151,50 @@ Mover un Rol entre “global” y un Grupo no elimina sus asignaciones de Usuari
 - `areas:manage`: mutaciones de Área, Categoría y relaciones; no concede administración IAM.
 
 Una mutación nunca se autoriza por `config:read`.
+
+### Auditoría
+
+`Configuración → Auditoría` presenta por defecto los eventos inmutables de los
+últimos 7 días calendario: hoy y los seis días anteriores, según la zona horaria
+de la aplicación. El filtro **Desde/Hasta** es editable y permite mover o ampliar
+el período para investigar historia anterior, sin conservar un recorte fijo de
+45 días. La pantalla no ofrece la vista agregada **Todos**: presenta únicamente
+**Flujos**, **Usuarios**, **Accesos**, **Áreas** y **Reglas**, con **Flujos**
+como sección inicial. Cada sección muestra hasta 10 registros por página.
+**Anterior** y **Siguiente** navegan mediante cursor sin acumular páginas;
+cambiar sección, búsqueda o fechas vuelve a la primera página. **Actualizar**
+conserva los criterios aplicados y vuelve a la primera página.
+
+Cada evento distingue explícitamente **Creación**, **Actualización** y
+**Eliminación** e identifica fecha, tipo de entidad, elemento, actor y acción
+específica. Una actualización muestra por cada campo modificado el **Valor
+anterior** y el **Valor actual**; creación usa anterior vacío y eliminación usa
+actual vacío.
+
+La fuente canónica de lectura es `audit_change_feed`: una fila append-only por
+cambio auditable, capturada en la misma transacción de negocio con actor,
+entidad, acción, instantánea y diferencias `before/after`. La asignación o
+sustitución de Roles de un Usuario expone `assigned_roles` antes y después. El
+endpoint consulta únicamente ese feed mediante orden y cursor indexados; nunca
+reúne tablas heterogéneas, carga todos los Usuarios ni ordena el historial
+completo en memoria.
+
+La revisión `20260831_0015_audit_change_feed` conserva la historia desplegada
+mediante backfill set-based en PostgreSQL y valida los conteos por fuente. La
+revisión irreversible `20260831_0016_retire_legacy_audit_tables` retira, sin
+`CASCADE`, las cuatro tablas `*_activity_periods` y los eventos redundantes de
+Usuario, perfil compatible, regla y factura después de comprobar su copia. Los
+eventos operativos de pasos de aprobación y votos permanecen en sus tablas de
+dominio y también se proyectan al feed; no son fuentes directas del listado de
+Auditoría.
+
+La respuesta nunca expone contraseñas, hashes, tokens o secretos y enmascara
+correo, teléfono e identificación personal incluidos en instantáneas
+históricas.
+
+`config:read` permite consultar Auditoría, pero no concede ninguna mutación. En
+pantallas estrechas cada evento se presenta como tarjeta completa, sin ocultar
+actor, acción ni diferencias.
 
 ## 7. Cargo
 
@@ -457,6 +501,8 @@ Cadena Alembic vigente:
   └→ 20260827_0012_scoped_approval_policies                  │
      → 20260828_0013_direct_expenses ────────────────────────┤
                                                              └→ 20260828_0014_merge_main_layout_heads
+                                                                → 20260831_0015_audit_change_feed
+                                                                → 20260831_0016_retire_legacy_audit_tables
 ```
 
 `20260824_0009_group_permission_inheritance` agrega `group_permissions` vacía para no alterar accesos existentes durante la migración. La tabla relaciona Grupo y Permiso de forma única; no introduce denegaciones ni modifica `role_permissions`.
@@ -490,17 +536,30 @@ factura. No altera solicitudes cerradas ni adjuntos existentes.
 `20260825_0011` mediante dos `down_revision`. No reescribe ninguna revisión
 histórica ni introduce por sí misma cambios de dominio; deja un único head.
 
-Usuarios, Áreas, Roles y Grupos mantienen historial temporal versionado. Cada
-alta crea una fila cuyo `active_from` coincide con `created_at`; toda modificación
-relevante cierra la versión vigente y abre otra con una instantánea JSON. Siempre
-existe como máximo una versión abierta, también cuando `active=false`; el valor
-JSON permite distinguir períodos activos e inactivos. Usuario conserva cédula,
-contacto, nombre y Roles; Rol conserva el Grupo asociado y su `max_users`. Las restricciones
-físicas impiden fechas invertidas y más de una versión abierta por entidad.
-Cada versión identifica además quién realizó el cambio, cuándo ocurrió, el tipo
-de evento, los campos modificados y el valor anterior/nuevo. Las acciones
-autenticadas registran ID, correo y cédula del actor; procesos sin sesión usan
-un identificador `SYSTEM:*`. La auditoría nunca almacena contraseñas o secretos.
+`20260831_0015_audit_change_feed` crea `audit_change_feed`, rellena con SQL
+set-based la historia de las fuentes desplegadas, valida que cada fila tenga su
+clave de origen y protege el resultado contra `UPDATE`, `DELETE` y `TRUNCATE`.
+El feed conserva actor, entidad, tipo de evento, `change_type`, campos,
+diferencias, instantánea, contexto y texto de búsqueda. Una restricción única
+por fuente hace idempotente el backfill.
+
+`20260831_0016_retire_legacy_audit_tables` compara los conteos de las ocho
+fuentes redundantes con el feed y solo entonces elimina, sin `CASCADE`,
+`user_activity_periods`, `area_activity_periods`, `role_activity_periods`,
+`group_activity_periods`, `user_change_events`,
+`access_profile_change_events`, `approval_policy_change_events` e
+`invoice_change_events`. Su downgrade es deliberadamente irreversible: una
+recuperación requiere el respaldo previo al corte y la imagen anterior; nunca
+se recrean tablas vacías como falsa restauración. `approval_step_events` y
+`quotation_vote_events` continúan como evidencia operativa de sus dominios y se
+proyectan transaccionalmente al feed.
+
+Usuarios, Áreas, Categorías, Roles, Grupos, Permisos, Cargos, reglas, gastos y
+relaciones auditables generan una fila del feed dentro de la misma transacción.
+La instantánea permite reconstruir estados e intervalos históricos sin mantener
+una tabla temporal por entidad. Las acciones autenticadas registran ID y
+etiqueta del actor; procesos sin sesión usan un identificador `SYSTEM:*`. La
+auditoría nunca almacena contraseñas, hashes, tokens ni secretos.
 
 Los listados activos de Usuario, Área, Rol y Grupo no mezclan entidades
 inactivas. Las rutas de recuperación y las vistas administrativas de inspección
@@ -609,7 +668,7 @@ Validaciones mínimas:
 ```text
 docker compose up -d --build
 docker compose exec -T backend alembic heads
-# esperado: 20260828_0014
+# esperado: 20260831_0016
 
 cd backend
 .\.venv\Scripts\python.exe -m scripts.run_tests

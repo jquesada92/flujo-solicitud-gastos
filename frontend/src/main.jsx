@@ -2,6 +2,12 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Analytics } from "@vercel/analytics/react";
 import { injectSpeedInsights } from "@vercel/speed-insights";
+import {
+  auditChangeEntries,
+  auditChangeTypeName,
+  auditValueText,
+  defaultAuditDateRange,
+} from "./audit-utils.js";
 import DirectExpenseForm from "./direct-expense-form.jsx";
 import { createSessionIdleDeadline } from "./session-idle.js";
 import "./styles.css";
@@ -71,7 +77,12 @@ const fieldName = (field) => ({
   phone: "Teléfono", person_type: "Tipo de persona", active: "Estado",
   title: "Cargo", apartments: "Apartamentos", can_request: "Puede solicitar",
   can_approve: "Puede aprobar", can_view: "Puede consultar",
-  can_configure: "Puede configurar",
+  can_configure: "Puede configurar", assigned_roles: "Roles asignados",
+  permission_codes: "Permisos", group: "Grupo", description: "Descripción",
+  code: "Código", max_users: "Máximo de usuarios", status: "Estado",
+  min_amount: "Monto mínimo", max_amount: "Monto máximo",
+  approval_mode: "Modalidad", approver_role_ids: "Roles aprobadores",
+  approver_group_ids: "Grupos aprobadores", expense_type: "Área",
 })[field] || descriptor(field);
 
 const hasUnsavedChanges = () => Boolean(document.querySelector('[data-unsaved="true"]'));
@@ -2409,60 +2420,157 @@ function Users({ canConfigure, canEditPeople, view }) {
   );
 }
 
+const AUDIT_PAGE_SIZE = 10;
+
 function Audit() {
-  const filters = [["ALL", "Todos"], ["FLOW", "Flujos"], ["USER", "Usuarios"], ["PERMISSION", "Permisos"], ["RULE", "Reglas"]];
-  const kindNames = { FLOW: "Flujo", USER: "Usuario", PERMISSION: "Permiso", RULE: "Regla" };
+  const filters = [["FLOW", "Flujos"], ["USER", "Usuarios"], ["PERMISSION", "Accesos"], ["AREA", "Áreas"], ["RULE", "Reglas"]];
+  const kindNames = { FLOW: "Flujo", USER: "Usuario", PERMISSION: "Acceso", AREA: "Área", RULE: "Regla" };
   const actionNames = {
     USER_CREATED: "Usuario creado", USER_ACCESS_UPDATED: "Acceso actualizado",
+    USER_UPDATED: "Usuario actualizado", USER_ROLES_UPDATED: "Roles del usuario actualizados",
+    USER_DEACTIVATED: "Usuario desactivado", USER_REACTIVATED: "Usuario reactivado",
     USER_PASSWORD_REGENERATED: "Contraseña regenerada", PROFILE_PERMISSIONS_APPLIED: "Permisos aplicados",
     USER_PASSWORD_RESET_LINK_ISSUED: "Enlace de contraseña enviado", USER_PASSWORD_RESET_COMPLETED: "Contraseña restablecida",
     PROFILE_CREATED: "Perfil creado", PROFILE_UPDATED: "Perfil actualizado",
+    ROLE_CREATED: "Rol creado", ROLE_UPDATED: "Rol actualizado", ROLE_DEACTIVATED: "Rol desactivado",
+    ROLE_REACTIVATED: "Rol reactivado", ROLE_PERMISSIONS_UPDATED: "Permisos del Rol actualizados",
+    ROLE_GROUP_UPDATED: "Grupo del Rol actualizado", GROUP_CREATED: "Grupo creado",
+    GROUP_UPDATED: "Grupo actualizado", GROUP_DEACTIVATED: "Grupo desactivado",
+    GROUP_REACTIVATED: "Grupo reactivado", GROUP_PERMISSIONS_UPDATED: "Permisos del Grupo actualizados",
+    AREA_CREATED: "Área creada", AREA_UPDATED: "Área actualizada", AREA_DEACTIVATED: "Área desactivada",
+    AREA_REACTIVATED: "Área reactivada",
     POLICY_CREATED: "Regla creada", POLICY_UPDATED: "Regla actualizada", POLICY_DELETED: "Regla eliminada",
     APPROVAL_CREATED: "Aprobación creada", APPROVAL_ACTIVATED: "Aprobación activada",
     APPROVAL_APPROVED: "Aprobación concedida", APPROVAL_REJECTED: "Aprobación rechazada",
     REVISION_REQUESTED: "Revisión solicitada",
   };
-  const [kind, setKind] = useState("ALL"), [events, setEvents] = useState([]),
-    [cursor, setCursor] = useState(null), [hasMore, setHasMore] = useState(false),
+  const [initialDateRange] = useState(() => defaultAuditDateRange(new Date(), APP_TIME_ZONE));
+  const [kind, setKind] = useState("FLOW"), [events, setEvents] = useState([]),
+    [pageCursors, setPageCursors] = useState([null]), [pageIndex, setPageIndex] = useState(0),
+    [nextCursor, setNextCursor] = useState(null),
     [query, setQuery] = useState(""), [appliedQuery, setAppliedQuery] = useState(""),
+    [dateFrom, setDateFrom] = useState(initialDateRange.dateFrom),
+    [dateTo, setDateTo] = useState(initialDateRange.dateTo),
+    [appliedDateFrom, setAppliedDateFrom] = useState(initialDateRange.dateFrom),
+    [appliedDateTo, setAppliedDateTo] = useState(initialDateRange.dateTo),
     [loading, setLoading] = useState(false), [message, setMessage] = useState(null);
-  const load = async (append = false) => {
+  const load = async (cursorValue = null) => {
     setLoading(true); setMessage(null);
     try {
-      const cursorQuery = append && cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+      const cursorQuery = cursorValue ? `&cursor=${encodeURIComponent(cursorValue)}` : "";
       const searchQuery = appliedQuery ? `&q=${encodeURIComponent(appliedQuery)}` : "";
-      const result = await api(`/api/audit/events?kind=${kind}&limit=50${searchQuery}${cursorQuery}`);
-      setEvents((current) => append ? [...current, ...result.items] : result.items);
-      setCursor(result.next_cursor); setHasMore(result.has_more);
+      const dateQuery = `&date_from=${encodeURIComponent(appliedDateFrom)}&date_to=${encodeURIComponent(appliedDateTo)}`;
+      const result = await api(`/api/audit/events?kind=${kind}&limit=${AUDIT_PAGE_SIZE}${dateQuery}${searchQuery}${cursorQuery}`);
+      setEvents(result.items);
+      setNextCursor(result.next_cursor);
+      return true;
     }
-    catch (err) { setMessage({ type: "error", text: err.message }); }
+    catch (err) { setMessage({ type: "error", text: err.message }); return false; }
     finally { setLoading(false); }
   };
+  const resetPagination = () => {
+    setPageCursors([null]);
+    setPageIndex(0);
+    load(null);
+  };
   useEffect(() => {
-    setCursor(null); load(false);
-  }, [kind, appliedQuery]);
-  return <section className="card">
+    resetPagination();
+  }, [kind, appliedQuery, appliedDateFrom, appliedDateTo]);
+  const applyDateFilter = (event) => {
+    event.preventDefault();
+    if (!dateFrom || !dateTo || dateFrom > dateTo) {
+      setMessage({ type: "error", text: "La fecha Desde no puede ser posterior a la fecha Hasta." });
+      return;
+    }
+    setMessage(null);
+    const rangeChanged = dateFrom !== appliedDateFrom || dateTo !== appliedDateTo;
+    setAppliedDateFrom(dateFrom);
+    setAppliedDateTo(dateTo);
+    if (!rangeChanged) {
+      resetPagination();
+    }
+  };
+  const restoreDefaultDateRange = () => {
+    const range = defaultAuditDateRange(new Date(), APP_TIME_ZONE);
+    setMessage(null);
+    setDateFrom(range.dateFrom);
+    setDateTo(range.dateTo);
+    const rangeChanged = range.dateFrom !== appliedDateFrom || range.dateTo !== appliedDateTo;
+    setAppliedDateFrom(range.dateFrom);
+    setAppliedDateTo(range.dateTo);
+    if (!rangeChanged) {
+      resetPagination();
+    }
+  };
+  const applySearch = (event) => {
+    event.preventDefault();
+    const nextQuery = query.trim();
+    if (nextQuery === appliedQuery) resetPagination();
+    else setAppliedQuery(nextQuery);
+  };
+  const goToNextPage = async () => {
+    if (!nextCursor || loading) return;
+    const cursorValue = nextCursor;
+    if (await load(cursorValue)) {
+      const nextIndex = pageIndex + 1;
+      setPageCursors((current) => [...current.slice(0, nextIndex), cursorValue]);
+      setPageIndex(nextIndex);
+    }
+  };
+  const goToPreviousPage = async () => {
+    if (pageIndex === 0 || loading) return;
+    const previousIndex = pageIndex - 1;
+    const cursorValue = pageCursors[previousIndex] || null;
+    if (await load(cursorValue)) setPageIndex(previousIndex);
+  };
+  return <section className="card audit-card" aria-busy={loading}>
     <div className="card-heading"><div><p className="eyebrow">AUDITORÍA</p><h2>Control de cambios</h2></div>
-      <button className="secondary" onClick={() => load(false)} disabled={loading}>{loading ? "Actualizando..." : "Actualizar"}</button>
+      <button type="button" className="secondary" onClick={resetPagination} disabled={loading}>{loading ? "Actualizando..." : "Actualizar"}</button>
     </div>
-    <p className="muted">Historial inmutable de flujos y cambios en usuarios, permisos y reglas de los últimos 45 días.</p>
-    <form className="audit-search" onSubmit={(event) => { event.preventDefault(); setAppliedQuery(query.trim()); }}>
+    <p className="muted">Se muestran por defecto los últimos 7 días calendario. Ajusta el rango para investigar períodos anteriores.</p>
+    <form className="audit-date-filter" aria-label="Filtrar auditoría por fecha" onSubmit={applyDateFilter}>
+      <label>Desde<input type="date" required max={dateTo} value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>
+      <label>Hasta<input type="date" required min={dateFrom} value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>
+      <button className="primary" disabled={loading}>Aplicar fechas</button>
+      <button type="button" className="secondary" disabled={loading} onClick={restoreDefaultDateRange}>Últimos 7 días</button>
+    </form>
+    <form className="audit-search" onSubmit={applySearch}>
       <label>Buscar en auditoría<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Artículo, proveedor, usuario, aprobador, monto..." /></label>
       <button className="primary" disabled={loading}>Buscar</button>
       {(query || appliedQuery) && <button type="button" className="secondary" onClick={() => { setQuery(""); setAppliedQuery(""); }}>Limpiar</button>}
     </form>
-    <div className="audit-filters">{filters.map(([value, label]) => <button key={value} className={kind === value ? "primary" : "secondary"} onClick={() => setKind(value)}>{label}</button>)}</div>
-    {message && <div className={`notice ${message.type}`}>{message.text}</div>}
-    {!loading && events.length === 0 ? <p className="muted">Aún no hay cambios registrados.</p> :
-      <div className="table-wrap"><table><thead><tr><th>Fecha y hora</th><th>Tipo</th><th>Elemento</th><th>Acción</th><th>Realizado por</th><th>Campos / detalle</th></tr></thead>
-        <tbody>{events.map((event) => <tr key={event.event_id}>
-          <td>{approvalTimestamp(event.occurred_at)}</td><td><span className="change-pill">{kindNames[event.kind] || event.kind}</span></td>
-          <td>{event.subject}</td><td>{actionNames[event.event_type] || descriptor(event.event_type)}</td><td>{event.actor}</td>
-          <td>{(event.changed_fields || []).map((field) => <span className="change-pill" key={field}>{fieldName(field)}</span>)}
-            {event.kind === "FLOW" && event.details?.paso ? <span className="subtext">Paso {event.details.paso} · {event.details.estado_anterior ? statusName(event.details.estado_anterior) : "Inicio"} → {statusName(event.details.estado_nuevo)}</span> : null}</td>
-        </tr>)}</tbody></table>
-        {hasMore && <div className="audit-load-more"><button className="secondary" disabled={loading} onClick={() => load(true)}>{loading ? "Cargando..." : "Cargar 50 eventos más"}</button></div>}
-      </div>}
+    <div className="audit-filters" role="group" aria-label="Filtrar eventos de auditoría">{filters.map(([value, label]) => <button type="button" key={value} aria-pressed={kind === value} className={kind === value ? "primary" : "secondary"} onClick={() => setKind(value)}>{label}</button>)}</div>
+    <p className="muted audit-result-status" aria-live="polite">{loading ? "Consultando página…" : `Página ${pageIndex + 1} · ${events.length} evento(s).`}</p>
+    {message && <div className={`notice ${message.type}`} role="alert">{message.text}</div>}
+    {!loading && events.length === 0 ? <p className="muted">No hay cambios registrados en el rango seleccionado.</p> :
+      <div className="table-wrap audit-table-wrap"><table className="audit-table" aria-label="Eventos de auditoría"><thead><tr><th scope="col">Fecha y hora</th><th scope="col">Tipo</th><th scope="col">Elemento</th><th scope="col">Acción</th><th scope="col">Realizado por</th><th scope="col">Valores anteriores y actuales</th></tr></thead>
+        <tbody>{events.map((event) => {
+          const changes = auditChangeEntries(event);
+          const changeTypeClass = String(event.change_type || "UPDATE").toLowerCase();
+          return <tr key={event.event_id}>
+            <td data-label="Fecha y hora"><time dateTime={event.occurred_at}>{approvalTimestamp(event.occurred_at)}</time></td>
+            <td data-label="Tipo"><span className="change-pill">{kindNames[event.kind] || event.kind}</span></td>
+            <td data-label="Elemento">{event.subject}</td>
+            <td data-label="Acción"><span className={`audit-action audit-action--${changeTypeClass}`}>{auditChangeTypeName(event.change_type)}</span><span className="subtext">{actionNames[event.event_type] || descriptor(event.event_type)}</span></td>
+            <td data-label="Realizado por">{event.actor}</td>
+            <td data-label="Valores anteriores y actuales" className="audit-changes-cell">
+              {changes.length ? <div className="audit-change-list">{changes.map(({ field, before, after }) => <div className="audit-change" key={field}>
+                <strong>{fieldName(field)}</strong>
+                <div className="audit-value-comparison">
+                  <span className="audit-value audit-value--before"><small>Valor anterior</small><span>{auditValueText(before, field)}</span></span>
+                  <span className="audit-change-arrow" aria-hidden="true">→</span>
+                  <span className="audit-value audit-value--after"><small>Valor actual</small><span>{auditValueText(after, field)}</span></span>
+                </div>
+              </div>)}</div> : <span className="muted">Sin diferencias de valores disponibles.</span>}
+              {event.kind === "FLOW" && event.details?.paso ? <span className="subtext">Paso {event.details.paso}</span> : null}
+            </td>
+          </tr>;
+        })}</tbody></table></div>}
+    {(events.length > 0 || pageIndex > 0) && <nav className="audit-pagination" aria-label="Paginación de auditoría">
+      <button type="button" className="secondary" disabled={loading || pageIndex === 0} onClick={goToPreviousPage}>Anterior</button>
+      <span aria-live="polite">Página {pageIndex + 1}</span>
+      <button type="button" className="secondary" disabled={loading || !nextCursor} onClick={goToNextPage}>Siguiente</button>
+    </nav>}
   </section>;
 }
 

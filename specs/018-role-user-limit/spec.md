@@ -37,7 +37,7 @@ cupo** un Rol lleno que ese Usuario todavía no tiene.
 
 Alembic `20260825_0011_role_user_limit` agrega la columna nullable y el check
 `ck_roles_max_users_positive`. Los Roles existentes quedan sin límite. Las
-instantáneas `role_activity_periods.values` incorporan `max_users`.
+instantáneas de Rol en `audit_change_feed` incorporan `max_users`.
 
 ## Fuera de alcance
 

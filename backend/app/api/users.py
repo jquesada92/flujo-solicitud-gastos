@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.privacy import analytics_identifier, can_view_personal_data, mask_email, mask_tail
 from app.core.security import create_password_reset_token, current_user, hash_password, normalize_email
-from app.models.entities import AccessProfile, AccessProfileChangeEvent, User, UserChangeEvent, UserRole
+from app.models.audit_feed import AuditChangeFeed, override_entity_event
+from app.models.entities import AccessProfile, User, UserRole
 from app.models.iam import Role, SystemAccount, UserRoleAssignment
 from app.schemas.user import AccessProfileOut, AccessProfileUpdate, AccessProfileWrite, BoardAssignmentUpdate, UserBulkUpdate, UserChangeEventOut, UserCreate, UserOut, UserUpdate
 from app.services.email_service import send_password_reset_link, send_user_invitation
@@ -19,13 +20,6 @@ from app.services.iam_service import active_role_assignment_count
 
 BOARD_CODES = {'PRESIDENTE', 'VICEPRESIDENTE', 'TESORERO', 'VOCERO'}
 ALLOWED_ACCESS_CODES = {*BOARD_CODES, 'ADMINISTRADORA'}
-AUDITED_FIELDS = (
-    'name', 'analytics_id', 'identity_document', 'email', 'phone', 'title', 'role',
-    'active', 'can_request', 'can_approve', 'can_view', 'can_configure',
-    'must_change_password',
-)
-
-
 def require_people_access(user: User = Depends(current_user)) -> User:
     if (
         user.role != UserRole.ADMIN
@@ -50,21 +44,6 @@ def require_people_write(user: User = Depends(current_user)) -> User:
 
 
 router = APIRouter(dependencies=[Depends(require_people_access)])
-
-
-def _snapshot(user: User) -> dict:
-    snapshot = {
-        key: (value.value if hasattr((value := getattr(user, key)), 'value') else value)
-        for key in AUDITED_FIELDS
-    }
-    snapshot['identity_document'] = mask_tail(snapshot.get('identity_document'))
-    snapshot['email'] = mask_email(snapshot.get('email'))
-    snapshot['phone'] = mask_tail(snapshot.get('phone'))
-    return snapshot
-
-
-def _audit_email(value: str) -> str:
-    return mask_email(value) or '***'
 
 
 def _profile_snapshot(profile: AccessProfile) -> dict:
@@ -194,15 +173,39 @@ def list_user_changes(
     safe_limit = min(max(limit, 1), 500)
     month_start = func.date_trunc('month', func.now())
     stmt = (
-        select(UserChangeEvent)
+        select(AuditChangeFeed)
         .where(
-            UserChangeEvent.occurred_at >= month_start,
-            UserChangeEvent.occurred_at < month_start + text("INTERVAL '1 month'"),
+            AuditChangeFeed.kind == 'USER',
+            AuditChangeFeed.entity_type == 'USER',
+            AuditChangeFeed.visible.is_(True),
+            AuditChangeFeed.occurred_at >= month_start,
+            AuditChangeFeed.occurred_at < month_start + text("INTERVAL '1 month'"),
         )
-        .order_by(UserChangeEvent.event_sequence.desc())
+        .order_by(AuditChangeFeed.event_sequence.desc())
         .limit(safe_limit)
     )
-    return list(db.scalars(stmt).all())
+    rows = list(db.scalars(stmt).all())
+    return [
+        {
+            'event_sequence': row.event_sequence,
+            'event_id': row.event_id,
+            'occurred_at': row.occurred_at,
+            'event_type': row.event_type,
+            'user_id': int(row.entity_id),
+            'user_email': (row.snapshot or {}).get('email', '***'),
+            'actor_email': row.actor_identifier,
+            'changed_fields': row.changed_fields,
+            'before_state': {
+                field: values.get('before')
+                for field, values in row.changes.items()
+            } if row.change_type != 'CREATE' else None,
+            'after_state': {
+                field: values.get('after')
+                for field, values in row.changes.items()
+            },
+        }
+        for row in rows
+    ]
 
 
 @router.get('/profiles', response_model=list[AccessProfileOut])
@@ -223,12 +226,6 @@ def create_profile(
     profile = AccessProfile(code=code, **payload.model_dump())
     db.add(profile)
     db.flush()
-    after = _profile_snapshot(profile)
-    db.add(AccessProfileChangeEvent(
-        event_type='PROFILE_CREATED', profile_id=profile.id, profile_code=profile.code,
-        actor_user_id=actor.id, actor_email=_audit_email(actor.email),
-        changed_fields=list(after.keys()), before_state=None, after_state=after,
-    ))
     db.commit()
     db.refresh(profile)
     return profile
@@ -266,28 +263,13 @@ def update_profile(
     after = _profile_snapshot(profile)
     changed = [key for key in after if before[key] != after[key]]
     if changed:
-        db.add(AccessProfileChangeEvent(
-            event_type='PROFILE_UPDATED', profile_id=profile.id, profile_code=profile.code,
-            actor_user_id=actor.id, actor_email=_audit_email(actor.email),
-            changed_fields=changed, before_state=before, after_state=after,
-        ))
         permission_fields = {'can_request', 'can_approve', 'can_view', 'can_configure'}
         if permission_fields.intersection(changed):
             assigned_users = db.scalars(
                 select(User).where(User.title == profile.code, User.role != UserRole.ADMIN)
             ).all()
             for assigned_user in assigned_users:
-                user_before = _snapshot(assigned_user)
                 _apply_profile_permissions(assigned_user, profile)
-                user_after = _snapshot(assigned_user)
-                user_changed = [key for key in AUDITED_FIELDS if user_before[key] != user_after[key]]
-                if user_changed:
-                    db.add(UserChangeEvent(
-                        event_type='PROFILE_PERMISSIONS_APPLIED', user_id=assigned_user.id,
-                        user_email=_audit_email(assigned_user.email), actor_user_id=actor.id,
-                        actor_email=_audit_email(actor.email), changed_fields=user_changed,
-                        before_state=user_before, after_state=user_after,
-                    ))
     db.commit()
     db.refresh(profile)
     return profile
@@ -338,12 +320,6 @@ def create_user(
     db.add(user)
     try:
         db.flush()
-        after = _snapshot(user)
-        db.add(UserChangeEvent(
-            event_type='USER_CREATED', user_id=user.id, user_email=_audit_email(user.email),
-            actor_user_id=actor.id, actor_email=_audit_email(actor.email),
-            changed_fields=list(after.keys()), before_state=None, after_state=after,
-        ))
         if user.active:
             send_user_invitation(user, temporary_password)
         db.commit()
@@ -366,7 +342,6 @@ def _apply_user_changes(db: Session, user: User, changes: dict, actor: User) -> 
             status_code=403,
             detail='El Administrador del sistema no puede modificarse desde esta pantalla',
         )
-    before = _snapshot(user)
     previous_email = user.email
     previous_active = user.active
     if changes.get('active') is True and not user.active:
@@ -458,15 +433,6 @@ def _apply_user_changes(db: Session, user: User, changes: dict, actor: User) -> 
         user.can_view = False
         user.can_configure = False
 
-    after = _snapshot(user)
-    changed_fields = [key for key in after if before[key] != after[key]]
-    if changed_fields:
-        db.add(UserChangeEvent(
-            event_type='USER_ACCESS_UPDATED', user_id=user.id,
-            user_email=_audit_email(user.email), actor_user_id=actor.id,
-            actor_email=_audit_email(actor.email), changed_fields=changed_fields,
-            before_state=before, after_state=after,
-        ))
 
 
 @router.patch('/bulk', response_model=list[UserOut])
@@ -574,17 +540,14 @@ def regenerate_password(
     if not user.active:
         raise HTTPException(status_code=409, detail='Activa el usuario antes de enviar un enlace de restablecimiento')
 
-    previous_reset_version = user.password_reset_version
     user.password_reset_version += 1
     reset_token = create_password_reset_token(user)
-    db.add(UserChangeEvent(
-        event_type='USER_PASSWORD_RESET_LINK_ISSUED', user_id=user.id,
-        user_email=_audit_email(user.email), actor_user_id=actor.id,
-        actor_email=_audit_email(actor.email),
-        changed_fields=['password_reset_link'],
-        before_state={'password_reset_version': previous_reset_version},
-        after_state={'password_reset_version': user.password_reset_version},
-    ))
+    override_entity_event(
+        db,
+        entity_type=User,
+        entity_id=user.id,
+        event_type='USER_PASSWORD_RESET_LINK_ISSUED',
+    )
     try:
         send_password_reset_link(user, reset_token)
     except Exception as exc:

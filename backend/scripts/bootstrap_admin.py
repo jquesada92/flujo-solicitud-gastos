@@ -7,7 +7,7 @@ from app.core.privacy import analytics_identifier
 from app.core.security import hash_password, normalize_email
 from app.models.entities import User, UserRole
 from app.models.iam import Role, SystemAccount, UserRoleAssignment
-import app.models.activity_periods  # noqa: F401  Register transactional history hooks.
+import app.models.audit_capture  # noqa: F401  Register transactional change-feed hooks.
 
 
 def main() -> None:

@@ -1,55 +1,46 @@
-# Spec 014 — Historial temporal de actividad
+# Spec 014 — Historial de actividad
 
-**Estado:** Implementado  
-**Constitución:** 2.14.0
+**Estado:** Sustituida por Spec 024
+**Constitución:** 2.30.0
 
-## Objetivo
+## Objetivo conservado
 
-Conservar los intervalos en que cada Usuario, Área, Rol y Grupo estuvo activo,
-sin perder historia al alternar el indicador `active`.
+Conservar cuándo y cómo cambió cada Usuario, Área, Rol y Grupo, incluidos sus
+estados activo/inactivo, sin sobrescribir historia. La persistencia temporal por
+entidad que implementó originalmente esta Spec fue reemplazada por el change
+feed canónico definido en Spec 024.
 
-## Reglas
+## Regla vigente
 
-1. Cada entidad tiene períodos con llave primaria propia y llave foránea estable.
-2. Al crearla se inserta una fila con `active_from = created_at` y una instantánea JSON.
-3. La versión vigente mantiene `active_until = NULL`, incluso si su JSON indica `active=false`.
-4. Cualquier modificación relevante cierra la versión abierta y crea una nueva en la misma transacción.
-5. Cambiar activa↔inactiva sigue la misma regla y nunca sobrescribe versiones anteriores.
-6. Una asignación o retiro Rol→Grupo y Usuario→Rol también crea versión del propietario relacionado.
-7. `active_until` nunca puede ser anterior a `active_from`.
-8. La base de datos impide más de un período abierto para la misma entidad.
-9. Los intervalos cuyo JSON contiene `active=false` identifican inactividad.
-10. La migración rellena una fila inicial para todos los registros existentes.
-11. Cada versión registra `event_at`, actor, tipo de cambio, campos modificados
-    y diferencias anterior/nuevo.
-12. El actor autenticado conserva ID interno, correo y cédula. Bootstrap,
-    migraciones y automatizaciones usan un actor explícito `SYSTEM:*`.
-13. Contraseñas, hashes, tokens y secretos quedan fuera de las instantáneas.
+1. `audit_change_feed` guarda una fila inmutable por creación, actualización o
+   eliminación auditable.
+2. Cada fila conserva `occurred_at`, actor, entidad, tipo de evento, campos,
+   diferencias `{before, after}` y una instantánea del estado relevante.
+3. Cambiar activa↔inactiva produce una actualización específica y conserva el
+   mismo ID de negocio.
+4. Las asignaciones Rol→Grupo, Usuario→Rol y los cambios de Permisos actualizan
+   la instantánea agregada de la entidad afectada en la misma transacción.
+5. Los intervalos históricos se reconstruyen ordenando las instantáneas por
+   entidad y usando el siguiente `occurred_at` como fin del estado anterior.
+6. Contraseñas, hashes, tokens y secretos quedan fuera del feed.
+7. La clave única `(source_type, source_id)` evita duplicar una fuente y el
+   backend no persiste actualizaciones sin diferencias.
 
-## Persistencia
+## Sustitución física
 
-```text
-user_activity_periods  → users
-area_activity_periods  → expense_categories
-role_activity_periods  → roles
-group_activity_periods → user_groups
-```
-
-Cada tabla contiene `id`, la llave foránea, `active_from`, `active_until` y
-`values` JSON. Para Usuario, `identity_document` (cédula) es la llave de negocio
-conservada junto con teléfono, nombres, apellidos, correo y Roles. Para Rol se
-conserva el Grupo asociado.
-
-Metadatos de auditoría:
+`20260831_0015_audit_change_feed` copió set-based la historia desplegada y
+validó conteos. `20260831_0016_retire_legacy_audit_tables` comprobó nuevamente
+la copia y retiró sin `CASCADE`:
 
 ```text
-event_at
-actor_user_id
-actor_identifier
-actor_identity_document
-change_type
-changed_fields
-changes              # {campo: {before, after}}
+user_activity_periods
+area_activity_periods
+role_activity_periods
+group_activity_periods
 ```
-Las eliminaciones en cascada siguen la vida de la entidad principal; la
-aplicación no ofrece eliminación ordinaria de estos catálogos.
+
+Las revisiones `20260821_0005` a `20260821_0008` permanecen inmutables en la
+cadena Alembic porque pueden haber sido desplegadas; una instalación nueva las
+aplica y posteriormente `0015/0016` consolida y retira sus tablas. El downgrade
+de `0016` es irreversible y requiere restaurar el respaldo previo al corte junto
+con la imagen anterior.

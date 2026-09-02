@@ -1,6 +1,6 @@
 # Flujo de Control de Gastos
 
-> Constitución vigente: **2.26.0**.
+> Constitución vigente: **2.30.0**.
 
 Aplicación web para registrar gastos directos y para crear, evaluar, aprobar,
 votar, seguir, corregir, cancelar, cerrar y documentar solicitudes de gasto con
@@ -38,6 +38,8 @@ Reglas clave:
 - un Usuario puede tener como máximo un Cargo;
 - FastAPI es la autoridad de autorización;
 - los cambios de acceso se guardan explícitamente con **Guardar cambios**;
+- Auditoría distingue creación, actualización y eliminación y compara valores
+  anteriores/actuales, incluidos los Roles asignados a un Usuario;
 - el restablecimiento administrativo envía un enlace de un solo uso, no una contraseña;
 - Inicio es personal; Seguimiento es una vista de equipo de solo lectura;
 - los participantes de aprobación/votación provienen de `requests:approve`
@@ -137,6 +139,29 @@ acción envía un enlace de restablecimiento, requiere confirmación y
 `config:manage`, se ejecuta de inmediato como acción de seguridad separada de
 **Guardar cambios** y no modifica el borrador de Roles. El correo contiene un
 enlace válido durante 30 minutos por defecto y nunca una contraseña.
+
+### Auditoría
+
+**Configuración → Auditoría** muestra por defecto hoy y los seis días anteriores
+en la zona horaria de la aplicación. El filtro **Desde/Hasta** puede moverse o
+ampliarse para investigar historia anterior, sin un límite fijo de 45 días. No
+existe la vista agregada **Todos**: la pantalla abre en **Flujos** y permite
+consultar **Flujos**, **Usuarios**, **Accesos**, **Áreas** y **Reglas**. Cada fila
+identifica fecha, elemento, actor, acción específica y tipo de cambio:
+**Creación**, **Actualización** o **Eliminación**. Las actualizaciones muestran
+por campo el **Valor anterior** y el **Valor actual**; al cambiar Roles de un
+Usuario aparecen ambas listas bajo **Roles asignados**.
+
+La consulta usa exclusivamente `audit_change_feed`, que recibe las mutaciones
+auditables dentro de la misma transacción y ya conserva cada diferencia. La API
+ejecuta una sola consulta con cursor indexado: no fusiona tablas de historia, no
+carga todos los Usuarios y no ordena el conjunto completo en Python. Cada
+sección muestra hasta 10 registros por página; **Anterior** y **Siguiente**
+reemplazan la página visible mediante cursor, sin acumular filas. Cambiar
+sección, búsqueda o fechas vuelve a la primera página y **Actualizar** conserva
+los criterios aplicados. No devuelve contraseñas, hashes, tokens o secretos y
+enmascara correo, teléfono e identificación históricos. En móvil, cada evento
+se presenta como tarjeta completa en lugar de una tabla comprimida.
 
 ## Inicio y Seguimiento
 
@@ -338,14 +363,22 @@ Cadena actual:
   └→ 20260827_0012_scoped_approval_policies                  │
      → 20260828_0013_direct_expenses ────────────────────────┤
                                                              └→ 20260828_0014_merge_main_layout_heads
+                                                                → 20260831_0015_audit_change_feed
+                                                                → 20260831_0016_retire_legacy_audit_tables
 ```
 
-Usuarios, Áreas, Roles y Grupos conservan versiones temporales en tablas
-separadas. El alta abre una versión desde el mismo `created_at`; cada cambio
-cierra la anterior y abre otra con los valores JSON actuales. Un índice único
-parcial impide dos versiones abiertas para la misma entidad.
-Cada versión registra actor, timestamp del evento, tipo y diferencias
-`before/after` por campo; procesos automáticos usan un actor `SYSTEM:*`.
+`20260831_0015` crea `audit_change_feed`, copia set-based en PostgreSQL las diez
+fuentes históricas y operativas existentes, comprueba sus conteos y protege el
+feed contra modificación, borrado y truncado. `20260831_0016` vuelve a verificar
+la copia y retira sin `CASCADE` las cuatro tablas `*_activity_periods` y los
+eventos redundantes de Usuario, perfil, regla y factura. Mantiene
+`approval_step_events` y `quotation_vote_events` porque siguen siendo evidencia
+operativa, aunque Auditoría solo consulta el feed.
+
+El backend captura instantáneas y diferencias una vez, dentro de la transacción
+de la mutación. El downgrade de `0016` es irreversible: restaurar el esquema
+anterior exige el respaldo previo al corte y la imagen anterior; no se recrean
+tablas vacías.
 
 Los catálogos de Usuario, Área, Rol y Grupo muestran solo activos. Al volver a
 introducir la cédula, código o nombre de una entidad inactiva, el formulario
@@ -360,7 +393,8 @@ el `max_users` opcional. La rama `20260825_0012` devuelve a votación solicitude
 múltiples antiguas aprobadas sin factura. La otra rama usa `20260827_0012` para
 targets e instantáneas de política y `20260828_0013` para `direct_expenses`.
 `20260828_0014` une ambas ramas inmutables mediante dos `down_revision` y no
-agrega una mutación de dominio.
+agrega una mutación de dominio. `20260831_0015 → 20260831_0016` consolida la
+auditoría y deja `20260831_0016` como único head.
 
 ## Despliegue
 
@@ -416,7 +450,7 @@ Validación:
 
 ```powershell
 docker compose exec -T backend alembic heads
-# esperado: 20260828_0014 (head)
+# esperado: 20260831_0016 (head)
 
 cd backend
 .\.venv\Scripts\python.exe -m scripts.run_tests

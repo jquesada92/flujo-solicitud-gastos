@@ -1,0 +1,28 @@
+# Aceptación 024
+
+- [ ] Cambiar el Rol de un Usuario crea un evento visible en Auditoría.
+- [ ] El evento de Rol muestra la lista anterior y la lista actual.
+- [ ] Creación, actualización y eliminación tienen etiquetas textuales distintas.
+- [ ] Una eliminación conserva valores anteriores y presenta actual vacío.
+- [ ] Desactivar se identifica como actualización/desactivación, no como borrado físico.
+- [ ] Usuario, Área, Rol y Grupo se leen exclusivamente desde `audit_change_feed`.
+- [ ] El endpoint ejecuta una sola consulta paginada y no fusiona fuentes en memoria.
+- [ ] El backfill PostgreSQL conserva los conteos y es idempotente por fuente/ID.
+- [ ] Las ocho tablas redundantes se retiran sin `CASCADE` después de verificar la copia.
+- [ ] `approval_step_events` y `quotation_vote_events` permanecen como fuentes operativas.
+- [ ] `audit_change_feed` rechaza actualización, borrado y truncado.
+- [ ] El head único es `20260831_0016` y su downgrade documenta restauración desde respaldo.
+- [ ] La respuesta no contiene contraseña, hash, token o secreto.
+- [ ] Correo, teléfono e identificación históricos salen enmascarados.
+- [ ] `false`, `0`, `null`, listas y objetos se muestran correctamente.
+- [ ] Búsqueda, filtros y cursor siguen funcionando.
+- [ ] Sin fechas, la API y la pantalla usan hoy y los seis días anteriores en `APP_TIME_ZONE`.
+- [ ] **Desde** y **Hasta** incluyen ambos días y un rango invertido responde `422`.
+- [ ] Un rango ampliado recupera eventos anteriores a 45 días sin quitar la paginación.
+- [ ] La pantalla no muestra **Todos**, ofrece solo cinco secciones y abre en **Flujos**.
+- [ ] Cada página muestra como máximo 10 registros y **Anterior**/**Siguiente** no acumulan ni duplican filas.
+- [ ] Cambiar sección, búsqueda o fechas vuelve a la primera página; **Actualizar** conserva los criterios y también reinicia la página.
+- [ ] `config:read` conserva acceso de solo lectura.
+- [ ] La tabla conserva semántica accesible y cada diferencia nombra ambos valores.
+- [ ] La pantalla funciona a 1180, 1024, 640, 440, 390 y 320 px sin overflow.
+- [ ] Suite backend, contratos frontend, build y contrato documental pasan.

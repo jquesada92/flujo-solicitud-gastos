@@ -71,7 +71,9 @@
   .dashboard-layout,
   .dashboard-request-list,
   .correction-bar,
-  .audit-search {
+  .audit-date-filter,
+  .audit-search,
+  .audit-pagination {
     min-width: 0;
     max-width: 100%;
   }
@@ -88,15 +90,137 @@
     overflow-wrap: anywhere;
   }
 
+  .audit-date-filter,
   .audit-search {
     align-items: stretch;
     flex-direction: column;
   }
 
+  .audit-date-filter button,
   .audit-search button,
-  .audit-load-more button {
+  .audit-pagination button {
     width: 100%;
     min-height: 44px;
+  }
+
+  .audit-pagination {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 8px;
+    width: 100%;
+  }
+
+  .audit-pagination button {
+    min-width: 0;
+    padding-inline: 8px;
+  }
+
+  .audit-pagination span {
+    text-align: center;
+  }
+
+  .audit-date-filter input {
+    min-height: 44px;
+  }
+
+  .audit-filters {
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+  }
+
+  .audit-filters button {
+    flex: 0 0 auto;
+    min-height: 44px;
+  }
+
+  .audit-table-wrap {
+    width: 100%;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+  }
+
+  .audit-table {
+    display: block;
+    min-width: 0;
+    table-layout: auto;
+  }
+
+  .audit-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .audit-table tbody {
+    display: grid;
+    gap: 14px;
+  }
+
+  .audit-table tr {
+    display: grid;
+    min-width: 0;
+    padding: 14px;
+    overflow: hidden;
+    border: 1px solid #dfe5ee;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 5px 18px rgba(17, 24, 39, .05);
+  }
+
+  .audit-table td,
+  .audit-table td[data-label="Acción"],
+  .audit-table .audit-changes-cell {
+    display: grid;
+    grid-template-columns: minmax(96px, 30%) minmax(0, 1fr);
+    gap: 10px;
+    min-width: 0;
+    padding: 10px 0;
+    overflow: visible;
+    border-bottom: 1px solid #eef0f4;
+    white-space: normal;
+  }
+
+  .audit-table td::before {
+    content: attr(data-label);
+    color: #717b8d;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .audit-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .audit-table td[data-label="Acción"] > .subtext {
+    grid-column: 2;
+    margin-top: -5px;
+  }
+
+  .audit-table .audit-changes-cell {
+    display: block;
+  }
+
+  .audit-table .audit-changes-cell::before {
+    display: block;
+    margin-bottom: 9px;
+  }
+
+  .audit-value,
+  .audit-table time,
+  .audit-table td {
+    overflow-wrap: anywhere;
   }
 
   /* La consulta operativa deja de ser una tabla de 1450 px y pasa a tarjetas. */
@@ -286,5 +410,25 @@
 
   .dashboard-request-list .urgency-badge {
     justify-self: start;
+  }
+
+  .audit-table td,
+  .audit-table td[data-label="Acción"] {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+
+  .audit-table td[data-label="Acción"] > .subtext {
+    grid-column: auto;
+    margin-top: 0;
+  }
+
+  .audit-value-comparison {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .audit-change-arrow {
+    justify-self: center;
+    transform: rotate(90deg);
   }
 }

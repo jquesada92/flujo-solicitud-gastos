@@ -8,9 +8,25 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from alembic.script import ScriptDirectory
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import DBAPIError
 
 
 class MigrationTopologyTests(unittest.TestCase):
+    @staticmethod
+    def _load_migration(filename: str):
+        backend_dir = Path(__file__).resolve().parents[1]
+        migration_path = backend_dir / 'alembic' / 'versions' / filename
+        spec = importlib.util.spec_from_file_location(
+            f'migration_{filename}',
+            migration_path,
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f'No se pudo cargar la migracion {filename}')
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        return migration
+
     @staticmethod
     def _render_migration_sql(
         filename: str,
@@ -70,8 +86,10 @@ class MigrationTopologyTests(unittest.TestCase):
         config.set_main_option('script_location', str(backend_dir / 'alembic'))
         script = ScriptDirectory.from_config(config)
 
-        self.assertEqual(script.get_heads(), ['20260828_0014'])
+        self.assertEqual(script.get_heads(), ['20260831_0016'])
         revisions = {revision.revision: revision.down_revision for revision in script.walk_revisions()}
+        self.assertEqual(revisions['20260831_0016'], '20260831_0015')
+        self.assertEqual(revisions['20260831_0015'], '20260828_0014')
         self.assertEqual(
             revisions['20260828_0014'],
             ('20260825_0012', '20260828_0013'),
@@ -90,6 +108,127 @@ class MigrationTopologyTests(unittest.TestCase):
         self.assertEqual(revisions['20260821_0003'], '20260820_0002')
         self.assertEqual(revisions['20260820_0002'], '20260820_0001')
         self.assertIsNone(revisions['20260820_0001'])
+
+    def test_audit_change_feed_migration_creates_backfills_and_guards_feed(self):
+        migration = self._load_migration('20260831_0015_audit_change_feed.py')
+        expected_sources = (
+            'user_activity_periods',
+            'area_activity_periods',
+            'role_activity_periods',
+            'group_activity_periods',
+            'user_change_events',
+            'access_profile_change_events',
+            'approval_policy_change_events',
+            'invoice_change_events',
+            'approval_step_events',
+            'quotation_vote_events',
+        )
+        self.assertEqual(migration.revision, '20260831_0015')
+        self.assertEqual(migration.down_revision, '20260828_0014')
+        self.assertEqual(migration.SOURCE_TABLES, expected_sources)
+
+        source = (
+            Path(__file__).resolve().parents[1]
+            / 'alembic' / 'versions' / '20260831_0015_audit_change_feed.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn("op.create_table(\n        'audit_change_feed'", source)
+        self.assertIn("sa.UniqueConstraint(\n            'source_type',\n            'source_id'", source)
+        self.assertIn("'ix_audit_change_feed_occurred_sequence'", source)
+        self.assertIn("'ix_audit_change_feed_kind_occurred_sequence'", source)
+        self.assertIn("'ix_audit_change_feed_entity_sequence'", source)
+        self.assertIn('LOCK TABLE {locked_sources} IN ACCESS EXCLUSIVE MODE', source)
+        self.assertIn('ON CONFLICT (source_type, source_id) DO NOTHING', source)
+        self.assertIn('Audit change feed backfill mismatch for {table}', source)
+        self.assertIn('CREATE TRIGGER audit_change_feed_immutable', source)
+        self.assertIn('CREATE TRIGGER audit_change_feed_no_truncate', source)
+        self.assertIn('reject_audit_event_mutation', source)
+
+        engine = create_engine('sqlite://')
+        with engine.begin() as connection:
+            context = MigrationContext.configure(connection)
+            with Operations.context(context), patch.object(migration, '_schema', return_value=None):
+                migration.upgrade()
+
+        inspector = inspect(engine)
+        self.assertIn('audit_change_feed', inspector.get_table_names())
+        self.assertEqual(
+            {item['name'] for item in inspector.get_indexes('audit_change_feed')},
+            {
+                'ix_audit_change_feed_entity_sequence',
+                'ix_audit_change_feed_kind_occurred_sequence',
+                'ix_audit_change_feed_occurred_sequence',
+            },
+        )
+        with engine.connect() as connection:
+            trigger_names = set(connection.scalars(text(
+                "SELECT name FROM sqlite_master WHERE type = 'trigger' "
+                "AND tbl_name = 'audit_change_feed'"
+            )))
+        self.assertEqual(
+            trigger_names,
+            {
+                'audit_change_feed_immutable_update',
+                'audit_change_feed_immutable_delete',
+            },
+        )
+
+        with engine.begin() as connection:
+            connection.execute(text('''
+                INSERT INTO audit_change_feed (
+                    event_id, occurred_at, kind, entity_type, event_type,
+                    change_type, subject, actor_identifier, actor_label,
+                    changed_fields, changes, event_context, search_text,
+                    source_type, source_id
+                ) VALUES (
+                    'test:event', CURRENT_TIMESTAMP, 'USER', 'USER',
+                    'USER_UPDATED', 'UPDATE', 'Usuario', 'SYSTEM', 'Sistema',
+                    '[]', '{}', '{}', 'usuario', 'test', '1'
+                )
+            '''))
+        for statement in (
+            "UPDATE audit_change_feed SET subject = 'Otro' WHERE event_id = 'test:event'",
+            "DELETE FROM audit_change_feed WHERE event_id = 'test:event'",
+        ):
+            with self.subTest(statement=statement):
+                with self.assertRaises(DBAPIError):
+                    with engine.begin() as connection:
+                        connection.execute(text(statement))
+
+    def test_legacy_audit_retirement_is_explicit_non_cascade_and_irreversible(self):
+        migration = self._load_migration(
+            '20260831_0016_retire_legacy_audit_tables.py'
+        )
+        expected_retired = (
+            'invoice_change_events',
+            'approval_policy_change_events',
+            'access_profile_change_events',
+            'user_change_events',
+            'group_activity_periods',
+            'role_activity_periods',
+            'area_activity_periods',
+            'user_activity_periods',
+        )
+        self.assertEqual(migration.revision, '20260831_0016')
+        self.assertEqual(migration.down_revision, '20260831_0015')
+        self.assertEqual(migration.RETIRED_TABLES, expected_retired)
+
+        upgrade_sql = self._render_migration_sql(
+            '20260831_0016_retire_legacy_audit_tables.py',
+            url='sqlite://',
+            schema=None,
+            operation='upgrade',
+        )
+        for table in expected_retired:
+            self.assertEqual(upgrade_sql.count(f'DROP TABLE {table};'), 1)
+        self.assertNotIn('CASCADE', upgrade_sql.upper())
+        self.assertNotIn('approval_step_events', migration.RETIRED_TABLES)
+        self.assertNotIn('quotation_vote_events', migration.RETIRED_TABLES)
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            'Irreversible audit consolidation',
+        ):
+            migration.downgrade()
 
     def test_multi_quote_open_voting_has_forward_data_migration(self):
         backend_dir = Path(__file__).resolve().parents[1]

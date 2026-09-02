@@ -83,12 +83,133 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn(f'Constitución {version}', guide)
         self.assertIn(f'La Constitución evoluciona a {version}', history)
         for spec_path in (
+            REPO_ROOT / 'specs' / '014-activity-period-history' / 'spec.md',
             REPO_ROOT / 'specs' / '020-mobile-layout' / 'spec.md',
             REPO_ROOT / 'specs' / '021-scoped-approval-rules' / 'spec.md',
             REPO_ROOT / 'specs' / '022-direct-expense-registration' / 'spec.md',
+            REPO_ROOT / 'specs' / '024-detailed-audit-visibility' / 'spec.md',
         ):
             with self.subTest(document=spec_path.name, spec=spec_path.parent.name):
                 self.assertIn(f'**Constitución:** {version}', read(spec_path))
+
+    def test_detailed_audit_visibility_is_synchronized(self):
+        required_fragments = {
+            REPO_ROOT / '.specify' / 'memory' / 'constitution.md': (
+                '`Configuración → Auditoría`',
+                'últimos 7 días calendario',
+                'filtro **Desde/Hasta** es editable',
+                'pantalla no ofrece la vista agregada **Todos**',
+                'hasta 10 registros por página',
+                '**Anterior** y **Siguiente**',
+                '**Valor anterior** y el **Valor actual**',
+                '`assigned_roles` antes y después',
+                'enmascara correo, teléfono',
+            ),
+            REPO_ROOT / 'specs' / '024-detailed-audit-visibility' / 'spec.md': (
+                'siete fechas calendario inclusivas',
+                '`date_from` y `date_to` se envían juntas',
+                'sin aplicar funciones a `occurred_at`',
+                '`change_type` normalizado como `CREATE`, `UPDATE` o',
+                '`changes` usa `{campo: {before, after}}`',
+                '`USER_ROLES_UPDATED`',
+                'Desde 720 px hacia abajo',
+                'pantalla no ofrece la vista agregada **Todos**',
+                'hasta 10 registros por página',
+                '`limit=10`',
+                '**Anterior** y **Siguiente**',
+            ),
+            REPO_ROOT / 'PROMPT_RECONSTRUCCION.md': (
+                'Precarga **Desde/Hasta** con las siete fechas calendario inclusivas',
+                'sin un recorte fijo de 45 días',
+                'un cambio de Roles de Usuario usa `assigned_roles`',
+                '**Valor anterior** y **Valor actual**',
+                'No ofrezcas la vista agregada **Todos**',
+                'hasta 10 registros por página',
+                '**Anterior** y **Siguiente**',
+            ),
+            REPO_ROOT / 'README.md': (
+                '### Auditoría',
+                'muestra por defecto hoy y los seis días anteriores',
+                'filtro **Desde/Hasta** puede moverse o ampliarse',
+                '**Roles asignados**',
+                'enmascara correo, teléfono e identificación',
+                'No existe la vista agregada **Todos**',
+                'hasta 10 registros por página',
+                '**Anterior** y **Siguiente**',
+            ),
+            REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md': (
+                'siete fechas calendario inclusivas',
+                '**Desde/Hasta** permite mover o ampliar el rango',
+                '`change_type` normalizado como',
+                '`audit_change_feed`',
+                'las filas son tarjetas completas',
+                'pantalla no ofrece **Todos**',
+                'hasta 10 registros por página',
+                '**Anterior** y **Siguiente**',
+            ),
+            REPO_ROOT / 'docs' / 'FRONTEND_RUNTIME.md': (
+                '## Auditoría',
+                '`Audit()` precarga **Desde/Hasta**',
+                'Cambiar sección, búsqueda o fechas descarta',
+                '`audit-utils.js`',
+                'Desde 720 px',
+                'No existe la vista **Todos**',
+                'hasta 10 registros ya ordenados',
+                '**Anterior** y **Siguiente**',
+            ),
+            REPO_ROOT / 'docs' / 'FASTAPI_ARCHITECTURE.md': (
+                '## Auditoría',
+                '`audit_change_feed.changes.assigned_roles`',
+                '`date_from`/`date_to` permiten cualquier rango histórico válido',
+                'No existe recorte fijo de 45 días',
+                'lista de exclusión de secretos',
+                'límite predeterminado es 10',
+                '`Audit()` siempre envía una categoría concreta y `limit=10`',
+                '`kind=ALL` permanece únicamente como compatibilidad HTTP',
+            ),
+            REPO_ROOT / 'docs' / 'CONFIGURATION_ACCESS.md': (
+                'últimos 7 días calendario',
+                '**Desde/Hasta** incluye ambas fechas',
+                'vuelve a la primera página',
+                'No existe la vista agregada **Todos**',
+                'hasta 10 registros por página',
+                '**Anterior**/**Siguiente**',
+            ),
+            REPO_ROOT / 'docs' / 'GUIA_USUARIO_FINAL.md': (
+                '### 3.2 Consultar quién cambió la configuración',
+                'Al entrar se muestran los últimos 7 días calendario',
+                'Usa **Desde** y **Hasta**',
+                '**Roles asignados** antes y después',
+                'No existe la vista **Todos**',
+                'hasta 10 registros',
+                '**Anterior** y **Siguiente**',
+            ),
+            REPO_ROOT / 'docs' / 'VALIDACION_LOCAL.md': (
+                'no aparece **Todos**',
+                '**Flujos** es la sección inicial',
+                'como máximo 10 registros',
+                '**Anterior**/**Siguiente**',
+            ),
+        }
+        for document, fragments in required_fragments.items():
+            source = re.sub(r'\s+', ' ', read(document))
+            for fragment in fragments:
+                with self.subTest(document=document.name, fragment=fragment):
+                    self.assertIn(fragment, source)
+
+        for document in (
+            REPO_ROOT / '.specify' / 'memory' / 'constitution.md',
+            REPO_ROOT / 'specs' / '024-detailed-audit-visibility' / 'spec.md',
+            REPO_ROOT / 'PROMPT_RECONSTRUCCION.md',
+            REPO_ROOT / 'README.md',
+            REPO_ROOT / 'docs' / 'CURRENT_PRODUCT_CONTRACT.md',
+        ):
+            with self.subTest(document=document.name, stale='últimos 45 días'):
+                self.assertNotIn('últimos 45 días', read(document))
+            with self.subTest(document=document.name, stale='Todos, Flujos'):
+                self.assertNotIn('Todos, Flujos', read(document))
+            with self.subTest(document=document.name, stale='Cargar más'):
+                self.assertNotIn('Cargar más', read(document))
 
     def test_ten_minute_session_idle_limit_is_synchronized(self):
         required_fragments = {
